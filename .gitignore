@@ -1,0 +1,37 @@
+# Build artifacts
+/target/
+*.so
+*.dylib
+*.dll
+*.rlib
+*.rmeta
+
+# Cargo lock file (for binary crates, but okay to commit for libraries)
+Cargo.lock
+
+# Node modules and build
+node_modules/
+dist/
+build/
+*.log
+
+# IDEs
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Anchor
+.anchor/
+**/.anchor/
+idl/
