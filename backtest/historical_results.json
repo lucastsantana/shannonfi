@@ -1,0 +1,64 @@
+[
+  {
+    "year": 2025,
+    "days": 222,
+    "start_price": 176.0,
+    "end_price": 124.52,
+    "shannon": {
+      "total_return": -12.893078599532545,
+      "volatility": 30.41111442702032,
+      "sharpe_ratio": -0.48125123969099703,
+      "sortino_ratio": -0.48771045285176495,
+      "max_drawdown": -29.343616180826395,
+      "final_value": 8710.692140046745
+    },
+    "buy_hold_50_50": {
+      "total_return": -14.625,
+      "volatility": 30.725284364183576,
+      "sharpe_ratio": -0.5403156291273752,
+      "sortino_ratio": -0.5402461684920302,
+      "max_drawdown": -30.241288129190664,
+      "final_value": 8537.5
+    },
+    "all_sol": {
+      "total_return": -29.25,
+      "volatility": 61.439897393907394,
+      "sharpe_ratio": -0.540409475130328,
+      "sortino_ratio": -0.5517994930692761,
+      "max_drawdown": -51.74099208272742,
+      "final_value": 7075.0
+    },
+    "rebalances": 5
+  },
+  {
+    "year": 2026,
+    "days": 144,
+    "start_price": 126.73,
+    "end_price": 85.19,
+    "shannon": {
+      "total_return": -16.998746752227834,
+      "volatility": 27.049234405480398,
+      "sharpe_ratio": -1.0997652048285536,
+      "sortino_ratio": -1.0365672450295123,
+      "max_drawdown": -26.3072096595822,
+      "final_value": 8300.125324777217
+    },
+    "buy_hold_50_50": {
+      "total_return": -16.389173834135562,
+      "volatility": 23.80633821237336,
+      "sharpe_ratio": -1.2047654685015876,
+      "sortino_ratio": -1.1147611400496176,
+      "max_drawdown": -25.223083674663556,
+      "final_value": 8361.082616586444
+    },
+    "all_sol": {
+      "total_return": -32.77834766827114,
+      "volatility": 55.721745614890516,
+      "sharpe_ratio": -1.029438467630232,
+      "sortino_ratio": -0.9841561852213822,
+      "max_drawdown": -47.01111035375912,
+      "final_value": 6722.1652331728865
+    },
+    "rebalances": 2
+  }
+]
