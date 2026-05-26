@@ -4,7 +4,11 @@ import { MbEndpoints } from './endpoints';
 import { ExchangeAdapter, CandleResolution, Portfolio, TradeRecord } from '../types';
 import { computeSolRatioBps, computeDeviationBps, brlToSol, isSlippageAcceptable } from '../../math';
 import { logger } from '../../core/tracker/logger';
-import { MB_SYMBOL, FILL_POLL_INTERVAL_MS, FILL_POLL_MAX_ATTEMPTS } from '../../constants';
+import {
+  MB_SYMBOL,
+  MB_FILL_POLL_INTERVAL_MS,
+  MB_FILL_POLL_MAX_ATTEMPTS,
+} from '../../constants';
 import { MercadoBitcoinConfig } from '../../config';
 
 const MB_RESOLUTION_MAP: Record<CandleResolution, import('./raw-types').MbCandleResolution> = {
@@ -16,6 +20,8 @@ const MB_RESOLUTION_MAP: Record<CandleResolution, import('./raw-types').MbCandle
 
 export class MercadoBitcoinAdapter implements ExchangeAdapter {
   private endpoints: MbEndpoints;
+  // Cached account ID — fetched once, stable for the lifetime of the process.
+  private cachedAccountId: string | null = null;
 
   constructor(
     private mbConfig: MercadoBitcoinConfig,
@@ -26,26 +32,43 @@ export class MercadoBitcoinAdapter implements ExchangeAdapter {
     this.endpoints = new MbEndpoints(client);
   }
 
-  async getPortfolio(): Promise<Portfolio> {
-    const accountId = await this.endpoints.getAccountId();
-    const [balances, candles] = await Promise.all([
+  private async getAccountId(): Promise<string> {
+    if (!this.cachedAccountId) {
+      this.cachedAccountId = await this.endpoints.getAccountId();
+      logger.debug('MB account ID cached', { accountId: this.cachedAccountId });
+    }
+    return this.cachedAccountId;
+  }
+
+  /**
+   * Fetches the current SOL/BRL price via the public candles endpoint.
+   * No authentication required — costs 1 API request.
+   */
+  async getPrice(): Promise<number> {
+    const resp = await this.endpoints.getCandles(1, '1d');
+    const latest = resp.c[resp.c.length - 1];
+    if (!latest) throw new Error('No candle data returned from Mercado Bitcoin');
+    const price = parseFloat(latest);
+    if (price <= 0) throw new Error(`Invalid SOL/BRL price: ${latest}`);
+    return price;
+  }
+
+  /**
+   * Fetches balances and builds a Portfolio.
+   * If knownPrice is provided, skips the candle fetch (saves 1 API request).
+   * Costs 1 authenticated request (balances) when knownPrice is supplied,
+   * or 2 requests (balances + candles) when called standalone.
+   */
+  async getPortfolio(knownPrice?: number): Promise<Portfolio> {
+    const accountId = await this.getAccountId();
+
+    const [balances, solPrice] = await Promise.all([
       this.endpoints.getBalances(accountId),
-      this.endpoints.getCandles(2, '1d'),
+      knownPrice !== undefined ? Promise.resolve(knownPrice) : this.getPrice(),
     ]);
 
-    const solBalance = parseFloat(
-      balances.find((b) => b.symbol === 'SOL')?.available ?? '0',
-    );
-    const brlBalance = parseFloat(
-      balances.find((b) => b.symbol === 'BRL')?.available ?? '0',
-    );
-
-    // Use the most recent close as current price; fall back to second-to-last if needed
-    const closes = candles.c;
-    const latestClose = closes[closes.length - 1];
-    if (!latestClose) throw new Error('No candle data returned from Mercado Bitcoin');
-    const solPrice = parseFloat(latestClose);
-    if (solPrice <= 0) throw new Error(`Invalid SOL/BRL price: ${latestClose}`);
+    const solBalance = parseFloat(balances.find((b) => b.symbol === 'SOL')?.available ?? '0');
+    const brlBalance = parseFloat(balances.find((b) => b.symbol === 'BRL')?.available ?? '0');
 
     const solValueBrl = solBalance * solPrice;
     const totalValueBrl = solValueBrl + brlBalance;
@@ -69,7 +92,7 @@ export class MercadoBitcoinAdapter implements ExchangeAdapter {
     portfolioBefore: Portfolio,
   ): Promise<TradeRecord> {
     const clientOrderId = uuidv4();
-    const accountId = await this.endpoints.getAccountId();
+    const accountId = await this.getAccountId();
 
     const record: TradeRecord = {
       id: uuidv4(),
@@ -126,7 +149,9 @@ export class MercadoBitcoinAdapter implements ExchangeAdapter {
     record.exchangeOrderId = created.id;
 
     const filled = await this.pollOrderFill(accountId, created.id);
-    const normalizedStatus = filled.status === 'filled' ? 'FILLED' : filled.status.toUpperCase() as TradeRecord['status'];
+    const normalizedStatus =
+      filled.status === 'filled' ? 'FILLED'
+      : (filled.status.toUpperCase() as TradeRecord['status']);
     record.status = normalizedStatus;
 
     if (filled.status !== 'filled' && filled.status !== 'partially_filled') {
@@ -170,8 +195,6 @@ export class MercadoBitcoinAdapter implements ExchangeAdapter {
   async getCandles(countback: number, resolution: CandleResolution): Promise<number[]> {
     const mbResolution = MB_RESOLUTION_MAP[resolution];
     const resp = await this.endpoints.getCandles(countback, mbResolution);
-    // Columnar format: resp.c[] are close prices in BRL, resp.t[] are timestamps
-    // Sort by timestamp ascending and return close prices
     const pairs = resp.t.map((ts, i) => ({ ts, close: parseFloat(resp.c[i] ?? '0') }));
     pairs.sort((a, b) => a.ts - b.ts);
     return pairs.map((p) => p.close);
@@ -180,8 +203,8 @@ export class MercadoBitcoinAdapter implements ExchangeAdapter {
   private async pollOrderFill(accountId: string, orderId: string) {
     const terminal = ['filled', 'cancelled', 'partially_filled'];
 
-    for (let attempt = 0; attempt < FILL_POLL_MAX_ATTEMPTS; attempt++) {
-      await new Promise((r) => setTimeout(r, FILL_POLL_INTERVAL_MS));
+    for (let attempt = 0; attempt < MB_FILL_POLL_MAX_ATTEMPTS; attempt++) {
+      await new Promise((r) => setTimeout(r, MB_FILL_POLL_INTERVAL_MS));
       const order = await this.endpoints.getOrder(accountId, orderId);
       if (terminal.includes(order.status)) return order;
       logger.debug('Polling Mercado Bitcoin order fill', {

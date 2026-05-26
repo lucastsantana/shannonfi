@@ -38,7 +38,7 @@ const ConfigSchema = z.object({
   maxSlippageBps: z.number().int().min(10).max(500).default(MAX_SLIPPAGE_BPS),
   minPortfolioValueBrl: z.number().positive().default(200),
   minTradeSizeBrl: z.number().positive().default(20),
-  pollIntervalSeconds: z.number().int().min(10).max(3600).default(300),
+  pollIntervalSeconds: z.number().int().min(60).max(3600).default(900),
   minRebalanceIntervalSeconds: z.number().int().min(60).default(7200),
 
   // ─── Adaptive threshold ─────────────────────────────────────────────────────

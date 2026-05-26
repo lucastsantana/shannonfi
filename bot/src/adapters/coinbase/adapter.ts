@@ -42,12 +42,48 @@ export class CoinbaseAdapter implements ExchangeAdapter {
     this.endpoints = new CoinbaseEndpoints(client);
   }
 
-  async getPortfolio(): Promise<Portfolio> {
-    const [accountsResp, bidAskResp] = await Promise.all([
-      this.endpoints.listAccounts(),
+  /**
+   * Fetches current SOL/BRL price via bid/ask + FX rate.
+   * Costs 2 requests (getBestBidAsk + FX fetch).
+   */
+  async getPrice(): Promise<number> {
+    const [bidAskResp, usdBrlRate] = await Promise.all([
       this.endpoints.getBestBidAsk(),
+      fetchUsdBrlRate(this.cbConfig.fxApiUrl),
     ]);
+    if (!usdBrlRate) throw new Error('Cannot fetch USD/BRL rate');
+    const pricebook = bidAskResp.pricebooks[0];
+    if (!pricebook) throw new Error('No pricebook returned for SOL-USD');
+    const bestBid = parseFloat(pricebook.bids[0]?.price ?? '0');
+    const bestAsk = parseFloat(pricebook.asks[0]?.price ?? '0');
+    return ((bestBid + bestAsk) / 2) * usdBrlRate;
+  }
 
+  /**
+   * Fetches balances and builds a Portfolio in BRL.
+   * If knownPrice is provided (already fetched this cycle), skips the price fetch
+   * to avoid redundant bid/ask + FX calls. usdBrlRate is re-fetched regardless
+   * so the Portfolio carries a fresh rate for trade execution.
+   */
+  async getPortfolio(knownPrice?: number): Promise<Portfolio> {
+    const usdBrlRate = await fetchUsdBrlRate(this.cbConfig.fxApiUrl);
+    if (!usdBrlRate) {
+      throw new Error('Cannot fetch USD/BRL rate — portfolio valuation in BRL unavailable');
+    }
+
+    let solPriceBrl: number;
+    if (knownPrice !== undefined) {
+      solPriceBrl = knownPrice;
+    } else {
+      const bidAskResp = await this.endpoints.getBestBidAsk();
+      const pricebook = bidAskResp.pricebooks[0];
+      if (!pricebook) throw new Error('No pricebook returned for SOL-USD');
+      const bestBid = parseFloat(pricebook.bids[0]?.price ?? '0');
+      const bestAsk = parseFloat(pricebook.asks[0]?.price ?? '0');
+      solPriceBrl = ((bestBid + bestAsk) / 2) * usdBrlRate;
+    }
+
+    const accountsResp = await this.endpoints.listAccounts();
     const accounts = accountsResp.accounts;
     const solAccount = accounts.find((a) => a.currency === 'SOL');
     const usdAccount = accounts.find((a) => a.currency === 'USD');
@@ -55,18 +91,6 @@ export class CoinbaseAdapter implements ExchangeAdapter {
     const solBalance = solAccount ? parseFloat(solAccount.available_balance.value) : 0;
     const usdBalance = usdAccount ? parseFloat(usdAccount.available_balance.value) : 0;
 
-    const pricebook = bidAskResp.pricebooks[0];
-    if (!pricebook) throw new Error('No pricebook returned for SOL-USD');
-    const bestBid = parseFloat(pricebook.bids[0]?.price ?? '0');
-    const bestAsk = parseFloat(pricebook.asks[0]?.price ?? '0');
-    const solPriceUsd = (bestBid + bestAsk) / 2;
-
-    const usdBrlRate = await fetchUsdBrlRate(this.cbConfig.fxApiUrl);
-    if (!usdBrlRate) {
-      throw new Error('Cannot fetch USD/BRL rate — portfolio valuation in BRL unavailable');
-    }
-
-    const solPriceBrl = solPriceUsd * usdBrlRate;
     const solValueBrl = solBalance * solPriceBrl;
     const brlBalance = usdBalance * usdBrlRate;
     const totalValueBrl = solValueBrl + brlBalance;

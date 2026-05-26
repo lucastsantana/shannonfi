@@ -1,4 +1,4 @@
-import { ExchangeAdapter, PortfolioSnapshot } from '../adapters/types';
+import { ExchangeAdapter, Portfolio, PortfolioSnapshot } from '../adapters/types';
 import { TradeHistoryService } from './tracker/history';
 import { PnlService } from './tracker/pnl';
 import { CostBasisService } from './tracker/costbasis';
@@ -10,17 +10,35 @@ import { shouldRebalance, computeRebalanceTrade } from '../math';
 import { Config } from '../config';
 import { BR_EFFECTIVE_LIMIT_BRL } from '../constants';
 
+// Small delay between sequential API calls during a rebalance execution,
+// to avoid hitting MB's 60 req/60s limit when multiple calls fire back-to-back.
+const INTER_REQUEST_DELAY_MS = 500;
+
 /**
  * BRL-native rebalancing engine. Exchange differences are fully encapsulated in
  * the adapter — this class never touches USD, FX rates, or exchange credentials.
  *
+ * Request budget per cycle (Mercado Bitcoin, no rebalance):
+ *   - getPrice()  → 1 public candle request (no auth)
+ *   - All guards pass cheaply via in-memory state (no further requests)
+ *   Total: 1 request per cycle
+ *
+ * Request budget per cycle (Mercado Bitcoin, rebalance triggered):
+ *   - getPrice()       → 1 public candle request
+ *   - getPortfolio()   → 1 auth request (balances; price reused)
+ *   - getCandles()     → 1 request (volatility; cached after first call each day)
+ *   - createOrder()    → 1 request
+ *   - pollOrderFill()  → up to 10 requests at 3s intervals (30s max)
+ *   - getPortfolio()   → 1 request (post-trade snapshot)
+ *   Total: ~15 requests worst-case, well within 60 req/60s
+ *
  * Guards (in execution order):
- *   1. minPortfolioValueBrl — skip if portfolio too small
- *   2. drift threshold      — adaptive (MAD-based) or fixed
- *   3. cooldown interval    — minimum seconds between rebalances
- *   4. day-trade guard      — blocks opposite-direction trade on same BRT calendar day
- *   5. exemption cap        — optional monthly volume cap (see Config.neverExceedExemptionLimit)
- *   6. minTradeSizeBrl      — skip if computed trade is too small to be worth executing
+ *   1. drift threshold  — checked against price only; no balance fetch needed
+ *   2. cooldown         — in-memory, zero cost
+ *   3. day-trade guard  — in-memory, zero cost
+ *   4. minPortfolioValueBrl — requires balance fetch (only reached if drift exceeded)
+ *   5. exemption cap    — in-memory tax ledger, zero cost
+ *   6. minTradeSizeBrl  — computed from balances already fetched
  */
 export class RebalancerBot {
   private lastRebalanceTime: number;
@@ -59,6 +77,7 @@ export class RebalancerBot {
       dryRun: this.config.dryRun,
       useAdaptiveThreshold: this.config.useAdaptiveThreshold,
       thresholdBps: this.config.rebalanceThresholdBps,
+      pollIntervalSeconds: this.config.pollIntervalSeconds,
       neverExceedExemptionLimit: this.config.neverExceedExemptionLimit,
     });
 
@@ -76,30 +95,18 @@ export class RebalancerBot {
   }
 
   async checkAndRebalance(): Promise<void> {
-    const portfolio = await this.adapter.getPortfolio();
-
-    logger.info('Portfolio snapshot', {
-      exchange: this.config.exchange,
-      solBalance: portfolio.solBalance.toFixed(6),
-      brlBalance: portfolio.brlBalance.toFixed(2),
-      solPriceBrl: portfolio.solPrice.toFixed(2),
-      totalValueBrl: portfolio.totalValueBrl.toFixed(2),
-      solRatio: (portfolio.solRatioBps / 100).toFixed(2) + '%',
-      deviationBps: portfolio.deviationBps,
-      ...(portfolio.usdBrlRate != null ? { usdBrlRate: portfolio.usdBrlRate.toFixed(4) } : {}),
+    const todayBRT = new Date().toLocaleDateString('en-CA', {
+      timeZone: 'America/Sao_Paulo',
     });
 
-    // ── Guard 1: minimum portfolio size ────────────────────────────────────────
-    if (portfolio.totalValueBrl < this.config.minPortfolioValueBrl) {
-      logger.warn('Portfolio below minimum size, skipping', {
-        totalValueBrl: portfolio.totalValueBrl.toFixed(2),
-        minPortfolioValueBrl: this.config.minPortfolioValueBrl,
-      });
-      await this.persistSnapshot(portfolio, false, this.config.rebalanceThresholdBps);
-      return;
-    }
+    // ── Step 1: fetch price only — cheapest possible request ───────────────────
+    const solPrice = await this.adapter.getPrice();
+    logger.info('Price check', {
+      exchange: this.config.exchange,
+      solPriceBrl: solPrice.toFixed(2),
+    });
 
-    // ── Compute effective threshold ─────────────────────────────────────────────
+    // ── Step 2: get threshold (cached daily — zero cost after first call today) ─
     let effectiveThresholdBps = this.config.rebalanceThresholdBps;
     if (this.config.useAdaptiveThreshold) {
       try {
@@ -114,7 +121,91 @@ export class RebalancerBot {
       }
     }
 
-    // ── Guard 2: drift threshold ────────────────────────────────────────────────
+    // ── Step 3: estimate drift from price alone ────────────────────────────────
+    // We don't have balances yet — use price to do a cheap pre-check based on
+    // the last known portfolio ratio. If we've never rebalanced, skip the
+    // pre-check and proceed to fetch balances.
+    //
+    // This is intentionally an approximation: the true ratio requires balances.
+    // Its only purpose is to save the balance fetch on most cycles.
+    const lastTrade = this.history.readTrades().filter(
+      (t) => t.status === 'FILLED' || t.status === 'filled' || t.status === 'DRY_RUN',
+    ).sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()).pop();
+
+    if (lastTrade?.portfolioAfter) {
+      const prev = lastTrade.portfolioAfter;
+      const prevPrice = prev.solPrice;
+      if (prevPrice > 0) {
+        // Estimate current SOL value using price drift; cash is unchanged
+        const priceRatio = solPrice / prevPrice;
+        const estSolValueBrl = prev.solValueBrl * priceRatio;
+        const estTotal = estSolValueBrl + prev.brlBalance;
+        const estRatioBps = estTotal > 0 ? Math.round((estSolValueBrl / estTotal) * 10_000) : 5000;
+
+        if (!shouldRebalance(estRatioBps, effectiveThresholdBps)) {
+          logger.info('No rebalance needed (price-only estimate)', {
+            estSolRatioBps: estRatioBps,
+            effectiveThresholdBps,
+          });
+          return;
+        }
+        logger.debug('Price estimate suggests rebalance — fetching balances', {
+          estSolRatioBps: estRatioBps,
+        });
+      }
+    }
+
+    // ── Step 4: cooldown check — in-memory, zero cost ─────────────────────────
+    const now = Date.now();
+    const secondsSinceLast = (now - this.lastRebalanceTime) / 1000;
+    if (secondsSinceLast < this.config.minRebalanceIntervalSeconds) {
+      logger.info('Rebalance cooldown active', {
+        secondsSinceLast: secondsSinceLast.toFixed(0),
+        minRebalanceIntervalSeconds: this.config.minRebalanceIntervalSeconds,
+      });
+      return;
+    }
+
+    // ── Step 5: day-trade guard pre-check (direction requires balances, but we  ─
+    // can still skip the balance fetch if both directions would be blocked today)
+    // Only a same-day opposite trade blocks — if lastRebalanceDirection is null
+    // or it was a different day, no guard applies regardless of direction.
+    const allDirectionsBlocked =
+      this.lastRebalanceDateBRT === todayBRT &&
+      this.lastRebalanceDirection !== null;
+
+    if (allDirectionsBlocked) {
+      // Both BUY and SELL are not necessarily blocked — only the opposite direction is.
+      // We can't know the direction without balances, so proceed to fetch them.
+      // The guard is re-evaluated below after we know direction.
+    }
+
+    // ── Step 6: fetch balances now that we're committed to possibly rebalancing ─
+    await new Promise((r) => setTimeout(r, INTER_REQUEST_DELAY_MS));
+    const portfolio = await this.adapter.getPortfolio(solPrice);
+
+    logger.info('Portfolio snapshot', {
+      exchange: this.config.exchange,
+      solBalance: portfolio.solBalance.toFixed(6),
+      brlBalance: portfolio.brlBalance.toFixed(2),
+      solPriceBrl: portfolio.solPrice.toFixed(2),
+      totalValueBrl: portfolio.totalValueBrl.toFixed(2),
+      solRatio: (portfolio.solRatioBps / 100).toFixed(2) + '%',
+      deviationBps: portfolio.deviationBps,
+      ...(portfolio.usdBrlRate != null ? { usdBrlRate: portfolio.usdBrlRate.toFixed(4) } : {}),
+    });
+
+    // ── Guard: minimum portfolio size ──────────────────────────────────────────
+    if (portfolio.totalValueBrl < this.config.minPortfolioValueBrl) {
+      logger.warn('Portfolio below minimum size, skipping', {
+        totalValueBrl: portfolio.totalValueBrl.toFixed(2),
+        minPortfolioValueBrl: this.config.minPortfolioValueBrl,
+      });
+      await this.persistSnapshot(portfolio, false, effectiveThresholdBps);
+      return;
+    }
+
+    // ── Guard: drift threshold (precise, with actual balances) ─────────────────
     if (!shouldRebalance(portfolio.solRatioBps, effectiveThresholdBps)) {
       logger.info('No rebalance needed', {
         deviationBps: portfolio.deviationBps,
@@ -124,30 +215,13 @@ export class RebalancerBot {
       return;
     }
 
-    // ── Guard 3: cooldown interval ──────────────────────────────────────────────
-    const now = Date.now();
-    const secondsSinceLast = (now - this.lastRebalanceTime) / 1000;
-    if (secondsSinceLast < this.config.minRebalanceIntervalSeconds) {
-      logger.info('Rebalance cooldown active', {
-        secondsSinceLast: secondsSinceLast.toFixed(0),
-        minRebalanceIntervalSeconds: this.config.minRebalanceIntervalSeconds,
-      });
-      await this.persistSnapshot(portfolio, false, effectiveThresholdBps);
-      return;
-    }
-
-    // ── Compute trade (needed before day-trade guard) ───────────────────────────
+    // ── Compute trade direction and amount ─────────────────────────────────────
     let { direction, brlAmount } = computeRebalanceTrade(
       portfolio.solValueBrl,
       portfolio.brlBalance,
     );
 
-    // ── Guard 4: day-trade guard ────────────────────────────────────────────────
-    // Blocks opposite-direction trades on the same BRT calendar day to avoid
-    // wash-trade tax complications. Same-direction and different-day trades pass.
-    const todayBRT = new Date().toLocaleDateString('en-CA', {
-      timeZone: 'America/Sao_Paulo',
-    });
+    // ── Guard: day-trade guard ─────────────────────────────────────────────────
     const isOpposite =
       this.lastRebalanceDirection !== null && this.lastRebalanceDirection !== direction;
     if (this.lastRebalanceDateBRT === todayBRT && isOpposite) {
@@ -160,15 +234,15 @@ export class RebalancerBot {
       return;
     }
 
-    // ── Guard 5: exemption / volume cap ────────────────────────────────────────
+    // ── Guard: exemption / volume cap ─────────────────────────────────────────
     if (this.config.neverExceedExemptionLimit) {
       const monthBRT = todayBRT.slice(0, 7);
 
-      // Mercado Bitcoin (domestic): only SELL proceeds count toward the R$35k limit.
-      // Coinbase (foreign): both directions tracked for the discretionary volume cap.
+      // MB (domestic): only SELL proceeds count toward the R$35k limit.
+      // Coinbase (foreign): both directions tracked for the discretionary cap.
       const volumeSoFar =
         this.config.exchange === 'mercadobitcoin' && direction === 'BUY_SOL'
-          ? null  // BUY on MB is never capped
+          ? null
           : this.config.exchange === 'mercadobitcoin'
             ? this.tax.getMonthlySalesBrl(monthBRT)
             : this.tax.getMonthlyVolumeBrl(monthBRT);
@@ -197,7 +271,7 @@ export class RebalancerBot {
       }
     }
 
-    // ── Guard 6: minimum trade size ─────────────────────────────────────────────
+    // ── Guard: minimum trade size ──────────────────────────────────────────────
     if (brlAmount < this.config.minTradeSizeBrl) {
       logger.info('Trade amount below minimum', {
         brlAmount: brlAmount.toFixed(2),
@@ -214,6 +288,8 @@ export class RebalancerBot {
       effectiveThresholdBps,
     });
 
+    // Small delay before placing the order to avoid request bursts
+    await new Promise((r) => setTimeout(r, INTER_REQUEST_DELAY_MS));
     const tradeRecord = await this.adapter.executeTrade(direction, brlAmount, portfolio);
     tradeRecord.tradeDateBRT = todayBRT;
 
@@ -223,10 +299,11 @@ export class RebalancerBot {
       this.lastRebalanceDirection = direction;
 
       if (!this.config.dryRun) {
+        await new Promise((r) => setTimeout(r, INTER_REQUEST_DELAY_MS));
         tradeRecord.portfolioAfter = await this.adapter.getPortfolio();
       }
 
-      // ── Cost basis and tax recording ──────────────────────────────────────────
+      // ── Cost basis and tax recording ────────────────────────────────────────
       if (direction === 'SELL_SOL' && tradeRecord.solAmountFilled != null) {
         const solSold = tradeRecord.solAmountFilled;
         const brlReceived = tradeRecord.brlAmountFilled ?? brlAmount;
@@ -286,7 +363,7 @@ export class RebalancerBot {
   }
 
   private async persistSnapshot(
-    portfolio: Awaited<ReturnType<ExchangeAdapter['getPortfolio']>>,
+    portfolio: Portfolio,
     rebalancedToday: boolean,
     effectiveThresholdBps: number,
   ): Promise<void> {

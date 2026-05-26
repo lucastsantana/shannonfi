@@ -68,8 +68,9 @@ minPortfolioValueBrl: 200
 minTradeSizeBrl: 20
 
 # How often to check for rebalance opportunities (seconds).
-# Minimum 10s; typical values: 300 (5 min) for live markets, 60 for testing.
-pollIntervalSeconds: 300
+# Each cycle costs only 1 API request (price check). 900s = 15 minutes is
+# appropriate for a daily-candle strategy and keeps well within API rate limits.
+pollIntervalSeconds: 900
 
 # Minimum time between two consecutive rebalances (seconds).
 # Prevents thrashing near the threshold.

@@ -2,9 +2,9 @@ name: Shannon's Demon Rebalancer
 
 on:
   schedule:
-    # Every 5 minutes — GitHub Actions minimum cron frequency.
-    # The bot checks drift internally and skips if below threshold or in cooldown.
-    - cron: '*/5 * * * *'
+    # Every 15 minutes — matches pollIntervalSeconds: 900 in config.
+    # Each run costs 1 price request on the happy path (no rebalance needed).
+    - cron: '*/15 * * * *'
   workflow_dispatch:
     inputs:
       dry_run:
@@ -64,7 +64,7 @@ jobs:
           maxSlippageBps: ${{ vars.MAX_SLIPPAGE_BPS || 100 }}
           minPortfolioValueBrl: ${{ vars.MIN_PORTFOLIO_VALUE_BRL || 200 }}
           minTradeSizeBrl: ${{ vars.MIN_TRADE_SIZE_BRL || 20 }}
-          pollIntervalSeconds: 300
+          pollIntervalSeconds: 900
           minRebalanceIntervalSeconds: ${{ vars.MIN_REBALANCE_INTERVAL_SECONDS || 7200 }}
 
           useAdaptiveThreshold: ${{ vars.USE_ADAPTIVE_THRESHOLD || true }}

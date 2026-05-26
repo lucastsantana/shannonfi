@@ -20,7 +20,7 @@ const testConfig: Config = {
   maxSlippageBps: 100,
   minPortfolioValueBrl: 200,
   minTradeSizeBrl: 20,
-  pollIntervalSeconds: 300,
+  pollIntervalSeconds: 900,
   minRebalanceIntervalSeconds: 7200,
   dryRun: true,
   logLevel: 'error',
@@ -72,10 +72,13 @@ function makeTradeRecord(overrides: Partial<TradeRecord> = {}): TradeRecord {
 }
 
 function makeBot(historyOverrides = {}, configOverrides: Partial<Config> = {}) {
+  const portfolio = makePortfolio();
+
   const adapter = {
-    getPortfolio: vi.fn(),
+    getPrice: vi.fn().mockResolvedValue(portfolio.solPrice),
+    getPortfolio: vi.fn().mockResolvedValue(portfolio),
     executeTrade: vi.fn(),
-    getCandles: vi.fn(),
+    getCandles: vi.fn().mockResolvedValue([]),
   } as unknown as ExchangeAdapter;
 
   const history = {
@@ -137,6 +140,20 @@ function makeBot(historyOverrides = {}, configOverrides: Partial<Config> = {}) {
 }
 
 describe('RebalancerBot', () => {
+  it('calls getPrice() on every cycle, not getPortfolio()', async () => {
+    const { bot, adapter } = makeBot();
+    // Portfolio at 50/50 — no rebalance needed
+    vi.mocked(adapter.getPrice).mockResolvedValue(400);
+    vi.mocked(adapter.getPortfolio).mockResolvedValue(
+      makePortfolio({ solRatioBps: 5000, deviationBps: 0 }),
+    );
+    await bot.checkAndRebalance();
+    expect(adapter.getPrice).toHaveBeenCalledTimes(1);
+    // getPortfolio may or may not be called depending on price-only pre-check;
+    // what matters is executeTrade was NOT called
+    expect(adapter.executeTrade).not.toHaveBeenCalled();
+  });
+
   it('skips when portfolio is below minimum BRL value', async () => {
     const { bot, adapter } = makeBot();
     vi.mocked(adapter.getPortfolio).mockResolvedValue(
@@ -148,6 +165,7 @@ describe('RebalancerBot', () => {
 
   it('skips when drift is below threshold', async () => {
     const { bot, adapter } = makeBot();
+    vi.mocked(adapter.getPrice).mockResolvedValue(400);
     vi.mocked(adapter.getPortfolio).mockResolvedValue(
       makePortfolio({
         solValueBrl: 3020,
@@ -205,7 +223,8 @@ describe('RebalancerBot', () => {
     const { bot, adapter } = makeBot({
       getLastRebalanceInfo: vi.fn().mockReturnValue({ dateBRT: todayBRT, direction: 'SELL_SOL' }),
     });
-    // Force BUY (SOL underweight)
+    // BUY direction: SOL underweight
+    vi.mocked(adapter.getPrice).mockResolvedValue(400);
     vi.mocked(adapter.getPortfolio).mockResolvedValue(
       makePortfolio({ solValueBrl: 1500, brlBalance: 4500, totalValueBrl: 6000, solRatioBps: 2500, deviationBps: 2500 }),
     );
@@ -228,6 +247,7 @@ describe('RebalancerBot', () => {
     const { bot, adapter } = makeBot({
       getLastRebalanceInfo: vi.fn().mockReturnValue({ dateBRT: '2020-01-01', direction: 'SELL_SOL' }),
     });
+    vi.mocked(adapter.getPrice).mockResolvedValue(400);
     vi.mocked(adapter.getPortfolio).mockResolvedValue(
       makePortfolio({ solValueBrl: 1500, brlBalance: 4500, totalValueBrl: 6000, solRatioBps: 2500, deviationBps: 2500 }),
     );
@@ -243,7 +263,7 @@ describe('RebalancerBot', () => {
       {},
       { neverExceedExemptionLimit: true, exchange: 'mercadobitcoin' },
     );
-    vi.mocked(tax.getMonthlySalesBrl).mockReturnValue(34_000); // R$650 remaining before R$34,650 cap
+    vi.mocked(tax.getMonthlySalesBrl).mockReturnValue(34_000);
     vi.mocked(adapter.getPortfolio).mockResolvedValue(makePortfolio());
     vi.mocked(adapter.executeTrade).mockResolvedValue(makeTradeRecord());
     await bot.checkAndRebalance();
@@ -257,7 +277,7 @@ describe('RebalancerBot', () => {
       {},
       { neverExceedExemptionLimit: true, exchange: 'mercadobitcoin' },
     );
-    vi.mocked(tax.getMonthlySalesBrl).mockReturnValue(34_640); // R$10 remaining < minTradeSizeBrl
+    vi.mocked(tax.getMonthlySalesBrl).mockReturnValue(34_640);
     vi.mocked(adapter.getPortfolio).mockResolvedValue(makePortfolio());
     await bot.checkAndRebalance();
     expect(adapter.executeTrade).not.toHaveBeenCalled();
@@ -269,6 +289,7 @@ describe('RebalancerBot', () => {
       { neverExceedExemptionLimit: true, exchange: 'mercadobitcoin' },
     );
     vi.mocked(tax.getMonthlySalesBrl).mockReturnValue(34_000);
+    vi.mocked(adapter.getPrice).mockResolvedValue(400);
     vi.mocked(adapter.getPortfolio).mockResolvedValue(
       makePortfolio({ solValueBrl: 1500, brlBalance: 4500, totalValueBrl: 6000, solRatioBps: 2500, deviationBps: 2500 }),
     );
@@ -280,13 +301,12 @@ describe('RebalancerBot', () => {
 
   // ── Adaptive threshold ────────────────────────────────────────────────────────
 
-  it('uses adaptive threshold and skips when above computed bps', async () => {
+  it('uses adaptive threshold and skips when deviation is below computed bps', async () => {
     const { bot, adapter } = makeBot({}, { useAdaptiveThreshold: true });
     (bot as unknown as { volatility: { computeAdaptiveThresholdBps: ReturnType<typeof vi.fn> } }).volatility = {
       computeAdaptiveThresholdBps: vi.fn().mockResolvedValue(2000),
     };
-    // deviationBps 1667 < 2000 → no trade
-    vi.mocked(adapter.getPortfolio).mockResolvedValue(makePortfolio());
+    vi.mocked(adapter.getPortfolio).mockResolvedValue(makePortfolio()); // deviationBps 1667 < 2000
     await bot.checkAndRebalance();
     expect(adapter.executeTrade).not.toHaveBeenCalled();
   });

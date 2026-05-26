@@ -21,9 +21,13 @@ export const MB_TOKEN_REFRESH_BUFFER_MS = 60_000;
 export const DEFAULT_REBALANCE_THRESHOLD_BPS = 100;  // 1%
 export const MAX_SLIPPAGE_BPS = 100;
 
-// Fill polling — conservative values that work for both exchanges
+// Fill polling — Coinbase (market orders may take a few seconds)
 export const FILL_POLL_INTERVAL_MS = 2_000;
 export const FILL_POLL_MAX_ATTEMPTS = 30;            // 60s total
+
+// Fill polling — Mercado Bitcoin (SOL-BRL market orders fill near-instantly)
+export const MB_FILL_POLL_INTERVAL_MS = 3_000;
+export const MB_FILL_POLL_MAX_ATTEMPTS = 10;         // 30s total
 
 // ─── Volatility-adaptive threshold ───────────────────────────────────────────
 export const DEFAULT_VOLATILITY_MULTIPLIER = 1.5;

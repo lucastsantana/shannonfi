@@ -12,11 +12,21 @@ export type CandleResolution = '1m' | '15m' | '1h' | '1d';
 
 export interface ExchangeAdapter {
   /**
-   * Returns current portfolio state in BRL.
-   * Coinbase adapter: fetches USD accounts + price, converts via live FX rate.
-   * Mercado Bitcoin adapter: returns SOL-BRL values natively.
+   * Returns the current SOL price in BRL. Cheap single-endpoint call used
+   * every poll cycle to check drift before fetching balances.
+   * Coinbase adapter: mid of best bid/ask × live FX rate.
+   * Mercado Bitcoin adapter: latest daily candle close (public endpoint, no auth).
    */
-  getPortfolio(): Promise<Portfolio>;
+  getPrice(): Promise<number>;
+
+  /**
+   * Returns current portfolio state in BRL.
+   * If knownPrice is supplied the adapter skips its price fetch and uses it directly,
+   * avoiding a redundant API call when the engine already has a fresh price.
+   * Coinbase adapter: fetches USD accounts, converts via live FX rate.
+   * Mercado Bitcoin adapter: fetches BRL balances natively.
+   */
+  getPortfolio(knownPrice?: number): Promise<Portfolio>;
 
   /**
    * Executes a market order. brlAmount is always BRL-denominated.
@@ -33,7 +43,7 @@ export interface ExchangeAdapter {
    * Returns close prices in BRL for the last `countback` candles.
    * Coinbase adapter: fetches SOL-USD closes and multiplies by live FX rate.
    * Mercado Bitcoin adapter: returns SOL-BRL closes directly.
-   * Used by VolatilityService.
+   * Used by VolatilityService (cached — only called once per calendar day).
    */
   getCandles(countback: number, resolution: CandleResolution): Promise<number[]>;
 }
