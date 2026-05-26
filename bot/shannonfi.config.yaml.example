@@ -60,7 +60,7 @@ rebalanceThresholdBps: 100        # 1.0% (default)
 maxSlippageBps: 100               # 1.0% (default)
 
 # Skip rebalancing if total portfolio value is below this threshold (BRL).
-# Prevents micro-trades that would be eaten by fees.
+# Minimum allowed: 10. Recommended: at least 2× minTradeSizeBrl.
 minPortfolioValueBrl: 200
 
 # Skip a trade if the computed rebalance amount is below this value (BRL).

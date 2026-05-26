@@ -205,13 +205,22 @@ export class MercadoBitcoinAdapter implements ExchangeAdapter {
 
     for (let attempt = 0; attempt < MB_FILL_POLL_MAX_ATTEMPTS; attempt++) {
       await new Promise((r) => setTimeout(r, MB_FILL_POLL_INTERVAL_MS));
-      const order = await this.endpoints.getOrder(accountId, orderId);
-      if (terminal.includes(order.status)) return order;
-      logger.debug('Polling Mercado Bitcoin order fill', {
-        orderId,
-        status: order.status,
-        attempt: attempt + 1,
-      });
+      try {
+        const order = await this.endpoints.getOrder(accountId, orderId);
+        if (terminal.includes(order.status)) return order;
+        logger.debug('Polling Mercado Bitcoin order fill', {
+          orderId,
+          status: order.status,
+          attempt: attempt + 1,
+        });
+      } catch (err) {
+        logger.warn('Error polling order status, will retry', {
+          orderId,
+          attempt: attempt + 1,
+          error: (err as Error).message,
+        });
+        if (attempt === MB_FILL_POLL_MAX_ATTEMPTS - 1) throw err;
+      }
     }
     return this.endpoints.getOrder(accountId, orderId);
   }

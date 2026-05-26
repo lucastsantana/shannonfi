@@ -53,11 +53,18 @@ export class MbClient {
 
   async get<T>(path: string, params?: Record<string, string | number>): Promise<T> {
     const token = await this.ensureToken();
-    const resp = await this.http.get<T>(path, {
-      params,
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    return resp.data;
+    try {
+      const resp = await this.http.get<T>(path, {
+        params,
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      return resp.data;
+    } catch (err) {
+      const status = (err as any).response?.status;
+      const data = (err as any).response?.data;
+      logger.error('HTTP GET error', { path, status, data });
+      throw err;
+    }
   }
 
   async getPublic<T>(path: string, params?: Record<string, string | number>): Promise<T> {
@@ -67,12 +74,19 @@ export class MbClient {
 
   async post<TReq, TRes>(path: string, body: TReq): Promise<TRes> {
     const token = await this.ensureToken();
-    const resp = await this.http.post<TRes>(path, body, {
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json',
-      },
-    });
-    return resp.data;
+    try {
+      const resp = await this.http.post<TRes>(path, body, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+      return resp.data;
+    } catch (err) {
+      const status = (err as any).response?.status;
+      const data = (err as any).response?.data;
+      logger.error('HTTP POST error', { path, status, data });
+      throw err;
+    }
   }
 }

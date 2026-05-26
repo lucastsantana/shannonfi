@@ -36,8 +36,8 @@ const ConfigSchema = z.object({
   // ─── Strategy ───────────────────────────────────────────────────────────────
   rebalanceThresholdBps: z.number().int().min(10).max(2000).default(DEFAULT_REBALANCE_THRESHOLD_BPS),
   maxSlippageBps: z.number().int().min(10).max(500).default(MAX_SLIPPAGE_BPS),
-  minPortfolioValueBrl: z.number().positive().default(200),
-  minTradeSizeBrl: z.number().positive().default(20),
+  minPortfolioValueBrl: z.number().min(10).default(200),
+  minTradeSizeBrl: z.number().min(1).default(20),
   pollIntervalSeconds: z.number().int().min(60).max(3600).default(900),
   minRebalanceIntervalSeconds: z.number().int().min(60).default(7200),
 
