@@ -3,15 +3,6 @@
 export const BPS_DENOMINATOR = 10_000;
 export const TARGET_ALLOCATION_BPS = 5_000;   // 50%
 
-// ─── Coinbase ─────────────────────────────────────────────────────────────────
-export const COINBASE_PRODUCT_ID = 'SOL-USD';
-export const COINBASE_API_BASE = 'https://api.coinbase.com';
-export const COINBASE_BROKERAGE_PATH = '/api/v3/brokerage';
-export const COINBASE_JWT_TTL_SECONDS = 120;
-export const COINBASE_PRIVATE_RATE_LIMIT_RPS = 10;
-export const COINBASE_BACKTEST_GRANULARITY = 'ONE_DAY' as const;
-export const COINBASE_BACKTEST_MAX_CANDLES = 300;
-
 // ─── Mercado Bitcoin ──────────────────────────────────────────────────────────
 export const MB_SYMBOL = 'SOL-BRL';
 export const MB_API_BASE = 'https://api.mercadobitcoin.net/api/v4';
@@ -20,10 +11,6 @@ export const MB_TOKEN_REFRESH_BUFFER_MS = 60_000;
 // ─── Shared trading ───────────────────────────────────────────────────────────
 export const DEFAULT_REBALANCE_THRESHOLD_BPS = 100;  // 1%
 export const MAX_SLIPPAGE_BPS = 100;
-
-// Fill polling — Coinbase (market orders may take a few seconds)
-export const FILL_POLL_INTERVAL_MS = 2_000;
-export const FILL_POLL_MAX_ATTEMPTS = 30;            // 60s total
 
 // Fill polling — Mercado Bitcoin (SOL-BRL market orders fill near-instantly)
 export const MB_FILL_POLL_INTERVAL_MS = 3_000;

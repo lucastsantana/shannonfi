@@ -9,7 +9,6 @@
  */
 
 import { loadConfig } from './config';
-import { CoinbaseAdapter } from './adapters/coinbase/adapter';
 import { MercadoBitcoinAdapter } from './adapters/mercadobitcoin/adapter';
 import { ExchangeAdapter } from './adapters/types';
 import { RebalancerBot } from './core/rebalancer';
@@ -32,20 +31,12 @@ async function main(): Promise<void> {
   logger.level = config.logLevel;
 
   // ── Build adapter ──────────────────────────────────────────────────────────
-  let adapter: ExchangeAdapter;
-  if (config.exchange === 'coinbase') {
-    if (!config.coinbase) throw new Error('Coinbase credentials missing in config');
-    adapter = new CoinbaseAdapter(config.coinbase, config.dryRun, config.maxSlippageBps);
-    logger.info('Using Coinbase Advanced Trade adapter (SOL-USD, Lei 14.754/2023)');
-  } else {
-    if (!config.mercadobitcoin) throw new Error('Mercado Bitcoin credentials missing in config');
-    adapter = new MercadoBitcoinAdapter(
-      config.mercadobitcoin,
-      config.dryRun,
-      config.maxSlippageBps,
-    );
-    logger.info('Using Mercado Bitcoin adapter (SOL-BRL, Lei 9.250/1995)');
-  }
+  const adapter: ExchangeAdapter = new MercadoBitcoinAdapter(
+    config.mercadobitcoin,
+    config.dryRun,
+    config.maxSlippageBps,
+  );
+  logger.info('Using Mercado Bitcoin adapter (SOL-BRL, Lei 9.250/1995)');
 
   // ── Build services ─────────────────────────────────────────────────────────
   const history = new TradeHistoryService(

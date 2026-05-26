@@ -8,19 +8,20 @@ This repository provides **two independent implementations** — choose the one 
 
 | | On-Chain Vault | CEX Bot |
 |---|---|---|
-| **Custody** | Self-custodial (Solana PDA) | Coinbase account |
-| **Trading pair** | SOL/USDC | SOL/USD |
-| **Price feed** | Pyth Pull Oracle | Coinbase best bid/ask |
-| **Execution** | Jupiter v6 CPI (on-chain swap) | Coinbase market order (REST API) |
+| **Custody** | Self-custodial (Solana PDA) | Mercado Bitcoin account |
+| **Trading pair** | SOL/USDC | SOL/BRL |
+| **Price feed** | Pyth Pull Oracle | Mercado Bitcoin public API |
+| **Execution** | Jupiter v6 CPI (on-chain swap) | Mercado Bitcoin market order (REST API) |
 | **Deployment cost** | ~$263 (1.75 SOL, one-time) | Free |
-| **Per-tx fees** | ~0.0002–0.0005 SOL | Coinbase taker fee (~0.4%) |
+| **Per-tx fees** | ~0.0002–0.0005 SOL | MB taker fee (~0.3%) |
 | **Keeper fee** | 0.1% vault AUM per rebalance | None |
 | **Tokenized shares** | Yes — 6-decimal SPL token | No (single-user bot) |
 | **Rebalance trigger** | Keeper wallet + slot interval (~2 days) | Cron job + cooldown timer |
+| **Tax compliance** | Manual tracking | Automatic (Lei 9.250/1995 Art. 21) |
 | **Status** | Core complete, integration pending | Complete, production-ready |
-| **Start here** | Continue reading ↓ | **[cex/README.md](./cex/README.md)** |
+| **Start here** | Continue reading ↓ | **[bot/README.md](./bot/README.md)** |
 
-**→ If you want the Coinbase bot:** go to **[cex/README.md](./cex/README.md)** — it is self-contained and requires no Solana toolchain.
+**→ If you want the Mercado Bitcoin bot:** go to **[bot/README.md](./bot/README.md)** — it is self-contained and requires no Solana toolchain.
 
 **→ If you want the on-chain Solana vault:** continue reading below.
 
@@ -330,26 +331,29 @@ Longer rebalance windows reduce costs and MEV surface. 2 days is a good balance:
 
 ---
 
-## Option B: CEX Bot (Coinbase)
+## Option B: CEX Bot (Mercado Bitcoin)
 
-A fully operational alternative that runs the same strategy against a Coinbase Advanced Trade account — no smart contract deployment, no Solana toolchain, no blockchain fees.
+A fully operational rebalancer for your Mercado Bitcoin account running the Shannon's Demon strategy on SOL/BRL — no smart contract deployment, no Solana toolchain, no blockchain fees.
 
 **Key facts:**
-- Funds stay in your Coinbase account (no on-chain custody)
-- Trades SOL/USD via Coinbase REST API (market orders)
-- Cooldown state persists across restarts via trade history file
-- 48 unit tests, TypeScript, dry-run mode, GitHub Actions support
-- Coinbase taker fees (~0.4%) apply per rebalance
+- Funds stay in your Mercado Bitcoin account (no on-chain custody)
+- Trades SOL/BRL natively via Mercado Bitcoin REST API (market orders)
+- Automatic Brazilian tax compliance tracking (Lei 9.250/1995 Art. 21)
+- Cooldown and trade history persists across restarts via local JSON files
+- 5+ unit tests, TypeScript, dry-run mode, PM2 for continuous operation
+- Mercado Bitcoin taker fees (~0.3%) apply per rebalance
+- Volatility-adaptive rebalance threshold for regime-responsive timing
 
-**Full documentation, setup guide, and architecture:** **[cex/README.md](./cex/README.md)**
+**Full documentation, setup guide, and configuration reference:** **[bot/README.md](./bot/README.md)**
 
 **Quick start:**
 ```bash
-cd cex
-cp .env.example .env    # add Coinbase CDP API key
+cd bot
+cp shannonfi.config.yaml.example shannonfi.config.yaml
 npm install && npm run build
-npm run setup-check     # validate keys and accounts
+npm run setup-check     # validate credentials and account
 DRY_RUN=true node dist/index.js --once   # test without real orders
+bash start.sh           # run continuously with credentials from keyring
 ```
 
 ---

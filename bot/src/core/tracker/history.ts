@@ -83,5 +83,5 @@ export class TradeHistoryService {
 
 /** Accept both uppercase (new) and lowercase (legacy MB on-disk) status strings. */
 function isSuccessful(t: TradeRecord): boolean {
-  return t.status === 'FILLED' || t.status === 'filled' || t.status === 'DRY_RUN';
+  return t.status === 'FILLED' || t.status === 'DRY_RUN';
 }

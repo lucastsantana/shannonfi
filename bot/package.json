@@ -1,7 +1,7 @@
 {
   "name": "@shannonfi/bot",
   "version": "1.0.0",
-  "description": "Shannon's Demon rebalancing bot — unified adapter for Coinbase and Mercado Bitcoin",
+  "description": "Shannon's Demon rebalancing bot for Mercado Bitcoin (SOL-BRL)",
   "private": true,
   "main": "dist/index.js",
   "scripts": {
@@ -11,7 +11,6 @@
     "dev": "ts-node src/index.ts",
     "dev:once": "ts-node src/index.ts --once",
     "dev:report": "ts-node src/index.ts --report",
-    "backtest": "ts-node src/scripts/backtest.ts",
     "setup-check": "ts-node src/scripts/setup-check.ts",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -21,16 +20,13 @@
   "dependencies": {
     "axios": "1.7.2",
     "axios-retry": "4.4.1",
-    "bottleneck": "^2.19.5",
     "js-yaml": "4.1.0",
-    "jsonwebtoken": "9.0.2",
     "uuid": "9.0.1",
     "winston": "3.13.0",
     "zod": "3.23.8"
   },
   "devDependencies": {
     "@types/js-yaml": "4.0.9",
-    "@types/jsonwebtoken": "9.0.6",
     "@types/node": "20.14.2",
     "@types/uuid": "9.0.8",
     "@vitest/coverage-v8": "1.6.0",

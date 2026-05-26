@@ -123,21 +123,4 @@ describe('TaxService', () => {
     expect(dow).not.toBe(0); // not Sunday
     expect(dow).not.toBe(6); // not Saturday
   });
-
-  it('getMonthlyVolumeBrl counts both directions', () => {
-    svc.appendTaxEvent(sellEvent({ tradedVolumeBrl: 10_000, tradeId: 't1' }));
-    svc.appendTaxEvent(
-      svc.buildTaxEvent({
-        tradeId: 't2',
-        tradeDateBRT: '2026-04-20',
-        direction: 'BUY_SOL',
-        tradedVolumeBrl: 5_000, // Coinbase: buys count toward volume cap
-        grossProceedsBrl: 0,
-        costBasisBrl: 0,
-        realizedGainBrl: 0,
-        exchange: 'coinbase',
-      }),
-    );
-    expect(svc.getMonthlyVolumeBrl('2026-04')).toBeCloseTo(15_000, 2);
-  });
 });

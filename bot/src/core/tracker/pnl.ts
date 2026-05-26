@@ -28,7 +28,7 @@ export class PnlService {
   printReport(): void {
     const trades = this.history.readTrades();
     const filled = trades.filter(
-      (t) => t.status === 'FILLED' || t.status === 'filled',
+      (t) => t.status === 'FILLED',
     );
     const dryRuns = trades.filter((t) => t.status === 'DRY_RUN');
 

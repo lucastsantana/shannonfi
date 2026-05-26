@@ -13,18 +13,16 @@ export interface TaxEvent {
   costBasisBrl: number;           // cost basis in BRL (SELL only; 0 for BUY)
   realizedGainBrl: number;        // proceeds - costBasis (SELL only; 0 for BUY)
   // Cumulative monthly totals used for exemption tracking
-  cumMonthlySalesBrl: number;     // running SELL proceeds this month (domestic exemption basis)
-  cumMonthlyVolumeBrl: number;    // running total both directions (Coinbase volume-cap basis)
+  cumMonthlySalesBrl: number;     // running SELL proceeds this month (exemption basis)
   cumMonthlyGainBrl: number;      // running SELL gains this month
   exempt: boolean;                // true if cumMonthlySalesBrl <= R$35,000
   paymentDeadline: string | null; // last BR business day of following month, or null if exempt
-  exchange: 'coinbase' | 'mercadobitcoin';
+  exchange: 'mercadobitcoin';
 }
 
 export interface MonthlySummary {
   monthBRT: string;
   totalSalesBrl: number;
-  totalVolumeBrl: number;         // both directions (for Coinbase volume cap tracking)
   totalRealizedGainBrl: number;
   tradeCount: number;
   exempt: boolean;
@@ -34,14 +32,9 @@ export interface MonthlySummary {
 /**
  * Append-only ledger of all rebalance trades for Brazilian tax reporting.
  *
- * Domestic exchange (Mercado Bitcoin):
+ * Mercado Bitcoin (domestic exchange):
  *   Only SELL_SOL gross proceeds count toward the R$35,000 monthly exemption
  *   (Lei 9.250/1995 Art. 21). BUY_SOL does not count.
- *
- * Foreign exchange (Coinbase):
- *   Lei 14.754/2023 applies — flat 15% annual rate, no monthly exemption.
- *   cumMonthlyVolumeBrl (both directions) is tracked for the discretionary
- *   volume cap when neverExceedExemptionLimit=true.
  */
 export class TaxService {
   private filePath: string;
@@ -84,12 +77,6 @@ export class TaxService {
   }
 
   /** Total BRL traded volume both directions (Coinbase volume-cap tracking). */
-  getMonthlyVolumeBrl(monthBRT: string): number {
-    return this.readEvents()
-      .filter((e) => e.monthBRT === monthBRT)
-      .reduce((s, e) => s + e.tradedVolumeBrl, 0);
-  }
-
   getMonthlyGainBrl(monthBRT: string): number {
     return this.readEvents()
       .filter((e) => e.monthBRT === monthBRT && e.direction === 'SELL_SOL')
@@ -100,13 +87,11 @@ export class TaxService {
     const events = this.readEvents().filter((e) => e.monthBRT === monthBRT);
     const sells = events.filter((e) => e.direction === 'SELL_SOL');
     const totalSales = sells.reduce((s, e) => s + e.tradedVolumeBrl, 0);
-    const totalVolume = events.reduce((s, e) => s + e.tradedVolumeBrl, 0);
     const totalGain = sells.reduce((s, e) => s + e.realizedGainBrl, 0);
     const exempt = totalSales <= BR_MONTHLY_EXEMPTION_LIMIT_BRL;
     return {
       monthBRT,
       totalSalesBrl: totalSales,
-      totalVolumeBrl: totalVolume,
       totalRealizedGainBrl: totalGain,
       tradeCount: events.length,
       exempt,
@@ -137,16 +122,14 @@ export class TaxService {
     grossProceedsBrl: number;
     costBasisBrl: number;
     realizedGainBrl: number;
-    exchange: 'coinbase' | 'mercadobitcoin';
+    exchange: 'mercadobitcoin';
   }): TaxEvent {
     const monthBRT = params.tradeDateBRT.slice(0, 7);
     const priorSales = this.getMonthlySalesBrl(monthBRT);
-    const priorVolume = this.getMonthlyVolumeBrl(monthBRT);
     const priorGain = this.getMonthlyGainBrl(monthBRT);
 
     const cumMonthlySalesBrl =
       params.direction === 'SELL_SOL' ? priorSales + params.tradedVolumeBrl : priorSales;
-    const cumMonthlyVolumeBrl = priorVolume + params.tradedVolumeBrl;
     const cumMonthlyGainBrl = priorGain + params.realizedGainBrl;
     const exempt = cumMonthlySalesBrl <= BR_MONTHLY_EXEMPTION_LIMIT_BRL;
 
@@ -160,7 +143,6 @@ export class TaxService {
       costBasisBrl: params.costBasisBrl,
       realizedGainBrl: params.realizedGainBrl,
       cumMonthlySalesBrl,
-      cumMonthlyVolumeBrl,
       cumMonthlyGainBrl,
       exempt,
       paymentDeadline: exempt ? null : this.computePaymentDeadline(monthBRT),

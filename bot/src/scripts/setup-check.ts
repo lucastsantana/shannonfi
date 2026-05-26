@@ -4,75 +4,16 @@
  * Usage:
  *   npm run setup-check
  *
- * Validates config, tests exchange connectivity, and reports balances.
+ * Validates config, tests Mercado Bitcoin connectivity, and reports balances.
  * Requires a valid shannonfi.config.yaml in the bot/ directory.
  */
 
 import { loadConfig } from '../config';
-import { CoinbaseClient } from '../adapters/coinbase/client';
-import { CoinbaseEndpoints } from '../adapters/coinbase/endpoints';
-import { fetchUsdBrlRate } from '../adapters/coinbase/fx';
 import { MbClient } from '../adapters/mercadobitcoin/client';
 import { MbEndpoints } from '../adapters/mercadobitcoin/endpoints';
 
-async function checkCoinbase(): Promise<void> {
-  const config = loadConfig();
-  if (!config.coinbase) throw new Error('coinbase credentials missing in config');
-  const { coinbase: cb } = config;
-
-  const client = new CoinbaseClient(
-    { apiKeyName: cb.apiKeyName, privateKey: cb.privateKey ?? '' },
-    cb.apiBaseUrl,
-  );
-  const endpoints = new CoinbaseEndpoints(client);
-
-  console.log('\n2. Testing Coinbase API authentication and accounts...');
-  const accounts = await endpoints.listAccounts();
-  console.log(`   OK — Authenticated. Found ${accounts.accounts.length} accounts`);
-
-  const solAccount = accounts.accounts.find((a) => a.currency === 'SOL' && a.active);
-  const usdAccount = accounts.accounts.find((a) => a.currency === 'USD' && a.active);
-
-  if (!solAccount) { console.error('   FAIL — No active SOL account found'); process.exit(1); }
-  if (!usdAccount) { console.error('   FAIL — No active USD account found'); process.exit(1); }
-
-  const usdBalance = parseFloat(usdAccount.available_balance.value);
-  const solBalance = parseFloat(solAccount.available_balance.value);
-  console.log(`   SOL balance: ${solBalance.toFixed(6)} SOL`);
-  console.log(`   USD balance: $${usdBalance.toFixed(2)}`);
-
-  console.log('\n3. Fetching USD/BRL rate...');
-  const rate = await fetchUsdBrlRate(cb.fxApiUrl);
-  if (!rate) { console.error('   FAIL — Cannot fetch USD/BRL rate'); process.exit(1); }
-  console.log(`   OK — USD/BRL: ${rate.toFixed(4)}`);
-
-  const totalBrl = (usdBalance + solBalance * 0) * rate; // approx
-  if (totalBrl < config.minPortfolioValueBrl) {
-    console.warn(`   WARN — Portfolio may be below minPortfolioValueBrl (R$${config.minPortfolioValueBrl})`);
-  }
-
-  console.log('\n4. Checking SOL-USD market...');
-  const bbAsk = await endpoints.getBestBidAsk();
-  const pricebook = bbAsk.pricebooks[0];
-  if (!pricebook || pricebook.bids.length === 0) {
-    console.error('   FAIL — SOL-USD pricebook empty'); process.exit(1);
-  }
-  const bid = parseFloat(pricebook.bids[0]!.price);
-  const ask = parseFloat(pricebook.asks[0]!.price);
-  const mid = (bid + ask) / 2;
-  const spreadBps = ((ask - bid) / mid) * 10_000;
-  console.log(`   OK — SOL/USD mid: $${mid.toFixed(4)}  (SOL/BRL: R$${(mid * rate).toFixed(2)})  spread: ${spreadBps.toFixed(1)} bps`);
-
-  console.log('\n5. Checking historical candles access...');
-  const end = Math.floor(Date.now() / 1000);
-  const start = end - 7 * 86_400;
-  const candles = await endpoints.getCandles(start, end, 'ONE_DAY');
-  console.log(`   OK — ${candles.candles.length} daily candles available for the past 7 days`);
-}
-
 async function checkMercadoBitcoin(): Promise<void> {
   const config = loadConfig();
-  if (!config.mercadobitcoin) throw new Error('mercadobitcoin credentials missing in config');
   const { mercadobitcoin: mb } = config;
 
   const client = new MbClient(mb.clientId, mb.clientSecret, mb.apiBaseUrl);
@@ -117,11 +58,7 @@ async function runSetupCheck(): Promise<void> {
   console.log(`   Adaptive:   ${config.useAdaptiveThreshold}`);
   console.log(`   Log Level:  ${config.logLevel}`);
 
-  if (config.exchange === 'coinbase') {
-    await checkCoinbase();
-  } else {
-    await checkMercadoBitcoin();
-  }
+  await checkMercadoBitcoin();
 
   console.log('\n✓ All checks passed. The bot is ready to run.');
   console.log('\nDry-run single cycle:');

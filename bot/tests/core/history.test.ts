@@ -78,11 +78,6 @@ describe('TradeHistoryService', () => {
     expect(svc.getRebalanceCount()).toBe(2);
   });
 
-  it('also accepts legacy lowercase "filled" status', async () => {
-    await svc.appendTrade(makeTrade({ status: 'filled' as 'FILLED' }));
-    expect(svc.getRebalanceCount()).toBe(1);
-  });
-
   it('getLastRebalanceTime returns 0 for empty history', () => {
     expect(svc.getLastRebalanceTime()).toBe(0);
   });

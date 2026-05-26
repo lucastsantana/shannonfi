@@ -3,19 +3,13 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # SETUP:
 #   1. Copy this file:  cp shannonfi.config.yaml.example shannonfi.config.yaml
-#   2. Fill in your exchange credentials (one of coinbase or mercadobitcoin).
-#   3. Set exchange: to the one you want to use.
-#   4. Review the strategy parameters and tax compliance options.
-#   5. NEVER commit shannonfi.config.yaml — it contains secrets.
+#   2. Fill in your Mercado Bitcoin API credentials.
+#   3. Review the strategy parameters and tax compliance options.
+#   4. NEVER commit shannonfi.config.yaml — it contains secrets.
 #
 # SECURITY: shannonfi.config.yaml is in .gitignore by default.
 #           Keep it out of version control and CI logs.
 # ─────────────────────────────────────────────────────────────────────────────
-
-# ── Exchange selection ─────────────────────────────────────────────────────────
-# Choose which exchange to use: "coinbase" or "mercadobitcoin"
-exchange: mercadobitcoin
-
 
 # ── Mercado Bitcoin credentials ────────────────────────────────────────────────
 # Obtain from: https://www.mercadobitcoin.com.br → Account → API → Create credential
@@ -23,30 +17,12 @@ exchange: mercadobitcoin
 # Tax law: Lei 9.250/1995 Art. 21 (domestic exchange)
 #   - Monthly SELL proceeds ≤ R$35,000: exempt from capital gains tax
 #   - Above threshold: DARF payment by last business day of the following month
+exchange: mercadobitcoin
+
 mercadobitcoin:
   clientId: "your-client-id-here"
   clientSecret: "your-client-secret-here"
   # apiBaseUrl: https://api.mercadobitcoin.net/api/v4   # default — do not change
-
-
-# ── Coinbase Advanced Trade credentials ───────────────────────────────────────
-# Obtain from: https://www.coinbase.com/settings/api → Create API key
-# Required permissions: View (portfolio), Trade (orders)
-# Tax law: Lei 14.754/2023 (foreign exchange — flat 15% annual, no monthly exemption)
-#
-# Option A — key file on disk (recommended):
-#   Download the .pem file from Coinbase and reference it here.
-# Option B — inline private key:
-#   Paste the EC private key block directly (use \n for newlines in a single-line string).
-coinbase:
-  apiKeyName: "organizations/YOUR-ORG-ID/apiKeys/YOUR-KEY-ID"
-  pemFile: "./coinbase_key.pem"             # path relative to this config file
-  # privateKey: |                           # alternative: inline PEM key
-  #   -----BEGIN EC PRIVATE KEY-----
-  #   MHQCAQEEIxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-  #   -----END EC PRIVATE KEY-----
-  # apiBaseUrl: https://api.coinbase.com    # default — do not change
-  # fxApiUrl: https://api.frankfurter.app/latest?from=USD&to=BRL  # default
 
 
 # ── Strategy parameters ────────────────────────────────────────────────────────
@@ -96,14 +72,10 @@ volatilityWindowDays: 30
 
 # ── Tax compliance ─────────────────────────────────────────────────────────────
 
-# Mercado Bitcoin (domestic, Lei 9.250/1995):
+# Lei 9.250/1995 Art. 21 (domestic exchange):
 #   When true, SELL_SOL trades are capped so monthly gross SELL proceeds stay
 #   ≤ R$34,650 (R$35,000 minus a 1% safety buffer). BUY trades are never capped.
 #   If the remaining allowance is below minTradeSizeBrl, the SELL trade is skipped.
-#
-# Coinbase (foreign, Lei 14.754/2023):
-#   When true, total monthly traded volume (both directions) is capped at R$34,650.
-#   This is a discretionary strategy constraint, not a tax exemption guard.
 #
 # Default: false (tracking only — no trade capping).
 neverExceedExemptionLimit: false

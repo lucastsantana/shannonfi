@@ -129,7 +129,7 @@ export class RebalancerBot {
     // This is intentionally an approximation: the true ratio requires balances.
     // Its only purpose is to save the balance fetch on most cycles.
     const lastTrade = this.history.readTrades().filter(
-      (t) => t.status === 'FILLED' || t.status === 'filled' || t.status === 'DRY_RUN',
+      (t) => t.status === 'FILLED' || t.status === 'DRY_RUN',
     ).sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()).pop();
 
     if (lastTrade?.portfolioAfter) {
@@ -192,7 +192,6 @@ export class RebalancerBot {
       totalValueBrl: portfolio.totalValueBrl.toFixed(2),
       solRatio: (portfolio.solRatioBps / 100).toFixed(2) + '%',
       deviationBps: portfolio.deviationBps,
-      ...(portfolio.usdBrlRate != null ? { usdBrlRate: portfolio.usdBrlRate.toFixed(4) } : {}),
     });
 
     // ── Guard: minimum portfolio size ──────────────────────────────────────────
@@ -235,19 +234,12 @@ export class RebalancerBot {
     }
 
     // ── Guard: exemption / volume cap ─────────────────────────────────────────
-    if (this.config.neverExceedExemptionLimit) {
+    // Lei 9.250/1995 Art. 21: only SELL proceeds count toward the R$35k exemption limit
+    if (this.config.neverExceedExemptionLimit && direction === 'SELL_SOL') {
       const monthBRT = todayBRT.slice(0, 7);
+      const volumeSoFar = this.tax.getMonthlySalesBrl(monthBRT);
 
-      // MB (domestic): only SELL proceeds count toward the R$35k limit.
-      // Coinbase (foreign): both directions tracked for the discretionary cap.
-      const volumeSoFar =
-        this.config.exchange === 'mercadobitcoin' && direction === 'BUY_SOL'
-          ? null
-          : this.config.exchange === 'mercadobitcoin'
-            ? this.tax.getMonthlySalesBrl(monthBRT)
-            : this.tax.getMonthlyVolumeBrl(monthBRT);
-
-      if (volumeSoFar !== null) {
+      {
         const remaining = Math.max(0, BR_EFFECTIVE_LIMIT_BRL - volumeSoFar);
         if (brlAmount > remaining) {
           if (remaining < this.config.minTradeSizeBrl) {
@@ -342,7 +334,7 @@ export class RebalancerBot {
           tradeId: tradeRecord.id,
           tradeDateBRT: todayBRT,
           direction,
-          tradedVolumeBrl: this.config.exchange === 'coinbase' ? brlSpent : 0,
+          tradedVolumeBrl: 0,
           grossProceedsBrl: 0,
           costBasisBrl: 0,
           realizedGainBrl: 0,
@@ -384,7 +376,6 @@ export class RebalancerBot {
       effectiveThresholdBps,
       rebalancedToday,
       exchange: this.config.exchange,
-      ...(portfolio.usdBrlRate != null ? { usdBrlRate: portfolio.usdBrlRate } : {}),
     };
     this.history.appendSnapshot(snapshot);
   }

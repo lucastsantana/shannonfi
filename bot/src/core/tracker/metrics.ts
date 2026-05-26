@@ -24,7 +24,7 @@ export class MetricsService {
     const trades = this.history.readTrades();
     const filled = trades.filter(
       (t): t is TradeRecord =>
-        t.status === 'FILLED' || t.status === 'filled' || t.status === 'DRY_RUN',
+        t.status === 'FILLED' || t.status === 'DRY_RUN',
     );
     const sorted = [...snapshots].sort((a, b) => a.timestamp.localeCompare(b.timestamp));
 
@@ -137,7 +137,7 @@ export class MetricsService {
     const m = this.computeMetrics(snapshots);
     const trades = this.history.readTrades();
     const filled = trades.filter(
-      (t) => t.status === 'FILLED' || t.status === 'filled' || t.status === 'DRY_RUN',
+      (t) => t.status === 'FILLED' || t.status === 'DRY_RUN',
     );
 
     if (snapshots.length === 0 && filled.length === 0) {
