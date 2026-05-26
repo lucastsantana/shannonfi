@@ -1,0 +1,16 @@
+node_modules/
+dist/
+*.js.map
+*.d.ts.map
+
+# Config file contains secrets — never commit
+shannonfi.config.yaml
+*.pem
+
+# Runtime data files — excluded from version control
+data/
+logs/
+
+# OS / IDE
+.DS_Store
+*.swp

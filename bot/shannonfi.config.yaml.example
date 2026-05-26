@@ -1,0 +1,128 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Shannon's Demon — Bot Configuration
+# ─────────────────────────────────────────────────────────────────────────────
+# SETUP:
+#   1. Copy this file:  cp shannonfi.config.yaml.example shannonfi.config.yaml
+#   2. Fill in your exchange credentials (one of coinbase or mercadobitcoin).
+#   3. Set exchange: to the one you want to use.
+#   4. Review the strategy parameters and tax compliance options.
+#   5. NEVER commit shannonfi.config.yaml — it contains secrets.
+#
+# SECURITY: shannonfi.config.yaml is in .gitignore by default.
+#           Keep it out of version control and CI logs.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ── Exchange selection ─────────────────────────────────────────────────────────
+# Choose which exchange to use: "coinbase" or "mercadobitcoin"
+exchange: mercadobitcoin
+
+
+# ── Mercado Bitcoin credentials ────────────────────────────────────────────────
+# Obtain from: https://www.mercadobitcoin.com.br → Account → API → Create credential
+# Required scopes: read (balances, orders), write (place orders)
+# Tax law: Lei 9.250/1995 Art. 21 (domestic exchange)
+#   - Monthly SELL proceeds ≤ R$35,000: exempt from capital gains tax
+#   - Above threshold: DARF payment by last business day of the following month
+mercadobitcoin:
+  clientId: "your-client-id-here"
+  clientSecret: "your-client-secret-here"
+  # apiBaseUrl: https://api.mercadobitcoin.net/api/v4   # default — do not change
+
+
+# ── Coinbase Advanced Trade credentials ───────────────────────────────────────
+# Obtain from: https://www.coinbase.com/settings/api → Create API key
+# Required permissions: View (portfolio), Trade (orders)
+# Tax law: Lei 14.754/2023 (foreign exchange — flat 15% annual, no monthly exemption)
+#
+# Option A — key file on disk (recommended):
+#   Download the .pem file from Coinbase and reference it here.
+# Option B — inline private key:
+#   Paste the EC private key block directly (use \n for newlines in a single-line string).
+coinbase:
+  apiKeyName: "organizations/YOUR-ORG-ID/apiKeys/YOUR-KEY-ID"
+  pemFile: "./coinbase_key.pem"             # path relative to this config file
+  # privateKey: |                           # alternative: inline PEM key
+  #   -----BEGIN EC PRIVATE KEY-----
+  #   MHQCAQEEIxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+  #   -----END EC PRIVATE KEY-----
+  # apiBaseUrl: https://api.coinbase.com    # default — do not change
+  # fxApiUrl: https://api.frankfurter.app/latest?from=USD&to=BRL  # default
+
+
+# ── Strategy parameters ────────────────────────────────────────────────────────
+
+# Fixed rebalance threshold in basis points (1 bps = 0.01%).
+# Used as fallback when useAdaptiveThreshold is false, or when volatility data
+# is unavailable (network error during adaptive threshold fetch).
+rebalanceThresholdBps: 100        # 1.0% (default)
+
+# Maximum acceptable slippage between expected and actual fill price (bps).
+maxSlippageBps: 100               # 1.0% (default)
+
+# Skip rebalancing if total portfolio value is below this threshold (BRL).
+# Prevents micro-trades that would be eaten by fees.
+minPortfolioValueBrl: 200
+
+# Skip a trade if the computed rebalance amount is below this value (BRL).
+# Also used as minimum when capping trades under neverExceedExemptionLimit.
+minTradeSizeBrl: 20
+
+# How often to check for rebalance opportunities (seconds).
+# Minimum 10s; typical values: 300 (5 min) for live markets, 60 for testing.
+pollIntervalSeconds: 300
+
+# Minimum time between two consecutive rebalances (seconds).
+# Prevents thrashing near the threshold.
+minRebalanceIntervalSeconds: 7200  # 2 hours (default)
+
+
+# ── Volatility-adaptive threshold ─────────────────────────────────────────────
+
+# When true, the rebalance threshold is computed dynamically each cycle as:
+#   threshold = thresholdVolatilityMultiplier × mean_absolute_daily_return_30d × 10000
+# This widens the threshold in volatile markets and tightens it in calm ones.
+# Falls back to rebalanceThresholdBps if volatility data cannot be fetched.
+useAdaptiveThreshold: true
+
+# How many multiples of daily volatility to use as the threshold.
+# Higher value → rebalances less often. Range: 0.5–5.0.
+thresholdVolatilityMultiplier: 1.5
+
+# Rolling window for mean absolute daily return computation (days).
+# Range: 7–90.
+volatilityWindowDays: 30
+
+
+# ── Tax compliance ─────────────────────────────────────────────────────────────
+
+# Mercado Bitcoin (domestic, Lei 9.250/1995):
+#   When true, SELL_SOL trades are capped so monthly gross SELL proceeds stay
+#   ≤ R$34,650 (R$35,000 minus a 1% safety buffer). BUY trades are never capped.
+#   If the remaining allowance is below minTradeSizeBrl, the SELL trade is skipped.
+#
+# Coinbase (foreign, Lei 14.754/2023):
+#   When true, total monthly traded volume (both directions) is capped at R$34,650.
+#   This is a discretionary strategy constraint, not a tax exemption guard.
+#
+# Default: false (tracking only — no trade capping).
+neverExceedExemptionLimit: false
+
+
+# ── Runtime ───────────────────────────────────────────────────────────────────
+
+# Dry-run mode: simulate rebalances without placing real orders.
+# All logic runs normally; trades are logged with status DRY_RUN.
+dryRun: false
+
+# Log verbosity: error | warn | info | debug
+logLevel: info
+
+
+# ── Data file paths ────────────────────────────────────────────────────────────
+# Paths are relative to the directory where the bot process runs (typically bot/).
+# These files are created automatically on first run.
+
+tradeHistoryPath: ./data/trade_history.json
+portfolioSnapshotsPath: ./data/portfolio_snapshots.json
+costBasisPath: ./data/cost_basis.json
+taxEventsPath: ./data/tax_events.json
