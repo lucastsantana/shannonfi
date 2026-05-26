@@ -1,6 +1,13 @@
-# Shannon's Demon Vault — Project Index
+# Shannon's Demon — Project Index
 
 Quick navigation for all documentation and code.
+
+This repository contains **two implementations** of the Shannon's Demon volatility-harvesting strategy. Choose your path:
+
+| Path | Custody | Cost | Status | Start here |
+|------|---------|------|--------|------------|
+| **On-Chain Vault (Solana)** | Self-custodial PDA | ~$263 one-time | Core complete | [README.md](./README.md) → [QUICKSTART.md](./QUICKSTART.md) |
+| **CEX Bot (Coinbase)** | Coinbase account | Free | Production-ready ✅ | [cex/README.md](./cex/README.md) |
 
 ---
 
@@ -8,14 +15,15 @@ Quick navigation for all documentation and code.
 
 | Document | Purpose | Read Time |
 |----------|---------|-----------|
-| **[FINAL_STATUS.md](./FINAL_STATUS.md)** | Complete implementation summary + next steps | 5 min |
-| **[QUICKSTART.md](./QUICKSTART.md)** | Get up and running in 5 minutes | 5 min |
-| **[README.md](./README.md)** | Full architecture guide | 15 min |
-| **[PLAN.md](./PLAN.md)** | Detailed design, costs, safeguards | 20 min |
-| **[KEEPER_SETUP.md](./KEEPER_SETUP.md)** | Keeper deployment options (GitHub, VPS, Docker) | 10 min |
-| **[IMPLEMENTATION_SUMMARY.md](./IMPLEMENTATION_SUMMARY.md)** | What's done, what needs work | 5 min |
+| **[README.md](./README.md)** | Project overview + both paths compared | 5 min |
+| **[FINAL_STATUS.md](./FINAL_STATUS.md)** | Implementation summary + next steps | 5 min |
+| **[QUICKSTART.md](./QUICKSTART.md)** | On-chain vault: get running in 5 minutes | 5 min |
+| **[cex/README.md](./cex/README.md)** | CEX bot: full setup guide | 10 min |
+| **[PLAN.md](./PLAN.md)** | On-chain design, costs, safeguards | 20 min |
+| **[KEEPER_SETUP.md](./KEEPER_SETUP.md)** | On-chain keeper deployment options | 10 min |
+| **[IMPLEMENTATION_SUMMARY.md](./IMPLEMENTATION_SUMMARY.md)** | On-chain: what's done, what needs work | 5 min |
 
-**Recommended reading order:** FINAL_STATUS → QUICKSTART → README → KEEPER_SETUP
+**Recommended reading order:** README → (pick a path) → QUICKSTART *or* cex/README.md
 
 ---
 
@@ -49,10 +57,26 @@ Quick navigation for all documentation and code.
 
 ---
 
-## 🤖 Keeper Bot
+## 🤖 Keeper Bot (On-Chain)
 
 - **[app/src/keeper.ts](./app/src/keeper.ts)** — Main keeper loop (skeleton) 🔴
 - **[app/src/utils.ts](./app/src/utils.ts)** — Jupiter quote fetcher, utilities ✅
+
+---
+
+## 🏦 CEX Bot (Coinbase)
+
+Full documentation: **[cex/README.md](./cex/README.md)**
+
+- **[cex/src/index.ts](./cex/src/index.ts)** — Entry point (`--once` flag for GitHub Actions)
+- **[cex/src/bot/rebalancer.ts](./cex/src/bot/rebalancer.ts)** — Core loop (port of rebalance.rs)
+- **[cex/src/bot/portfolio.ts](./cex/src/bot/portfolio.ts)** — Balance fetch + NAV snapshot
+- **[cex/src/bot/trader.ts](./cex/src/bot/trader.ts)** — Order placement, fill polling, dry-run
+- **[cex/src/coinbase/](./cex/src/coinbase/)** — Auth (JWT ES256), rate-limited client, API types
+- **[cex/src/math.ts](./cex/src/math.ts)** — TypeScript port of math.rs
+- **[cex/src/scripts/setup-check.ts](./cex/src/scripts/setup-check.ts)** — Pre-flight validator
+- **[cex/src/scripts/backtest.ts](./cex/src/scripts/backtest.ts)** — Historical replay via Coinbase candles
+- **[cex/.github/workflows/cex-rebalancer.yml](./cex/.github/workflows/cex-rebalancer.yml)** — Cron every 5 min ✅
 
 ---
 
@@ -75,16 +99,17 @@ Quick navigation for all documentation and code.
 
 ## 📊 Quick Stats
 
-| Metric | Value |
-|--------|-------|
-| **Program Size** | ~250 KB (binary) |
-| **Deployment Cost** | ~1.75 SOL (~$263) |
-| **Vault State Size** | 198 bytes |
-| **Keeper Fee** | 0.1% (configurable, max 0.5%) |
-| **Rebalance Interval** | 432,000 slots (~2 days) |
-| **Keeper Check Interval** | 1 hour (GitHub Action) |
-| **Max Slippage** | 1% |
-| **Pyth Staleness Threshold** | 60 seconds |
+| Metric | On-Chain Vault | CEX Bot |
+|--------|---------------|---------|
+| **Deployment Cost** | ~1.75 SOL (~$263) | Free |
+| **Per-tx Fee** | ~0.0002–0.0005 SOL | ~0.4% taker fee |
+| **Rebalance Trigger** | 432,000 slots (~2 days) | Drift > 1% + 2h cooldown |
+| **Check Interval** | 1 hour (GitHub Actions) | 5 minutes (GitHub Actions) |
+| **Max Slippage** | 1% | 1% (warning only) |
+| **Keeper Fee** | 0.1% vault AUM (max 0.5%) | None |
+| **Vault State** | 198 bytes (on-chain PDA) | `data/trade_history.json` |
+| **Tests** | Rust unit tests (partial) | 48 TypeScript tests ✅ |
+| **Status** | Core complete ⚠️ | Production-ready ✅ |
 
 ---
 

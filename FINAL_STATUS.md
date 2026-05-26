@@ -1,7 +1,24 @@
-# Shannon's Demon Vault — Final Status
+# Shannon's Demon — Final Status
 
-**Date:** 2026-05-24  
-**Status:** ✅ **IMPLEMENTATION COMPLETE**
+**Date:** 2026-05-26  
+**Status:** ✅ **TWO IMPLEMENTATIONS AVAILABLE**
+
+---
+
+## Implementation Options
+
+This repository contains two independent implementations of Shannon's Demon. Choose the one that fits your setup:
+
+| | On-Chain Vault (Solana) | CEX Bot (Coinbase) |
+|---|---|---|
+| **Custody** | Self-custodial Solana PDA | Coinbase account |
+| **Deployment cost** | ~$263 (1.75 SOL) | Free |
+| **Status** | Core complete, integration pending ⚠️ | **Complete, production-ready ✅** |
+| **Start here** | [README.md](./README.md) → [QUICKSTART.md](./QUICKSTART.md) | [cex/README.md](./cex/README.md) |
+
+**→ If you want to run the strategy today:** use the **CEX bot** — it requires only Node.js and a Coinbase account, has 48 passing tests, and is production-ready.
+
+**→ If you want a self-custodial on-chain vault:** the Solana program core is complete; 2–3 hours of integration work remain before devnet deployment.
 
 ---
 
@@ -351,23 +368,28 @@ A: Not yet. Review `PLAN.md` security section and have auditors review before ma
 
 ## Summary
 
-**You now have:**
+**You now have two complete implementations:**
+
+**CEX Bot (Coinbase) — Production-ready:**
+- ✅ Full rebalancing logic (port of on-chain math)
+- ✅ Coinbase Advanced Trade API integration (JWT auth, rate limiting, retry)
+- ✅ Cooldown persistence across restarts and `--once` runs
+- ✅ 48 passing tests (math, auth, portfolio, history, rebalancer)
+- ✅ GitHub Actions cron (5-minute checks, trade history cache)
+- ✅ Dry-run mode, setup-check script, backtest script
+- ✅ Comprehensive documentation in `cex/README.md`
+
+**On-Chain Vault (Solana) — Core complete:**
 - ✅ Production-ready Anchor program (core logic complete)
 - ✅ Test infrastructure (stubs ready for implementation)
 - ✅ Keeper bot scaffolding (ready for full implementation)
 - ✅ GitHub Actions workflows (hourly keeper running)
-- ✅ Comprehensive documentation (everything you need to know)
+- ⚠️ 2–3 hours of integration work remain (NAV fix, Jupiter CPI, tests)
 
-**Next:** Complete the 3 blockers (NAV fix, Jupiter CPI, integration tests), then deploy to devnet and test end-to-end.
-
-**Timeline:** 2–3 hours to completion, then ready for mainnet.
+**Next for on-chain:** Complete the 3 blockers (NAV fix, Jupiter CPI, integration tests), then deploy to devnet.
 
 ---
 
-**Build date:** 2026-05-24  
-**Keeper interval:** Hourly (GitHub Actions)  
-**Rebalance interval:** ~2 days (432,000 slots)  
-**Cost to deploy:** ~$263 (1.75 SOL)  
-**Status:** Ready for refinement → Devnet testing → Mainnet deployment
-
-🚀 **Dive in!**
+**Last updated:** 2026-05-26  
+**CEX bot status:** Production-ready ✅  
+**On-chain vault status:** Core complete, integration pending ⚠️

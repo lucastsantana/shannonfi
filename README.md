@@ -1,8 +1,34 @@
-# Shannon's Demon Vault — Solana Implementation
+# Shannon's Demon
 
-A fully autonomous, on-chain rebalancing vault on Solana that implements the Shannon's Demon strategy: maintaining a 50/50 SOL/USDC balance by value and harvesting volatility through periodic rebalancing.
+[Shannon's Demon](https://en.wikipedia.org/wiki/Entropy_and_second_law_of_thermodynamics) is a volatility-harvesting strategy: hold two assets in a fixed 50/50 ratio by value and rebalance whenever the ratio drifts. Each rebalance systematically sells the outperformer and buys the underperformer, generating excess return from volatility over time.
 
-## Architecture Overview
+This repository provides **two independent implementations** — choose the one that fits your setup:
+
+## Two Implementation Paths
+
+| | On-Chain Vault | CEX Bot |
+|---|---|---|
+| **Custody** | Self-custodial (Solana PDA) | Coinbase account |
+| **Trading pair** | SOL/USDC | SOL/USD |
+| **Price feed** | Pyth Pull Oracle | Coinbase best bid/ask |
+| **Execution** | Jupiter v6 CPI (on-chain swap) | Coinbase market order (REST API) |
+| **Deployment cost** | ~$263 (1.75 SOL, one-time) | Free |
+| **Per-tx fees** | ~0.0002–0.0005 SOL | Coinbase taker fee (~0.4%) |
+| **Keeper fee** | 0.1% vault AUM per rebalance | None |
+| **Tokenized shares** | Yes — 6-decimal SPL token | No (single-user bot) |
+| **Rebalance trigger** | Keeper wallet + slot interval (~2 days) | Cron job + cooldown timer |
+| **Status** | Core complete, integration pending | Complete, production-ready |
+| **Start here** | Continue reading ↓ | **[cex/README.md](./cex/README.md)** |
+
+**→ If you want the Coinbase bot:** go to **[cex/README.md](./cex/README.md)** — it is self-contained and requires no Solana toolchain.
+
+**→ If you want the on-chain Solana vault:** continue reading below.
+
+---
+
+## Option A: On-Chain Vault (Solana)
+
+### Architecture Overview
 
 ### Core Components
 
@@ -273,14 +299,13 @@ anchor deploy --provider.cluster mainnet-beta
 
 ---
 
-## Next Steps
+## Next Steps (On-Chain Vault)
 
 1. **Complete Integration Tests** — Implement test cases in `tests/shannonfi.ts` with real Anchor testing harness
 2. **Keeper Bot Completion** — Full rebalance loop in `app/src/keeper.ts` with error handling
 3. **Devnet Testing** — Deploy to devnet, run keeper bot, validate end-to-end flow
 4. **Jupiter CPI Full Integration** — Currently, `rebalance` computes amounts but doesn't execute Jupiter swap; keeper must forward remaining_accounts
 5. **Monitoring & Alerts** — Add logging, metrics, PagerDuty integration for keeper uptime
-6. **Documentation** — CLI usage guide, keeper deployment runbook
 
 ---
 
@@ -303,15 +328,39 @@ Longer rebalance windows reduce costs and MEV surface. 2 days is a good balance:
 
 ---
 
+---
+
+## Option B: CEX Bot (Coinbase)
+
+A fully operational alternative that runs the same strategy against a Coinbase Advanced Trade account — no smart contract deployment, no Solana toolchain, no blockchain fees.
+
+**Key facts:**
+- Funds stay in your Coinbase account (no on-chain custody)
+- Trades SOL/USD via Coinbase REST API (market orders)
+- Cooldown state persists across restarts via trade history file
+- 48 unit tests, TypeScript, dry-run mode, GitHub Actions support
+- Coinbase taker fees (~0.4%) apply per rebalance
+
+**Full documentation, setup guide, and architecture:** **[cex/README.md](./cex/README.md)**
+
+**Quick start:**
+```bash
+cd cex
+cp .env.example .env    # add Coinbase CDP API key
+npm install && npm run build
+npm run setup-check     # validate keys and accounts
+DRY_RUN=true node dist/index.js --once   # test without real orders
+```
+
+---
+
 ## References
 
 - [Anchor 0.30.x Docs](https://www.anchor-lang.com/)
 - [Jupiter CPI Integration](https://docs.jup.ag/docs/cross-program-invocation-cpi)
 - [Pyth Pull Oracle on Solana](https://docs.pyth.network/price-feeds/core/use-real-time-data/pull-integration/solana)
-- [Shannon's Demon Strategy](https://en.wikipedia.org/wiki/Entropy_and_second_law_of_thermodynamics) (volatility harvesting concept)
+- [Shannon's Demon Strategy](https://en.wikipedia.org/wiki/Entropy_and_second_law_of_thermodynamics)
 
 ---
 
-**Author:** Claude Code  
-**Status:** Implementation Complete (Core Program + Structure)  
-**Last Updated:** 2026-05-24
+**Last Updated:** 2026-05-26

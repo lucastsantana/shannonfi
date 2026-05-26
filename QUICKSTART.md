@@ -1,4 +1,20 @@
-# Quick Start Guide
+# Quickstart — On-Chain Vault (Solana)
+
+## Choose Your Path
+
+| | CEX Bot (Coinbase) | On-Chain Vault (Solana) |
+|---|---|---|
+| **Requirements** | Node.js 18+, Coinbase account | Rust, Solana CLI, Anchor, Node.js |
+| **Deployment cost** | Free | ~$263 (1.75 SOL) |
+| **Custody** | Coinbase holds funds | Self-custodial smart contract |
+| **Status** | Complete, production-ready | Core complete, integration pending |
+| **Start here** | **[cex/README.md](./cex/README.md)** | This guide ↓ |
+
+**If you want the Coinbase bot**, stop here and follow **[cex/README.md](./cex/README.md)** — no Solana toolchain needed.
+
+**This guide covers the on-chain Solana vault.**
+
+---
 
 ## 5-Minute Overview
 
