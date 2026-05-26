@@ -2,21 +2,32 @@ import { PortfolioService } from './portfolio';
 import { TraderService } from './trader';
 import { TradeHistoryService } from '../tracker/history';
 import { PnlService } from '../tracker/pnl';
+import { CostBasisService } from '../tracker/costbasis';
+import { TaxService } from '../tracker/tax';
+import { VolatilityService } from '../tracker/volatility';
+import { MetricsService } from '../tracker/metrics';
 import { logger } from '../tracker/logger';
 import { shouldRebalance, computeRebalanceTrade } from '../math';
+import { fetchUsdBrlRate } from '../coinbase/fx';
 import { Config } from '../config';
+import { BrlSnapshot, PortfolioSnapshot } from '../coinbase/types';
+import { BR_EFFECTIVE_LIMIT_BRL } from '../constants';
 
 /**
  * Core rebalancing loop — TypeScript port of rebalance.rs + keeper.ts polling loop.
  *
- * Guards map to on-chain error codes:
+ * Guards (in execution order):
  *   minPortfolioValueUsd    → InsufficientVaultSol
- *   shouldRebalance()       → BelowThreshold
- *   minRebalanceInterval    → SlotNotElapsed
+ *   shouldRebalance()       → BelowThreshold (adaptive or fixed)
+ *   minRebalanceInterval    → SlotNotElapsed (cooldown)
+ *   dayTradeGuard           → blocks opposite-direction trade on same BRT calendar day
+ *   neverExceedExemption    → caps or skips SELL_SOL trades near R$35,000/month limit
  *   minTradeSizeUsd         → minimum order size guard
  */
 export class RebalancerBot {
   private lastRebalanceTime: number;
+  private lastRebalanceDateBRT: string | null;
+  private lastRebalanceDirection: 'BUY_SOL' | 'SELL_SOL' | null;
   private isRunning = false;
 
   constructor(
@@ -24,22 +35,30 @@ export class RebalancerBot {
     private trader: TraderService,
     private history: TradeHistoryService,
     private pnl: PnlService,
+    private costBasis: CostBasisService,
+    private tax: TaxService,
+    private volatility: VolatilityService,
+    private metrics: MetricsService,
     private config: Config,
   ) {
-    // Restore cooldown state from persisted trade history so the
-    // MIN_REBALANCE_INTERVAL_SECONDS guard works correctly after restarts
-    // and across --once invocations (e.g. GitHub Actions runs).
+    // Restore cooldown and day-trade state from persisted trade history so all
+    // guards work correctly after restarts and across --once invocations.
     this.lastRebalanceTime = history.getLastRebalanceTime();
+    const { dateBRT, direction } = history.getLastRebalanceInfo();
+    this.lastRebalanceDateBRT = dateBRT;
+    this.lastRebalanceDirection = direction;
+
     if (this.lastRebalanceTime > 0) {
-      logger.info('Restored last rebalance time from history', {
+      logger.info('Restored rebalance state from history', {
         lastRebalanceTime: new Date(this.lastRebalanceTime).toISOString(),
+        lastRebalanceDateBRT: this.lastRebalanceDateBRT,
+        lastRebalanceDirection: this.lastRebalanceDirection,
       });
     }
   }
 
   /**
-   * Continuous polling loop. Runs every pollIntervalSeconds.
-   * Call start() for server / local deployment.
+   * Continuous polling loop. Call start() for server / local deployment.
    * Call checkAndRebalance() directly for --once / GitHub Actions mode.
    */
   async start(): Promise<void> {
@@ -47,7 +66,10 @@ export class RebalancerBot {
 
     logger.info("Shannon's Demon CEX bot starting", {
       dryRun: this.config.dryRun,
+      useAdaptiveThreshold: this.config.useAdaptiveThreshold,
       thresholdBps: this.config.rebalanceThresholdBps,
+      volatilityMultiplier: this.config.thresholdVolatilityMultiplier,
+      neverExceedExemptionLimit: this.config.neverExceedExemptionLimit,
       pollIntervalSeconds: this.config.pollIntervalSeconds,
       minRebalanceIntervalSeconds: this.config.minRebalanceIntervalSeconds,
     });
@@ -81,27 +103,42 @@ export class RebalancerBot {
       deviationBps: portfolioSnapshot.deviationBps,
     });
 
+    // ── Guard 1: minimum portfolio size ────────────────────────────────────────
     if (portfolioSnapshot.totalValueUsd < this.config.minPortfolioValueUsd) {
       logger.warn('Portfolio below minimum size, skipping', {
         totalValueUsd: portfolioSnapshot.totalValueUsd.toFixed(2),
         minPortfolioValueUsd: this.config.minPortfolioValueUsd,
       });
+      await this.persistSnapshot(portfolioSnapshot, false, this.config.rebalanceThresholdBps);
       return;
     }
 
-    if (
-      !shouldRebalance(
-        portfolioSnapshot.solRatioBps,
-        this.config.rebalanceThresholdBps,
-      )
-    ) {
+    // ── Compute effective threshold (adaptive or fixed) ─────────────────────
+    let effectiveThresholdBps = this.config.rebalanceThresholdBps;
+    if (this.config.useAdaptiveThreshold) {
+      try {
+        effectiveThresholdBps = await this.volatility.computeAdaptiveThresholdBps(
+          this.config.thresholdVolatilityMultiplier,
+        );
+      } catch (err) {
+        logger.warn('Adaptive threshold unavailable, using static threshold', {
+          error: (err as Error).message,
+          fallbackBps: this.config.rebalanceThresholdBps,
+        });
+      }
+    }
+
+    // ── Guard 2: drift threshold ───────────────────────────────────────────────
+    if (!shouldRebalance(portfolioSnapshot.solRatioBps, effectiveThresholdBps)) {
       logger.info('No rebalance needed', {
         deviationBps: portfolioSnapshot.deviationBps,
-        thresholdBps: this.config.rebalanceThresholdBps,
+        effectiveThresholdBps,
       });
+      await this.persistSnapshot(portfolioSnapshot, false, effectiveThresholdBps);
       return;
     }
 
+    // ── Guard 3: cooldown interval ─────────────────────────────────────────────
     const now = Date.now();
     const secondsSinceLastRebalance = (now - this.lastRebalanceTime) / 1000;
     if (secondsSinceLastRebalance < this.config.minRebalanceIntervalSeconds) {
@@ -109,19 +146,70 @@ export class RebalancerBot {
         secondsSinceLastRebalance: secondsSinceLastRebalance.toFixed(0),
         minRebalanceIntervalSeconds: this.config.minRebalanceIntervalSeconds,
       });
+      await this.persistSnapshot(portfolioSnapshot, false, effectiveThresholdBps);
       return;
     }
 
-    const { direction, usdAmount } = computeRebalanceTrade(
+    // ── Compute trade direction and amount (needed for day-trade guard) ────────
+    let { direction, usdAmount } = computeRebalanceTrade(
       portfolioSnapshot.solValueUsd,
       portfolioSnapshot.usdBalance,
     );
 
+    // ── Guard 4: day-trade guard (Brazilian regulation) ────────────────────────
+    // Block opposite-direction trade on same BRT calendar day only.
+    const todayBRT = new Date().toLocaleDateString('en-CA', {
+      timeZone: 'America/Sao_Paulo',
+    });
+    const isOppositeDirection =
+      this.lastRebalanceDirection !== null && this.lastRebalanceDirection !== direction;
+    if (this.lastRebalanceDateBRT === todayBRT && isOppositeDirection) {
+      logger.info('Day-trade guard: opposite-direction trade blocked today (BRT)', {
+        date: todayBRT,
+        proposedDirection: direction,
+        priorDirection: this.lastRebalanceDirection,
+      });
+      await this.persistSnapshot(portfolioSnapshot, false, effectiveThresholdBps);
+      return;
+    }
+
+    // ── Guard 5: exemption limit cap (opt-in, SELL_SOL only) ───────────────────
+    if (this.config.neverExceedExemptionLimit && direction === 'SELL_SOL') {
+      const usdBrlRate = await fetchUsdBrlRate(this.config.fxApiUrl);
+      if (usdBrlRate !== null) {
+        const monthBRT = todayBRT.slice(0, 7);
+        const volumeSoFarBrl = this.tax.getMonthlyVolumeBrl(monthBRT);
+        const remainingBrl = Math.max(0, BR_EFFECTIVE_LIMIT_BRL - volumeSoFarBrl);
+        const remainingUsd = remainingBrl / usdBrlRate;
+
+        if (usdAmount > remainingUsd) {
+          if (remainingUsd < this.config.minTradeSizeUsd) {
+            logger.info('Monthly exemption limit reached — skipping SELL trade', {
+              volumeSoFarBrl: volumeSoFarBrl.toFixed(2),
+              remainingBrl: remainingBrl.toFixed(2),
+              monthBRT,
+            });
+            await this.persistSnapshot(portfolioSnapshot, false, effectiveThresholdBps);
+            return;
+          }
+          logger.info('Capping trade to preserve monthly tax exemption', {
+            originalUsdAmount: usdAmount.toFixed(2),
+            cappedUsdAmount: remainingUsd.toFixed(2),
+            remainingBrl: remainingBrl.toFixed(2),
+            monthBRT,
+          });
+          usdAmount = remainingUsd;
+        }
+      }
+    }
+
+    // ── Guard 6: minimum trade size ────────────────────────────────────────────
     if (usdAmount < this.config.minTradeSizeUsd) {
       logger.info('Trade amount below minimum', {
         usdAmount: usdAmount.toFixed(2),
         minTradeSizeUsd: this.config.minTradeSizeUsd,
       });
+      await this.persistSnapshot(portfolioSnapshot, false, effectiveThresholdBps);
       return;
     }
 
@@ -130,6 +218,7 @@ export class RebalancerBot {
       usdAmount: usdAmount.toFixed(2),
       solRatioBps: portfolioSnapshot.solRatioBps,
       deviationBps: portfolioSnapshot.deviationBps,
+      effectiveThresholdBps,
     });
 
     const tradeRecord = await this.trader.executeTrade(
@@ -138,16 +227,116 @@ export class RebalancerBot {
       portfolioSnapshot,
     );
 
+    // Stamp the BRT date for day-trade guard persistence
+    tradeRecord.tradeDateBRT = todayBRT;
+
     if (tradeRecord.status === 'FILLED' || tradeRecord.status === 'DRY_RUN') {
       this.lastRebalanceTime = now;
+      this.lastRebalanceDateBRT = todayBRT;
+      this.lastRebalanceDirection = direction;
 
       if (!this.config.dryRun) {
         tradeRecord.portfolioAfter = await this.portfolio.getPortfolio();
+      }
+
+      // ── BRL tracking ─────────────────────────────────────────────────────────
+      const usdBrlRate = await fetchUsdBrlRate(this.config.fxApiUrl);
+      if (usdBrlRate !== null) {
+        const solBrlRate = portfolioSnapshot.solPrice * usdBrlRate;
+        const brlSnapshot: BrlSnapshot = {
+          usdBrlRate,
+          solBrlRate,
+          timestamp: new Date().toISOString(),
+        };
+        tradeRecord.brlSnapshot = brlSnapshot;
+
+        if (direction === 'SELL_SOL' && tradeRecord.solAmountFilled != null) {
+          const solSold = tradeRecord.solAmountFilled;
+          const usdReceived = tradeRecord.usdAmountFilled ?? usdAmount;
+          const realizedGain = this.costBasis.updateAfterSell(
+            solSold,
+            usdReceived,
+            usdBrlRate,
+            solBrlRate,
+          );
+          tradeRecord.realizedGainBrl = realizedGain;
+
+          // Record tax event
+          const ledger = this.costBasis.getLedger();
+          const costBasisBrl = ledger.sol.averageCostBrl * solSold;
+          const grossProceedsBrl = solSold * solBrlRate;
+          const taxEvent = this.tax.buildTaxEvent({
+            tradeId: tradeRecord.id,
+            tradeDateBRT: todayBRT,
+            direction,
+            grossProceedsBrl,
+            costBasisBrl,
+            realizedGainBrl: realizedGain,
+          });
+          this.tax.appendTaxEvent(taxEvent);
+
+          logger.info('BRL tax event recorded', {
+            realizedGainBrl: realizedGain.toFixed(2),
+            cumMonthlyGainBrl: taxEvent.cumMonthlyGainBrl.toFixed(2),
+            exempt: taxEvent.exempt,
+            paymentDeadline: taxEvent.paymentDeadline ?? 'exempt',
+          });
+        } else if (direction === 'BUY_SOL' && tradeRecord.solAmountFilled != null) {
+          const solAcquired = tradeRecord.solAmountFilled;
+          const usdSpent = tradeRecord.usdAmountFilled ?? usdAmount;
+          this.costBasis.updateAfterBuy(solAcquired, usdSpent, usdBrlRate, solBrlRate);
+          tradeRecord.realizedGainBrl = 0; // purchases don't realize gains
+        }
+      } else {
+        tradeRecord.brlSnapshot = null;
+        tradeRecord.realizedGainBrl = null;
       }
     }
 
     await this.history.appendTrade(tradeRecord);
     await this.pnl.logRebalance(tradeRecord);
+    await this.persistSnapshot(portfolioSnapshot, true, effectiveThresholdBps);
+  }
+
+  private async persistSnapshot(
+    portfolio: Awaited<ReturnType<PortfolioService['getPortfolio']>>,
+    rebalancedToday: boolean,
+    effectiveThresholdBps: number,
+  ): Promise<void> {
+    const todayBRT = new Date().toLocaleDateString('en-CA', {
+      timeZone: 'America/Sao_Paulo',
+    });
+
+    // Only write one snapshot per BRT day (skip if already written today)
+    const existing = this.history.readSnapshots();
+    if (existing.some((s) => s.dateBRT === todayBRT)) return;
+
+    // Best-effort BRL valuation (don't block on failure)
+    let totalValueBrl: number | null = null;
+    let usdBrlRate: number | null = null;
+    try {
+      usdBrlRate = await fetchUsdBrlRate(this.config.fxApiUrl);
+      if (usdBrlRate !== null) {
+        totalValueBrl = portfolio.totalValueUsd * usdBrlRate;
+      }
+    } catch {
+      // non-critical
+    }
+
+    const snapshot: PortfolioSnapshot = {
+      dateBRT: todayBRT,
+      timestamp: new Date().toISOString(),
+      totalValueUsd: portfolio.totalValueUsd,
+      totalValueBrl,
+      solBalance: portfolio.solBalance,
+      usdBalance: portfolio.usdBalance,
+      solPrice: portfolio.solPrice,
+      usdBrlRate,
+      solRatioBps: portfolio.solRatioBps,
+      effectiveThresholdBps,
+      rebalancedToday,
+    };
+    this.history.appendSnapshot(snapshot);
   }
 
   shutdown(): void {

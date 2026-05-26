@@ -172,6 +172,13 @@ export interface Portfolio {
   timestamp: string;
 }
 
+// BRL exchange rates captured at time of trade — used for tax cost-basis tracking.
+export interface BrlSnapshot {
+  usdBrlRate: number;   // USD/BRL at trade time
+  solBrlRate: number;   // SOL/BRL = solPrice * usdBrlRate
+  timestamp: string;    // ISO 8601
+}
+
 export interface TradeRecord {
   id: string;
   clientOrderId: string;
@@ -187,4 +194,24 @@ export interface TradeRecord {
   portfolioBefore: Portfolio;
   portfolioAfter: Portfolio | null;
   dryRun: boolean;
+  // BRL tax tracking (optional — null if FX fetch failed or for legacy records)
+  brlSnapshot: BrlSnapshot | null;
+  realizedGainBrl: number | null;
+  // Day-trade guard — BRT calendar date of this trade (YYYY-MM-DD)
+  tradeDateBRT: string | null;
+}
+
+// Daily portfolio snapshot persisted for track record metrics.
+export interface PortfolioSnapshot {
+  dateBRT: string;              // YYYY-MM-DD in BRT
+  timestamp: string;            // ISO 8601
+  totalValueUsd: number;
+  totalValueBrl: number | null; // null if FX unavailable
+  solBalance: number;
+  usdBalance: number;
+  solPrice: number;
+  usdBrlRate: number | null;
+  solRatioBps: number;
+  effectiveThresholdBps: number;
+  rebalancedToday: boolean;
 }

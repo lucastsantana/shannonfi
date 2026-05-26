@@ -30,12 +30,16 @@ jobs:
           cache: 'npm'
           cache-dependency-path: cex/package-lock.json
 
-      - name: Restore trade history cache
+      - name: Restore data cache
         uses: actions/cache@v4
         with:
-          path: cex/data/trade_history.json
-          key: trade-history-${{ github.repository }}
-          restore-keys: trade-history-
+          path: |
+            cex/data/trade_history.json
+            cex/data/cost_basis.json
+            cex/data/tax_events.json
+            cex/data/portfolio_snapshots.json
+          key: bot-data-${{ github.repository }}
+          restore-keys: bot-data-
 
       - name: Install dependencies
         run: npm ci
@@ -53,18 +57,31 @@ jobs:
           MIN_PORTFOLIO_VALUE_USD: ${{ vars.MIN_PORTFOLIO_VALUE_USD || '50' }}
           MIN_TRADE_SIZE_USD: ${{ vars.MIN_TRADE_SIZE_USD || '5' }}
           POLL_INTERVAL_SECONDS: '300'
+          # Volatility-adaptive threshold
+          USE_ADAPTIVE_THRESHOLD: ${{ vars.USE_ADAPTIVE_THRESHOLD || 'true' }}
+          THRESHOLD_VOLATILITY_MULTIPLIER: ${{ vars.THRESHOLD_VOLATILITY_MULTIPLIER || '1.5' }}
+          VOLATILITY_WINDOW_DAYS: ${{ vars.VOLATILITY_WINDOW_DAYS || '30' }}
+          # Brazilian tax compliance
+          NEVER_EXCEED_EXEMPTION_LIMIT: ${{ vars.NEVER_EXCEED_EXEMPTION_LIMIT || 'false' }}
           DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
           LOG_LEVEL: info
           TRADE_HISTORY_PATH: ./data/trade_history.json
+          COST_BASIS_PATH: ./data/cost_basis.json
+          TAX_EVENTS_PATH: ./data/tax_events.json
+          PORTFOLIO_SNAPSHOTS_PATH: ./data/portfolio_snapshots.json
         run: node dist/index.js --once
         timeout-minutes: 4
 
-      - name: Upload trade history artifact
+      - name: Upload data artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: trade-history-${{ github.run_number }}
-          path: cex/data/trade_history.json
+          name: bot-data-${{ github.run_number }}
+          path: |
+            cex/data/trade_history.json
+            cex/data/cost_basis.json
+            cex/data/tax_events.json
+            cex/data/portfolio_snapshots.json
           retention-days: 90
           if-no-files-found: ignore
 

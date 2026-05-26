@@ -47,6 +47,9 @@ export class TraderService {
       portfolioBefore,
       portfolioAfter: null,
       dryRun: this.config.dryRun,
+      brlSnapshot: null,
+      realizedGainBrl: null,
+      tradeDateBRT: null,
     };
 
     if (this.config.dryRun) {

@@ -5,6 +5,8 @@ import * as path from 'path';
 import {
   DEFAULT_REBALANCE_THRESHOLD_BPS,
   MAX_SLIPPAGE_BPS,
+  DEFAULT_VOLATILITY_MULTIPLIER,
+  DEFAULT_VOLATILITY_WINDOW_DAYS,
 } from './constants';
 
 dotenv.config({ path: path.resolve(__dirname, '../.env') });
@@ -36,6 +38,30 @@ const ConfigSchema = z.object({
   logLevel: z.enum(['error', 'warn', 'info', 'debug']).default('info'),
   tradeHistoryPath: z.string().default('./data/trade_history.json'),
   coinbaseApiBaseUrl: z.string().url().default('https://api.coinbase.com'),
+  // ─── Volatility-adaptive threshold ─────────────────────────────────────────
+  useAdaptiveThreshold: z.boolean().default(true),
+  thresholdVolatilityMultiplier: z
+    .number()
+    .min(0.5)
+    .max(5.0)
+    .default(DEFAULT_VOLATILITY_MULTIPLIER),
+  volatilityWindowDays: z
+    .number()
+    .int()
+    .min(7)
+    .max(90)
+    .default(DEFAULT_VOLATILITY_WINDOW_DAYS),
+  // ─── Brazilian tax compliance ───────────────────────────────────────────────
+  // Never allow monthly SELL volume to exceed R$35,000 (minus safety buffer).
+  // When true, trades are capped or skipped to stay within the exemption limit.
+  neverExceedExemptionLimit: z.boolean().default(false),
+  fxApiUrl: z
+    .string()
+    .url()
+    .default('https://api.frankfurter.app/latest?from=USD&to=BRL'),
+  costBasisPath: z.string().default('./data/cost_basis.json'),
+  taxEventsPath: z.string().default('./data/tax_events.json'),
+  portfolioSnapshotsPath: z.string().default('./data/portfolio_snapshots.json'),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;
@@ -75,6 +101,24 @@ export function loadConfig(): Config {
     logLevel: process.env['LOG_LEVEL'],
     tradeHistoryPath: process.env['TRADE_HISTORY_PATH'],
     coinbaseApiBaseUrl: process.env['COINBASE_API_BASE_URL'],
+    // Adaptive threshold
+    useAdaptiveThreshold: process.env['USE_ADAPTIVE_THRESHOLD'] !== undefined
+      ? process.env['USE_ADAPTIVE_THRESHOLD'] === 'true'
+      : undefined,
+    thresholdVolatilityMultiplier: process.env['THRESHOLD_VOLATILITY_MULTIPLIER']
+      ? parseFloat(process.env['THRESHOLD_VOLATILITY_MULTIPLIER'])
+      : undefined,
+    volatilityWindowDays: process.env['VOLATILITY_WINDOW_DAYS']
+      ? parseInt(process.env['VOLATILITY_WINDOW_DAYS'], 10)
+      : undefined,
+    // Brazilian tax
+    neverExceedExemptionLimit: process.env['NEVER_EXCEED_EXEMPTION_LIMIT'] !== undefined
+      ? process.env['NEVER_EXCEED_EXEMPTION_LIMIT'] === 'true'
+      : undefined,
+    fxApiUrl: process.env['FX_API_URL'],
+    costBasisPath: process.env['COST_BASIS_PATH'],
+    taxEventsPath: process.env['TAX_EVENTS_PATH'],
+    portfolioSnapshotsPath: process.env['PORTFOLIO_SNAPSHOTS_PATH'],
   };
 
   const result = ConfigSchema.safeParse(raw);

@@ -9,7 +9,12 @@ function tmpPath(): string {
   return path.join(os.tmpdir(), `shannonfi-test-${Date.now()}-${Math.random()}.json`);
 }
 
-function makeRecord(timestamp: string, status: TradeRecord['status']): TradeRecord {
+function makeRecord(
+  timestamp: string,
+  status: TradeRecord['status'],
+  direction: TradeRecord['direction'] = 'SELL_SOL',
+  tradeDateBRT?: string,
+): TradeRecord {
   const p: Portfolio = {
     solBalance: 10,
     usdBalance: 500,
@@ -25,7 +30,7 @@ function makeRecord(timestamp: string, status: TradeRecord['status']): TradeReco
     clientOrderId: 'cid',
     coinbaseOrderId: null,
     timestamp,
-    direction: 'SELL_SOL',
+    direction,
     usdAmountTarget: 100,
     solAmountFilled: null,
     usdAmountFilled: null,
@@ -35,6 +40,9 @@ function makeRecord(timestamp: string, status: TradeRecord['status']): TradeReco
     portfolioBefore: p,
     portfolioAfter: null,
     dryRun: false,
+    brlSnapshot: null,
+    realizedGainBrl: null,
+    tradeDateBRT: tradeDateBRT ?? null,
   };
 }
 
@@ -49,6 +57,8 @@ describe('TradeHistoryService', () => {
 
   afterEach(() => {
     if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+    const snapshotPath = filePath.replace('.json', '') + '/../portfolio_snapshots.json';
+    if (fs.existsSync(snapshotPath)) fs.unlinkSync(snapshotPath);
   });
 
   it('returns 0 when no trades exist', () => {
@@ -83,12 +93,50 @@ describe('TradeHistoryService', () => {
   it('persists trades and reads them back', async () => {
     const record = makeRecord('2026-04-01T00:00:00.000Z', 'FILLED');
     await service.appendTrade(record);
-
-    // Create a new service instance reading the same file
     const service2 = new TradeHistoryService(filePath);
     expect(service2.getRebalanceCount()).toBe(1);
     expect(service2.getLastRebalanceTime()).toBe(
       new Date('2026-04-01T00:00:00.000Z').getTime(),
     );
+  });
+
+  // ─── getLastRebalanceInfo ──────────────────────────────────────────────────
+
+  it('getLastRebalanceInfo returns nulls when no trades', () => {
+    const info = service.getLastRebalanceInfo();
+    expect(info.dateBRT).toBeNull();
+    expect(info.direction).toBeNull();
+  });
+
+  it('getLastRebalanceInfo returns BRT date and direction from tradeDateBRT field', async () => {
+    await service.appendTrade(
+      makeRecord('2026-05-15T15:00:00.000Z', 'FILLED', 'SELL_SOL', '2026-05-15'),
+    );
+    const info = service.getLastRebalanceInfo();
+    expect(info.dateBRT).toBe('2026-05-15');
+    expect(info.direction).toBe('SELL_SOL');
+  });
+
+  it('getLastRebalanceInfo falls back to timestamp-derived BRT date for legacy records', async () => {
+    // Record without tradeDateBRT (legacy)
+    await service.appendTrade(
+      makeRecord('2026-06-10T18:00:00.000Z', 'FILLED', 'BUY_SOL', undefined),
+    );
+    const info = service.getLastRebalanceInfo();
+    // Timestamp 18:00 UTC = 15:00 BRT — same calendar day
+    expect(info.direction).toBe('BUY_SOL');
+    expect(info.dateBRT).toBeDefined();
+  });
+
+  it('getLastRebalanceInfo returns the most recent trade direction', async () => {
+    await service.appendTrade(
+      makeRecord('2026-05-01T10:00:00.000Z', 'FILLED', 'BUY_SOL', '2026-05-01'),
+    );
+    await service.appendTrade(
+      makeRecord('2026-05-10T10:00:00.000Z', 'FILLED', 'SELL_SOL', '2026-05-10'),
+    );
+    const info = service.getLastRebalanceInfo();
+    expect(info.direction).toBe('SELL_SOL');
+    expect(info.dateBRT).toBe('2026-05-10');
   });
 });

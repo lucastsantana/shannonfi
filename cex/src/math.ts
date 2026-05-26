@@ -88,3 +88,34 @@ export function isqrt(n: bigint): bigint {
   }
   return x;
 }
+
+/**
+ * Mean absolute daily return over an array of daily close prices.
+ * Input must have at least 2 prices (oldest first).
+ * Returns decimal (e.g. 0.03 = 3% average daily move).
+ */
+export function computeMeanAbsoluteDailyReturn(closes: number[]): number {
+  if (closes.length < 2) throw new Error('Need at least 2 close prices');
+  let sum = 0;
+  for (let i = 1; i < closes.length; i++) {
+    const prev = closes[i - 1]!;
+    const curr = closes[i]!;
+    if (prev <= 0) throw new Error('Close prices must be positive');
+    sum += Math.abs((curr - prev) / prev);
+  }
+  return sum / (closes.length - 1);
+}
+
+/**
+ * Converts mean absolute daily return to a rebalance threshold in BPS.
+ * threshold = round(meanAbsReturn * BPS_DENOMINATOR * multiplier), clamped to [minBps, maxBps].
+ */
+export function computeAdaptiveThresholdBps(
+  meanAbsReturn: number,
+  multiplier: number,
+  minBps = 50,
+  maxBps = 500,
+): number {
+  const raw = Math.round(meanAbsReturn * BPS_DENOMINATOR * multiplier);
+  return Math.max(minBps, Math.min(maxBps, raw));
+}
