@@ -8,29 +8,34 @@ import {
 
 export interface TaxEvent {
   tradeId: string;
-  tradeDateBRT: string;         // YYYY-MM-DD
-  monthBRT: string;             // YYYY-MM
+  tradeDateBRT: string;          // YYYY-MM-DD
+  monthBRT: string;              // YYYY-MM
   direction: 'BUY_SOL' | 'SELL_SOL';
-  grossProceedsBrl: number;     // Gross BRL value of sold SOL (solSold * solBrlRate)
-  costBasisBrl: number;         // Cost basis of the sold SOL in BRL
-  realizedGainBrl: number;      // Net gain = grossProceeds - costBasis
-  cumMonthlyGainBrl: number;    // Running cumulative gain for the month
-  exempt: boolean;              // true if cumMonthlyGain ≤ R$35,000
+  tradedVolumeBrl: number;       // BRL value of the trade: solQty*solBrlRate (SELL) or usdQty*usdBrlRate (BUY)
+  tradedVolumeUsd: number;       // USD value of the trade (for reference)
+  grossProceedsBrl: number;      // Same as tradedVolumeBrl (kept for SELL compatibility; 0 for BUY)
+  costBasisBrl: number;          // Cost basis of the sold SOL in BRL (SELL only; 0 for BUY)
+  realizedGainBrl: number;       // Net gain = grossProceeds - costBasis (SELL only; 0 for BUY)
+  cumMonthlyVolumeBrl: number;   // Running cumulative traded volume for the month (both directions)
+  cumMonthlyGainBrl: number;     // Running cumulative gain for the month (SELL only)
+  exempt: boolean;               // true if cumMonthlyVolume ≤ R$35,000
   paymentDeadline: string | null; // Last BR business day of following month, or null if exempt
 }
 
 export interface MonthlySummary {
   monthBRT: string;
-  totalRealizedGainBrl: number;
-  totalGrossProceedsBrl: number;
+  totalTradedVolumeBrl: number;  // All trades (both directions) counted toward the R$35k limit
+  totalRealizedGainBrl: number;  // Only SELL_SOL trades
+  totalGrossProceedsBrl: number; // Alias for totalTradedVolumeBrl (backwards compat)
   tradeCount: number;
   exempt: boolean;
   paymentDeadline: string | null;
 }
 
 /**
- * Manages an append-only ledger of realized capital gain events for Brazilian tax reporting.
- * Only SELL_SOL trades are recorded (purchases do not realize gains under Brazilian law).
+ * Manages an append-only ledger of all rebalance trades for Brazilian tax reporting.
+ * Both BUY_SOL and SELL_SOL count toward the R$35,000 monthly traded-volume exemption.
+ * Realized gains (for capital gains tax) are computed only on SELL_SOL trades.
  */
 export class TaxService {
   private filePath: string;
@@ -64,14 +69,17 @@ export class TaxService {
     });
   }
 
-  /** Total gross BRL proceeds of SELL_SOL trades in the given month. */
+  /**
+   * Total BRL traded volume for the month — both BUY_SOL and SELL_SOL count
+   * toward the R$35,000 monthly exemption limit under Brazilian law.
+   */
   getMonthlyVolumeBrl(monthBRT: string): number {
     return this.readEvents()
-      .filter((e) => e.monthBRT === monthBRT && e.direction === 'SELL_SOL')
-      .reduce((sum, e) => sum + e.grossProceedsBrl, 0);
+      .filter((e) => e.monthBRT === monthBRT)
+      .reduce((sum, e) => sum + e.tradedVolumeBrl, 0);
   }
 
-  /** Cumulative realized gain for the given month. */
+  /** Cumulative realized gain for the month (SELL_SOL only). */
   getMonthlyGainBrl(monthBRT: string): number {
     return this.readEvents()
       .filter((e) => e.monthBRT === monthBRT && e.direction === 'SELL_SOL')
@@ -79,14 +87,15 @@ export class TaxService {
   }
 
   getMonthlySummary(monthBRT: string): MonthlySummary {
-    const events = this.readEvents().filter(
-      (e) => e.monthBRT === monthBRT && e.direction === 'SELL_SOL',
-    );
-    const totalGain = events.reduce((s, e) => s + e.realizedGainBrl, 0);
-    const totalVolume = events.reduce((s, e) => s + e.grossProceedsBrl, 0);
-    const exempt = totalGain <= BR_MONTHLY_EXEMPTION_LIMIT_BRL;
+    const events = this.readEvents().filter((e) => e.monthBRT === monthBRT);
+    const totalVolume = events.reduce((s, e) => s + e.tradedVolumeBrl, 0);
+    const totalGain = events
+      .filter((e) => e.direction === 'SELL_SOL')
+      .reduce((s, e) => s + e.realizedGainBrl, 0);
+    const exempt = totalVolume <= BR_MONTHLY_EXEMPTION_LIMIT_BRL;
     return {
       monthBRT,
+      totalTradedVolumeBrl: totalVolume,
       totalRealizedGainBrl: totalGain,
       totalGrossProceedsBrl: totalVolume,
       tradeCount: events.length,
@@ -125,27 +134,40 @@ export class TaxService {
     return `${String(followingYear).padStart(4, '0')}-${String(followingMonth).padStart(2, '0')}-01`;
   }
 
-  /** Build a TaxEvent record given the trade details. Computes cumulative totals. */
+  /**
+   * Build a TaxEvent for any trade direction.
+   * tradedVolumeBrl: for SELL_SOL = solQty * solBrlRate; for BUY_SOL = usdQty * usdBrlRate.
+   * tradedVolumeUsd: the USD notional of the trade (for reference).
+   * grossProceedsBrl / costBasisBrl / realizedGainBrl: only meaningful for SELL_SOL (pass 0 for BUY).
+   */
   buildTaxEvent(params: {
     tradeId: string;
     tradeDateBRT: string;
     direction: 'BUY_SOL' | 'SELL_SOL';
+    tradedVolumeBrl: number;
+    tradedVolumeUsd: number;
     grossProceedsBrl: number;
     costBasisBrl: number;
     realizedGainBrl: number;
   }): TaxEvent {
     const monthBRT = params.tradeDateBRT.slice(0, 7); // "YYYY-MM"
+    const priorMonthlyVolume = this.getMonthlyVolumeBrl(monthBRT);
+    const cumMonthlyVolumeBrl = priorMonthlyVolume + params.tradedVolumeBrl;
     const priorMonthlyGain = this.getMonthlyGainBrl(monthBRT);
     const cumMonthlyGainBrl = priorMonthlyGain + params.realizedGainBrl;
-    const exempt = cumMonthlyGainBrl <= BR_MONTHLY_EXEMPTION_LIMIT_BRL;
+    // Exemption is based on total traded volume, not just gains
+    const exempt = cumMonthlyVolumeBrl <= BR_MONTHLY_EXEMPTION_LIMIT_BRL;
     return {
       tradeId: params.tradeId,
       tradeDateBRT: params.tradeDateBRT,
       monthBRT,
       direction: params.direction,
+      tradedVolumeBrl: params.tradedVolumeBrl,
+      tradedVolumeUsd: params.tradedVolumeUsd,
       grossProceedsBrl: params.grossProceedsBrl,
       costBasisBrl: params.costBasisBrl,
       realizedGainBrl: params.realizedGainBrl,
+      cumMonthlyVolumeBrl,
       cumMonthlyGainBrl,
       exempt,
       paymentDeadline: exempt ? null : this.computePaymentDeadline(monthBRT),

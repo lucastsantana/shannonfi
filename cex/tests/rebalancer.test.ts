@@ -93,7 +93,7 @@ function makeBot(historyOverrides: Partial<TradeHistoryService> = {}, configOver
   } as unknown as CostBasisService;
   const tax = {
     getMonthlyVolumeBrl: vi.fn().mockReturnValue(0),
-    buildTaxEvent: vi.fn().mockReturnValue({ cumMonthlyGainBrl: 500, exempt: true, paymentDeadline: null }),
+    buildTaxEvent: vi.fn().mockReturnValue({ cumMonthlyVolumeBrl: 500, cumMonthlyGainBrl: 500, tradedVolumeBrl: 500, exempt: true, paymentDeadline: null }),
     appendTaxEvent: vi.fn(),
   } as unknown as TaxService;
   const volatility = {

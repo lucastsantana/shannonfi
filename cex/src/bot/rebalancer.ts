@@ -173,8 +173,10 @@ export class RebalancerBot {
       return;
     }
 
-    // ── Guard 5: exemption limit cap (opt-in, SELL_SOL only) ───────────────────
-    if (this.config.neverExceedExemptionLimit && direction === 'SELL_SOL') {
+    // ── Guard 5: exemption limit cap (opt-in, both directions) ────────────────
+    // Both BUY_SOL and SELL_SOL count toward the R$35,000 monthly traded-volume
+    // exemption limit under Brazilian law.
+    if (this.config.neverExceedExemptionLimit) {
       const usdBrlRate = await fetchUsdBrlRate(this.config.fxApiUrl);
       if (usdBrlRate !== null) {
         const monthBRT = todayBRT.slice(0, 7);
@@ -184,7 +186,8 @@ export class RebalancerBot {
 
         if (usdAmount > remainingUsd) {
           if (remainingUsd < this.config.minTradeSizeUsd) {
-            logger.info('Monthly exemption limit reached — skipping SELL trade', {
+            logger.info('Monthly exemption limit reached — skipping trade', {
+              direction,
               volumeSoFarBrl: volumeSoFarBrl.toFixed(2),
               remainingBrl: remainingBrl.toFixed(2),
               monthBRT,
@@ -193,6 +196,7 @@ export class RebalancerBot {
             return;
           }
           logger.info('Capping trade to preserve monthly tax exemption', {
+            direction,
             originalUsdAmount: usdAmount.toFixed(2),
             cappedUsdAmount: remainingUsd.toFixed(2),
             remainingBrl: remainingBrl.toFixed(2),
@@ -261,7 +265,6 @@ export class RebalancerBot {
           );
           tradeRecord.realizedGainBrl = realizedGain;
 
-          // Record tax event
           const ledger = this.costBasis.getLedger();
           const costBasisBrl = ledger.sol.averageCostBrl * solSold;
           const grossProceedsBrl = solSold * solBrlRate;
@@ -269,14 +272,18 @@ export class RebalancerBot {
             tradeId: tradeRecord.id,
             tradeDateBRT: todayBRT,
             direction,
+            tradedVolumeBrl: grossProceedsBrl,
+            tradedVolumeUsd: usdReceived,
             grossProceedsBrl,
             costBasisBrl,
             realizedGainBrl: realizedGain,
           });
           this.tax.appendTaxEvent(taxEvent);
 
-          logger.info('BRL tax event recorded', {
+          logger.info('BRL tax event recorded (SELL_SOL)', {
+            tradedVolumeBrl: grossProceedsBrl.toFixed(2),
             realizedGainBrl: realizedGain.toFixed(2),
+            cumMonthlyVolumeBrl: taxEvent.cumMonthlyVolumeBrl.toFixed(2),
             cumMonthlyGainBrl: taxEvent.cumMonthlyGainBrl.toFixed(2),
             exempt: taxEvent.exempt,
             paymentDeadline: taxEvent.paymentDeadline ?? 'exempt',
@@ -285,7 +292,28 @@ export class RebalancerBot {
           const solAcquired = tradeRecord.solAmountFilled;
           const usdSpent = tradeRecord.usdAmountFilled ?? usdAmount;
           this.costBasis.updateAfterBuy(solAcquired, usdSpent, usdBrlRate, solBrlRate);
-          tradeRecord.realizedGainBrl = 0; // purchases don't realize gains
+          tradeRecord.realizedGainBrl = 0; // purchases don't realize capital gains
+
+          // BUY_SOL still counts toward the monthly volume limit
+          const tradedVolumeBrl = usdSpent * usdBrlRate;
+          const taxEvent = this.tax.buildTaxEvent({
+            tradeId: tradeRecord.id,
+            tradeDateBRT: todayBRT,
+            direction,
+            tradedVolumeBrl,
+            tradedVolumeUsd: usdSpent,
+            grossProceedsBrl: 0,
+            costBasisBrl: 0,
+            realizedGainBrl: 0,
+          });
+          this.tax.appendTaxEvent(taxEvent);
+
+          logger.info('BRL tax event recorded (BUY_SOL)', {
+            tradedVolumeBrl: tradedVolumeBrl.toFixed(2),
+            cumMonthlyVolumeBrl: taxEvent.cumMonthlyVolumeBrl.toFixed(2),
+            exempt: taxEvent.exempt,
+            paymentDeadline: taxEvent.paymentDeadline ?? 'exempt',
+          });
         }
       } else {
         tradeRecord.brlSnapshot = null;
