@@ -51,9 +51,10 @@ const ConfigSchema = z.object({
     .min(7)
     .max(90)
     .default(DEFAULT_VOLATILITY_WINDOW_DAYS),
-  // ─── Brazilian tax compliance ───────────────────────────────────────────────
-  // Never allow monthly SELL volume to exceed R$35,000 (minus safety buffer).
-  // When true, trades are capped or skipped to stay within the exemption limit.
+  // ─── Monthly volume management ──────────────────────────────────────────────
+  // Note: Coinbase is a foreign exchange under Lei 14.754/2023 — the R$35,000
+  // monthly exemption does not apply. This flag caps monthly traded volume at
+  // R$34,650 as a discretionary strategy constraint, not a tax exemption guard.
   neverExceedExemptionLimit: z.boolean().default(false),
   fxApiUrl: z
     .string()

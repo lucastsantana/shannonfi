@@ -14,14 +14,21 @@ import { BrlSnapshot, PortfolioSnapshot } from '../coinbase/types';
 import { BR_EFFECTIVE_LIMIT_BRL } from '../constants';
 
 /**
- * Core rebalancing loop — TypeScript port of rebalance.rs + keeper.ts polling loop.
+ * Core rebalancing loop for Coinbase Advanced Trade API.
+ *
+ * Tax regime: Coinbase is a US-domiciled (foreign) exchange. Under Lei 14.754/2023,
+ * gains from foreign crypto assets are taxed at a flat 15% annually via IRPF. The
+ * R$35,000 monthly exemption (Lei 9.250/1995) does NOT apply to foreign exchanges.
+ * The neverExceedExemptionLimit guard is kept as an optional volume-management
+ * strategy but has no legal exemption effect on Coinbase trades.
  *
  * Guards (in execution order):
- *   minPortfolioValueUsd    → InsufficientVaultSol
- *   shouldRebalance()       → BelowThreshold (adaptive or fixed)
- *   minRebalanceInterval    → SlotNotElapsed (cooldown)
+ *   minPortfolioValueUsd    → skip if portfolio too small
+ *   shouldRebalance()       → drift check (adaptive or fixed threshold)
+ *   minRebalanceInterval    → cooldown between rebalances
  *   dayTradeGuard           → blocks opposite-direction trade on same BRT calendar day
- *   neverExceedExemption    → caps or skips SELL_SOL trades near R$35,000/month limit
+ *                             (strategy constraint, not a legal prohibition)
+ *   neverExceedExemption    → caps or skips trades above monthly volume target
  *   minTradeSizeUsd         → minimum order size guard
  */
 export class RebalancerBot {
@@ -156,8 +163,8 @@ export class RebalancerBot {
       portfolioSnapshot.usdBalance,
     );
 
-    // ── Guard 4: day-trade guard (Brazilian regulation) ────────────────────────
-    // Block opposite-direction trade on same BRT calendar day only.
+    // ── Guard 4: day-trade guard ───────────────────────────────────────────────
+    // Block opposite-direction trade on same BRT calendar day (strategy constraint).
     const todayBRT = new Date().toLocaleDateString('en-CA', {
       timeZone: 'America/Sao_Paulo',
     });
@@ -173,9 +180,10 @@ export class RebalancerBot {
       return;
     }
 
-    // ── Guard 5: exemption limit cap (opt-in, both directions) ────────────────
-    // Both BUY_SOL and SELL_SOL count toward the R$35,000 monthly traded-volume
-    // exemption limit under Brazilian law.
+    // ── Guard 5: volume cap (opt-in, both directions) ──────────────────────────
+    // Note: Coinbase is a foreign exchange — the R$35,000 domestic exemption does
+    // not apply (Lei 14.754/2023 governs instead, with flat 15% annual rate).
+    // This guard is kept as an optional monthly-volume management tool.
     if (this.config.neverExceedExemptionLimit) {
       const usdBrlRate = await fetchUsdBrlRate(this.config.fxApiUrl);
       if (usdBrlRate !== null) {
