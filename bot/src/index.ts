@@ -2,9 +2,10 @@
  * Shannon's Demon rebalancing bot — unified entry point.
  *
  * Usage:
- *   node dist/index.js           — run continuously (polls every pollIntervalSeconds)
- *   node dist/index.js --once    — run a single rebalance cycle and exit
- *   node dist/index.js --report  — print track record and exit
+ *   node dist/index.js                        — run continuously
+ *   node dist/index.js --once                 — single cycle and exit
+ *   node dist/index.js --report               — print track record and exit
+ *   node dist/index.js --config /path/to.yaml — use alternate config file
  */
 
 import { loadConfig } from './config';
@@ -24,8 +25,10 @@ async function main(): Promise<void> {
   const args = process.argv.slice(2);
   const once = args.includes('--once');
   const report = args.includes('--report');
+  const configIdx = args.indexOf('--config');
+  const configPath = configIdx !== -1 ? args[configIdx + 1] : undefined;
 
-  const config = loadConfig();
+  const config = loadConfig(configPath);
   logger.level = config.logLevel;
 
   // ── Build adapter ──────────────────────────────────────────────────────────

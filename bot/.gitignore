@@ -3,8 +3,9 @@ dist/
 *.js.map
 *.d.ts.map
 
-# Config file contains secrets — never commit
+# Config file and launch script are local — never commit
 shannonfi.config.yaml
+start.sh
 *.pem
 
 # Runtime data files — excluded from version control
