@@ -34,6 +34,10 @@ export class MbEndpoints {
     return this.client.get<MbOrder>(`/accounts/${accountId}/${MB_SYMBOL}/orders/${orderId}`);
   }
 
+  async getOrders(accountId: string, limit: number = 100): Promise<MbOrder[]> {
+    return this.client.get<MbOrder[]>(`/accounts/${accountId}/${MB_SYMBOL}/orders`, { limit });
+  }
+
   async getCandles(
     countback: number,
     resolution: MbCandleResolution = '1d',
