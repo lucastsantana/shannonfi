@@ -69,7 +69,11 @@ describe('RebalancerBot.checkAndRebalance', () => {
   beforeEach(() => {
     portfolio = { getPortfolio: vi.fn() } as unknown as PortfolioService;
     trader = { executeTrade: vi.fn() } as unknown as TraderService;
-    history = { appendTrade: vi.fn(), readTrades: vi.fn().mockReturnValue([]) } as unknown as TradeHistoryService;
+    history = {
+      appendTrade: vi.fn(),
+      readTrades: vi.fn().mockReturnValue([]),
+      getLastRebalanceTime: vi.fn().mockReturnValue(0),
+    } as unknown as TradeHistoryService;
     pnl = { logRebalance: vi.fn(), printReport: vi.fn() } as unknown as PnlService;
     bot = new RebalancerBot(portfolio, trader, history, pnl, testConfig);
   });
@@ -113,6 +117,21 @@ describe('RebalancerBot.checkAndRebalance', () => {
     await bot.checkAndRebalance();
     expect(history.appendTrade).toHaveBeenCalled();
     expect(pnl.logRebalance).toHaveBeenCalled();
+  });
+
+  it('restores cooldown from trade history on construction', async () => {
+    // Simulate a rebalance that happened 30 minutes ago — still in cooldown
+    const thirtyMinsAgo = Date.now() - 30 * 60 * 1000;
+    const historyWithRecent = {
+      appendTrade: vi.fn(),
+      readTrades: vi.fn().mockReturnValue([]),
+      getLastRebalanceTime: vi.fn().mockReturnValue(thirtyMinsAgo),
+    } as unknown as TradeHistoryService;
+
+    const freshBot = new RebalancerBot(portfolio, trader, historyWithRecent, pnl, testConfig);
+    vi.mocked(portfolio.getPortfolio).mockResolvedValue(makePortfolio());
+    await freshBot.checkAndRebalance();
+    expect(trader.executeTrade).not.toHaveBeenCalled();
   });
 
   it('respects cooldown between rebalances', async () => {

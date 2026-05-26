@@ -30,6 +30,13 @@ jobs:
           cache: 'npm'
           cache-dependency-path: cex/package-lock.json
 
+      - name: Restore trade history cache
+        uses: actions/cache@v4
+        with:
+          path: cex/data/trade_history.json
+          key: trade-history-${{ github.repository }}
+          restore-keys: trade-history-
+
       - name: Install dependencies
         run: npm ci
 

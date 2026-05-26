@@ -16,7 +16,7 @@ import { Config } from '../config';
  *   minTradeSizeUsd         → minimum order size guard
  */
 export class RebalancerBot {
-  private lastRebalanceTime = 0;
+  private lastRebalanceTime: number;
   private isRunning = false;
 
   constructor(
@@ -25,7 +25,17 @@ export class RebalancerBot {
     private history: TradeHistoryService,
     private pnl: PnlService,
     private config: Config,
-  ) {}
+  ) {
+    // Restore cooldown state from persisted trade history so the
+    // MIN_REBALANCE_INTERVAL_SECONDS guard works correctly after restarts
+    // and across --once invocations (e.g. GitHub Actions runs).
+    this.lastRebalanceTime = history.getLastRebalanceTime();
+    if (this.lastRebalanceTime > 0) {
+      logger.info('Restored last rebalance time from history', {
+        lastRebalanceTime: new Date(this.lastRebalanceTime).toISOString(),
+      });
+    }
+  }
 
   /**
    * Continuous polling loop. Runs every pollIntervalSeconds.

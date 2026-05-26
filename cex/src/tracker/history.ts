@@ -35,4 +35,18 @@ export class TradeHistoryService {
       (t) => t.status === 'FILLED' || t.status === 'DRY_RUN',
     ).length;
   }
+
+  /**
+   * Returns the Unix ms timestamp of the last successful rebalance, or 0 if none.
+   * Used by RebalancerBot to restore the cooldown guard after a restart or across
+   * --once invocations (e.g. GitHub Actions), provided the history file is available.
+   */
+  getLastRebalanceTime(): number {
+    const trades = this.readTrades();
+    const successful = trades
+      .filter((t) => t.status === 'FILLED' || t.status === 'DRY_RUN')
+      .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+    if (successful.length === 0) return 0;
+    return new Date(successful[successful.length - 1]!.timestamp).getTime();
+  }
 }
