@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 /**
  * Daily digest email — sends yesterday's trading summary to user email.
  * Scheduled to run at 00:30 AM BRT every day.
@@ -11,11 +12,12 @@ import * as nodemailer from 'nodemailer';
 import * as fs from 'fs';
 import * as path from 'path';
 import { execSync } from 'child_process';
-import { loadConfig } from '../config';
-import { TradeHistoryService } from '../core/tracker/history';
-import { TaxService } from '../core/tracker/tax';
-import { CostBasisService } from '../core/tracker/costbasis';
-import { logger } from '../core/tracker/logger';
+import { loadConfig } from '@shannonfi/bot/config';
+import { TradeHistoryService } from '@shannonfi/bot/core/tracker/history';
+import { TaxService } from '@shannonfi/bot/core/tracker/tax';
+import { CostBasisService } from '@shannonfi/bot/core/tracker/costbasis';
+import { logger } from '@shannonfi/bot/core/tracker/logger';
+import { fmtBrl, fmtPct } from './report-builder';
 
 interface DailyDigest {
   dateBRT: string;
@@ -58,21 +60,6 @@ function getYesterdayBRT(): string {
   const day = String(yesterday.getUTCDate()).padStart(2, '0');
 
   return `${year}-${month}-${day}`;
-}
-
-/**
- * Format BRL currency
- */
-function formatBRL(value: number): string {
-  return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
-}
-
-/**
- * Format percentage
- */
-function formatPct(value: number): string {
-  const sign = value >= 0 ? '+' : '';
-  return `${sign}${value.toFixed(2)}%`;
 }
 
 /**
@@ -198,12 +185,12 @@ function renderEmailHtml(digest: DailyDigest): string {
       </div>
       <div class="metric">
         <span class="metric-label">Portfolio Value</span>
-        <span class="metric-value">${formatBRL(digest.endValue)}</span>
+        <span class="metric-value">${fmtBrl(digest.endValue)}</span>
       </div>
       <div class="metric">
         <span class="metric-label">P&L</span>
         <span class="metric-value" style="color: ${digest.endValue - digest.startValue >= 0 ? '#10b981' : '#ef4444'}">
-          ${digest.endValue - digest.startValue >= 0 ? '+' : ''}${formatBRL(digest.endValue - digest.startValue)}
+          ${digest.endValue - digest.startValue >= 0 ? '+' : ''}${fmtBrl(digest.endValue - digest.startValue)}
         </span>
       </div>
     </div>
@@ -214,11 +201,11 @@ function renderEmailHtml(digest: DailyDigest): string {
         <div class="box">
           <div class="box-label">SOL</div>
           <div class="box-value">${digest.solEnd.toFixed(6)}</div>
-          <div style="font-size: 12px; color: #9ca3af; margin-top: 4px;">${formatBRL(digest.solEnd * digest.solPriceEnd)}</div>
+          <div style="font-size: 12px; color: #9ca3af; margin-top: 4px;">${fmtBrl(digest.solEnd * digest.solPriceEnd)}</div>
         </div>
         <div class="box">
           <div class="box-label">BRL</div>
-          <div class="box-value">${formatBRL(digest.brlEnd)}</div>
+          <div class="box-value">${fmtBrl(digest.brlEnd)}</div>
         </div>
       </div>
       <div class="metric">
@@ -252,7 +239,7 @@ function renderEmailHtml(digest: DailyDigest): string {
         </tr>
         <tr>
           <td>Fees Paid</td>
-          <td style="text-align: right;">${formatBRL(digest.feesTotal)}</td>
+          <td style="text-align: right;">${fmtBrl(digest.feesTotal)}</td>
         </tr>
       </table>
     </div>
@@ -261,16 +248,16 @@ function renderEmailHtml(digest: DailyDigest): string {
       <h2 style="margin-top: 0; font-size: 16px; color: #1f2937;">Price Movement</h2>
       <div class="metric">
         <span class="metric-label">SOL Start</span>
-        <span class="metric-value">${formatBRL(digest.solPriceStart)}</span>
+        <span class="metric-value">${fmtBrl(digest.solPriceStart)}</span>
       </div>
       <div class="metric">
         <span class="metric-label">SOL End</span>
-        <span class="metric-value">${formatBRL(digest.solPriceEnd)}</span>
+        <span class="metric-value">${fmtBrl(digest.solPriceEnd)}</span>
       </div>
       <div class="metric">
         <span class="metric-label">SOL Change</span>
         <span class="metric-value" style="color: ${digest.solPriceEnd - digest.solPriceStart >= 0 ? '#10b981' : '#ef4444'}">
-          ${digest.solPriceEnd - digest.solPriceStart >= 0 ? '+' : ''}${formatBRL(digest.solPriceEnd - digest.solPriceStart)}
+          ${digest.solPriceEnd - digest.solPriceStart >= 0 ? '+' : ''}${fmtBrl(digest.solPriceEnd - digest.solPriceStart)}
         </span>
       </div>
     </div>
