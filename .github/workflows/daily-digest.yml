@@ -28,12 +28,20 @@ jobs:
           restore-keys: |
             bot-sqlite-
 
-      - name: Install dependencies
+      - name: Install dependencies (bot)
         working-directory: bot
         run: npm ci
 
-      - name: Build
+      - name: Install dependencies (reporting)
+        working-directory: reporting
+        run: npm ci
+
+      - name: Build (bot)
         working-directory: bot
+        run: npm run build
+
+      - name: Build (reporting)
+        working-directory: reporting
         run: npm run build
 
       - name: Create config from secrets
@@ -75,7 +83,7 @@ jobs:
 
       - name: Send daily digest
         working-directory: bot
-        run: TZ=America/Sao_Paulo node dist/scripts/daily-digest.js --config shannonfi.config.yaml
+        run: TZ=America/Sao_Paulo npm run daily-digest:built -- --config shannonfi.config.yaml
         continue-on-error: true
 
       - name: Save SQLite cache
