@@ -60,17 +60,14 @@ See **[bot/README.md § Monthly Reporting](./bot/README.md#monthly-reporting)** 
 
 ## Daily Digest Email
 
-The bot sends an email summary of yesterday's trading activity every morning at **00:30 AM BRT**. Configure SMTP in your `shannonfi.config.yaml` to enable:
+The bot sends an email summary of yesterday's trading activity every morning at **00:30 AM BRT**.
 
-```yaml
-smtp:
-  host: smtp.mail.yahoo.com
-  port: 587
-  secure: false
-  username: your-email@yahoo.com.br
-  password: your-app-password
-  recipientEmail: your-email@yahoo.com.br
+**Setup:**
+```bash
+npm run setup-smtp
 ```
+
+This interactive script securely stores your Yahoo email and app password in GNOME Keyring (same as MB credentials), tests the connection, and enables daily emails.
 
 **What's included:**
 - Daily return (%) and P&L (BRL)
@@ -78,7 +75,7 @@ smtp:
 - Trading activity (rebalances, buys, sells, fees)
 - SOL price movement
 
-Emails are sent locally via systemd timer (PM2 mode) or GitHub Actions (cloud). See **[bot/README.md § Daily Digest](./bot/README.md#daily-digest-email)** for full setup.
+Emails are sent locally via systemd timer (PM2 mode) or GitHub Actions (cloud). See **[bot/README.md § Daily Digest Email](./bot/README.md#daily-digest-email)** for full setup and troubleshooting.
 
 ---
 

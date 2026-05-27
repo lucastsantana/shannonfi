@@ -103,14 +103,16 @@ jsonRetentionDays: 15
 
 
 # ── Daily Digest Email ──────────────────────────────────────────────────────────
-# Optional: Configure SMTP to send daily trading digest emails at 00:30 AM BRT.
-# If omitted, daily digest emails are disabled.
-
-# Example for Yahoo Mail:
-smtp:
-  host: smtp.mail.yahoo.com
-  port: 587
-  secure: false                    # TLS (port 587)
-  username: lucastsantana@yahoo.com.br
-  password: your-app-password      # Yahoo: use app-specific password from Account Security settings
-  recipientEmail: lucastsantana@yahoo.com.br
+# Optional: Configure SMTP for daily trading digest emails at 00:30 AM BRT.
+#
+# RECOMMENDED: Store credentials securely in GNOME Keyring using:
+#   npm run setup-smtp
+#
+# FALLBACK: Optionally specify credentials here (less secure, not recommended):
+# smtp:
+#   host: smtp.mail.yahoo.com
+#   port: 587
+#   secure: false
+#   username: your-email@yahoo.com.br
+#   password: your-app-password
+#   recipientEmail: your-email@yahoo.com.br

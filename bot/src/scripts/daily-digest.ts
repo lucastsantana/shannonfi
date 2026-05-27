@@ -10,6 +10,7 @@
 import * as nodemailer from 'nodemailer';
 import * as fs from 'fs';
 import * as path from 'path';
+import { execSync } from 'child_process';
 import { loadConfig } from '../config';
 import { TradeHistoryService } from '../core/tracker/history';
 import { TaxService } from '../core/tracker/tax';
@@ -273,6 +274,34 @@ function renderEmailHtml(digest: DailyDigest): string {
 }
 
 /**
+ * Retrieve SMTP credentials from GNOME Keyring
+ */
+function getSmtpCredentialsFromKeyring(): { username: string; password: string; recipientEmail: string } | null {
+  try {
+    const username = execSync('secret-tool lookup service shannon-demon key smtp-username', {
+      encoding: 'utf-8',
+      stdio: ['pipe', 'pipe', 'pipe'],
+    }).trim();
+    const password = execSync('secret-tool lookup service shannon-demon key smtp-password', {
+      encoding: 'utf-8',
+      stdio: ['pipe', 'pipe', 'pipe'],
+    }).trim();
+    const recipientEmail = execSync('secret-tool lookup service shannon-demon key smtp-recipient', {
+      encoding: 'utf-8',
+      stdio: ['pipe', 'pipe', 'pipe'],
+    }).trim();
+
+    if (!username || !password || !recipientEmail) {
+      return null;
+    }
+
+    return { username, password, recipientEmail };
+  } catch (err) {
+    return null;
+  }
+}
+
+/**
  * Send email via SMTP
  */
 async function sendEmail(
@@ -313,9 +342,25 @@ async function main(): Promise<void> {
   const config = loadConfig(configPath);
   logger.level = config.logLevel;
 
-  // Check if SMTP config exists
-  if (!config.smtp) {
-    logger.error('SMTP configuration not found in config file. Cannot send daily digest.');
+  // Try to get SMTP credentials from keyring first, then fall back to config
+  let smtpUsername: string | undefined;
+  let smtpPassword: string | undefined;
+  let smtpRecipient: string | undefined;
+
+  const keyringCreds = getSmtpCredentialsFromKeyring();
+  if (keyringCreds) {
+    logger.info('Using SMTP credentials from GNOME Keyring');
+    smtpUsername = keyringCreds.username;
+    smtpPassword = keyringCreds.password;
+    smtpRecipient = keyringCreds.recipientEmail;
+  } else if (config.smtp) {
+    logger.info('Using SMTP credentials from config file');
+    smtpUsername = config.smtp.username;
+    smtpPassword = config.smtp.password;
+    smtpRecipient = config.smtp.recipientEmail;
+  } else {
+    logger.error('SMTP credentials not found in keyring or config file. Cannot send daily digest.');
+    logger.error('Run: npm run setup-smtp to securely store credentials in GNOME Keyring');
     process.exit(1);
   }
 
@@ -332,16 +377,16 @@ async function main(): Promise<void> {
 
   // Send email
   try {
-    await sendEmail(config.smtp.recipientEmail, subject, html, {
-      host: config.smtp.host,
-      port: config.smtp.port,
-      secure: config.smtp.secure ?? true,
+    await sendEmail(smtpRecipient, subject, html, {
+      host: 'smtp.mail.yahoo.com',
+      port: 587,
+      secure: false,
       auth: {
-        user: config.smtp.username,
-        pass: config.smtp.password,
+        user: smtpUsername,
+        pass: smtpPassword,
       },
     });
-    logger.info('Daily digest email sent successfully', { recipient: config.smtp.recipientEmail, date: digest.dateBRT });
+    logger.info('Daily digest email sent successfully', { recipient: smtpRecipient, date: digest.dateBRT });
   } catch (err) {
     logger.error('Failed to send daily digest', { error: (err as Error).message });
     process.exit(1);

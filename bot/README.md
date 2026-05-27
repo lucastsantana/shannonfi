@@ -267,25 +267,51 @@ PM2 will keep the bot alive if it crashes and auto-restart on system reboot.
 
 The bot sends a formatted email summary every morning at **00:30 AM BRT** with yesterday's trading activity. This is useful for staying informed without opening the dashboard.
 
-### Setup
+### Setup (Recommended: GNOME Keyring)
 
-Add SMTP configuration to `shannonfi.config.yaml`:
+Store your SMTP credentials securely in GNOME Keyring:
+
+```bash
+npm run setup-smtp
+```
+
+This interactive script will:
+1. Prompt for your Yahoo email and app password
+2. Store them encrypted in GNOME Keyring (like MB credentials)
+3. Test the SMTP connection to verify settings
+4. Exit on success
+
+**Yahoo Mail Setup:**
+1. Go to [Account Security](https://login.yahoo.com/account/security)
+2. Click **"Generate app password"**
+3. Select app: **Other App**, enter: **Shannon's Demon**
+4. Copy the generated 16-character password and use it when running `npm run setup-smtp`
+
+### Setup (Fallback: Config File)
+
+If you prefer not to use GNOME Keyring, add SMTP configuration to `shannonfi.config.yaml`:
 
 ```yaml
 smtp:
   host: smtp.mail.yahoo.com
   port: 587
   secure: false                    # TLS (port 587)
-  username: lucastsantana@yahoo.com.br
+  username: your-email@yahoo.com.br
   password: your-app-password      # Yahoo: use app-specific password from Account Security
-  recipientEmail: lucastsantana@yahoo.com.br
+  recipientEmail: your-email@yahoo.com.br
 ```
 
-**Yahoo Mail Setup:**
-1. Go to [Account Security](https://login.yahoo.com/account/security)
-2. Click **"Generate app password"**
-3. Select app: **Other App**, enter: **Shannon's Demon**
-4. Copy the generated 16-character password and paste it in `shannonfi.config.yaml`
+**Note:** This is less secure; storing credentials in the keyring is recommended.
+
+### Testing the Setup
+
+Before enabling automation, test that everything works:
+
+```bash
+npm run setup-smtp
+```
+
+This will interactively prompt for your Yahoo email, app password, and recipient email. It automatically verifies the SMTP connection. If it succeeds, credentials are stored in GNOME Keyring and ready to use.
 
 ### Running Manually
 
@@ -293,7 +319,7 @@ smtp:
 npm run daily-digest
 ```
 
-This sends an email for yesterday's activity (or exits silently if no data found).
+This sends an email for yesterday's activity (or exits silently if no data found). Credentials are read from GNOME Keyring (preferred) or from config file (fallback).
 
 ### Automated Scheduling
 
@@ -335,19 +361,42 @@ If there are no snapshots for yesterday (e.g., bot wasn't running), the script e
 
 ### Troubleshooting
 
-**SMTP authentication failed:**
-- Verify Yahoo app password (16 characters, no dashes)
-- Confirm `secure: false` for port 587 (TLS, not SSL)
+**Keyring not found:**
+```bash
+# Check if GNOME Keyring is installed
+which secret-tool
+
+# If missing, install it:
+sudo apt install gnome-keyring  # Debian/Ubuntu
+brew install gnome-keyring      # macOS
+```
+
+**SMTP authentication failed during setup:**
+- Verify Yahoo app password is correct (16 characters, from Account Security)
+- Confirm internet connection to `smtp.mail.yahoo.com:587`
 - Check firewall/VPN isn't blocking port 587
+- Try running `npm run setup-smtp` again to update credentials
+
+**Credentials lost after reboot (WSL2):**
+- Ensure GNOME Keyring daemon auto-starts. Add to `~/.bashrc`:
+  ```bash
+  if [ -z "${GNOME_KEYRING_CONTROL:-}" ] && command -v gnome-keyring-daemon &>/dev/null; then
+    eval $(gnome-keyring-daemon --start --components=secrets 2>/dev/null) 2>/dev/null || true
+    export GNOME_KEYRING_CONTROL
+  fi
+  ```
+- Then run: `source ~/.bashrc`
 
 **Email never arrives:**
 - Run manually: `npm run daily-digest` and check logs
-- Verify `recipientEmail` is spelled correctly
-- Check email spam folder
+- Verify recipient email is spelled correctly in setup
+- Check Yahoo email spam folder
+- Run `npm run setup-smtp` again to re-test SMTP connection
 
 **No data for yesterday:**
 - Script only sends if snapshots exist for yesterday's date (BRT)
 - If bot wasn't running, no email is sent (this is normal)
+- Verify SQLite database has data: check `data/shannonfi.db` file size
 
 ---
 

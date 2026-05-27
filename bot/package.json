@@ -15,6 +15,8 @@
     "report:built": "node dist/scripts/monthly-report.js",
     "daily-digest": "ts-node src/scripts/daily-digest.ts",
     "daily-digest:built": "node dist/scripts/daily-digest.js",
+    "setup-smtp": "ts-node src/scripts/setup-smtp.ts",
+    "setup-smtp:built": "node dist/scripts/setup-smtp.js",
     "setup-check": "ts-node src/scripts/setup-check.ts",
     "test": "vitest run",
     "test:watch": "vitest",
