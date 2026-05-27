@@ -13,6 +13,8 @@
     "dev:report": "ts-node src/index.ts --report",
     "report": "ts-node src/scripts/monthly-report.ts",
     "report:built": "node dist/scripts/monthly-report.js",
+    "report:pdf": "ts-node src/scripts/latex-report.ts",
+    "report:pdf:built": "node dist/scripts/latex-report.js",
     "daily-digest": "ts-node src/scripts/daily-digest.ts",
     "daily-digest:built": "node dist/scripts/daily-digest.js",
     "setup-smtp": "ts-node src/scripts/setup-smtp.ts",
