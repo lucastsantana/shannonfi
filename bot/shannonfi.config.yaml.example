@@ -100,3 +100,17 @@ dbPath: ./data/shannonfi.db
 # Number of days to keep data in JSON backup files (0 = disable JSON backup).
 # After 15 days, older records are pruned from JSON but stay in SQLite.
 jsonRetentionDays: 15
+
+
+# ── Daily Digest Email ──────────────────────────────────────────────────────────
+# Optional: Configure SMTP to send daily trading digest emails at 00:30 AM BRT.
+# If omitted, daily digest emails are disabled.
+
+# Example for Yahoo Mail:
+smtp:
+  host: smtp.mail.yahoo.com
+  port: 587
+  secure: false                    # TLS (port 587)
+  username: lucastsantana@yahoo.com.br
+  password: your-app-password      # Yahoo: use app-specific password from Account Security settings
+  recipientEmail: lucastsantana@yahoo.com.br

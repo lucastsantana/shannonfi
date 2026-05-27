@@ -17,6 +17,15 @@ const MercadoBitcoinSchema = z.object({
   apiBaseUrl: z.string().url().default('https://api.mercadobitcoin.net/api/v4'),
 });
 
+const SmtpSchema = z.object({
+  host: z.string().min(1),
+  port: z.number().int().min(1).max(65535),
+  secure: z.boolean().default(true),
+  username: z.string().min(1),
+  password: z.string().min(1),
+  recipientEmail: z.string().email(),
+}).optional();
+
 const ConfigSchema = z.object({
   exchange: z.literal('mercadobitcoin'),
 
@@ -48,10 +57,14 @@ const ConfigSchema = z.object({
   dbPath: z.string().default('./data/shannonfi.db'),
   jsonRetentionDays: z.number().int().min(0).max(365).default(15),
 
+  // ─── SMTP for daily digest email ─────────────────────────────────────────────
+  smtp: SmtpSchema,
+
 });
 
 export type Config = z.infer<typeof ConfigSchema>;
 export type MercadoBitcoinConfig = z.infer<typeof MercadoBitcoinSchema>;
+export type SmtpConfig = z.infer<typeof SmtpSchema>;
 
 // ─── Loader ───────────────────────────────────────────────────────────────────
 

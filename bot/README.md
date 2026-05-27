@@ -263,6 +263,94 @@ PM2 will keep the bot alive if it crashes and auto-restart on system reboot.
 
 ---
 
+## Daily Digest Email
+
+The bot sends a formatted email summary every morning at **00:30 AM BRT** with yesterday's trading activity. This is useful for staying informed without opening the dashboard.
+
+### Setup
+
+Add SMTP configuration to `shannonfi.config.yaml`:
+
+```yaml
+smtp:
+  host: smtp.mail.yahoo.com
+  port: 587
+  secure: false                    # TLS (port 587)
+  username: lucastsantana@yahoo.com.br
+  password: your-app-password      # Yahoo: use app-specific password from Account Security
+  recipientEmail: lucastsantana@yahoo.com.br
+```
+
+**Yahoo Mail Setup:**
+1. Go to [Account Security](https://login.yahoo.com/account/security)
+2. Click **"Generate app password"**
+3. Select app: **Other App**, enter: **Shannon's Demon**
+4. Copy the generated 16-character password and paste it in `shannonfi.config.yaml`
+
+### Running Manually
+
+```bash
+npm run daily-digest
+```
+
+This sends an email for yesterday's activity (or exits silently if no data found).
+
+### Automated Scheduling
+
+**Local (systemd):**
+
+```bash
+# Enable and start the timer
+systemctl --user daemon-reload
+systemctl --user enable --now shannonfi-daily-digest.timer
+
+# Check next scheduled fire time
+systemctl --user list-timers shannonfi-daily-digest.timer
+
+# View recent runs
+journalctl --user -u shannonfi-daily-digest.service --no-pager
+```
+
+The timer runs at **00:30 AM BRT** every day (03:30 UTC).
+
+**GitHub Actions:**
+
+If deployed on GitHub, the daily digest runs automatically via `.github/workflows/daily-digest.yml` on the same schedule. Requires these secrets:
+- `MB_CLIENT_ID` (for SQLite cache)
+- `MB_CLIENT_SECRET` (for SQLite cache)
+- `SMTP_USERNAME` (Yahoo email)
+- `SMTP_PASSWORD` (app password)
+- `SMTP_RECIPIENT_EMAIL` (delivery email)
+
+### Email Contents
+
+Each digest includes:
+- **Daily return (%)** and absolute P&L (BRL)
+- **Portfolio composition**: SOL balance, BRL balance, allocation %
+- **SOL allocation drift** from 50% target
+- **Trading activity**: Count of rebalances, buys, sells, and fees paid
+- **SOL price movement**: Start, end, and change
+
+If there are no snapshots for yesterday (e.g., bot wasn't running), the script exits silently.
+
+### Troubleshooting
+
+**SMTP authentication failed:**
+- Verify Yahoo app password (16 characters, no dashes)
+- Confirm `secure: false` for port 587 (TLS, not SSL)
+- Check firewall/VPN isn't blocking port 587
+
+**Email never arrives:**
+- Run manually: `npm run daily-digest` and check logs
+- Verify `recipientEmail` is spelled correctly
+- Check email spam folder
+
+**No data for yesterday:**
+- Script only sends if snapshots exist for yesterday's date (BRT)
+- If bot wasn't running, no email is sent (this is normal)
+
+---
+
 ## Monitoring & Tuning Over Time
 
 ### View Performance
