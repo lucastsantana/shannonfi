@@ -36,6 +36,10 @@ bot/data/*.db
 bot/data/*.db-wal
 bot/data/*.db-shm
 bot/data/*.json
+bot/data/reports/
+
+# Stray SQLite files from in-memory test URIs
+bot/:memory:*
 
 # Anchor
 .anchor/

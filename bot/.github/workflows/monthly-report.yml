@@ -1,21 +1,19 @@
-name: Shannon's Demon Rebalancer
+name: Shannon's Demon Monthly Report
 
 on:
   schedule:
-    # Every 15 minutes — matches pollIntervalSeconds: 900 in config.
-    # Each run costs 1 price request on the happy path (no rebalance needed).
-    - cron: '*/15 * * * *'
+    # 06:00 UTC = 03:00 BRT on the 1st of every month
+    - cron: '0 6 1 * *'
   workflow_dispatch:
     inputs:
-      dry_run:
-        description: 'Override dryRun. Defaults to false for scheduled runs.'
+      month:
+        description: 'Report month (YYYY-MM). Defaults to previous calendar month.'
         required: false
-        default: 'true'
 
 jobs:
-  rebalance:
+  generate-report:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     defaults:
       run:
         working-directory: bot
@@ -37,7 +35,7 @@ jobs:
           key: bot-sqlite-${{ github.repository }}
           restore-keys: bot-sqlite-
 
-      - name: Restore JSON backup cache
+      - name: Restore JSON backup cache (fallback if SQLite cache miss)
         uses: actions/cache@v4
         with:
           path: |
@@ -63,49 +61,42 @@ jobs:
             clientId: "${{ secrets.MB_CLIENT_ID }}"
             clientSecret: "${{ secrets.MB_CLIENT_SECRET }}"
 
-          rebalanceThresholdBps: ${{ vars.REBALANCE_THRESHOLD_BPS || 100 }}
-          maxSlippageBps: ${{ vars.MAX_SLIPPAGE_BPS || 100 }}
-          minPortfolioValueBrl: ${{ vars.MIN_PORTFOLIO_VALUE_BRL || 200 }}
-          minTradeSizeBrl: ${{ vars.MIN_TRADE_SIZE_BRL || 20 }}
+          rebalanceThresholdBps: 100
+          maxSlippageBps: 100
+          minPortfolioValueBrl: 200
+          minTradeSizeBrl: 20
           pollIntervalSeconds: 900
-          minRebalanceIntervalSeconds: ${{ vars.MIN_REBALANCE_INTERVAL_SECONDS || 7200 }}
-
-          useAdaptiveThreshold: ${{ vars.USE_ADAPTIVE_THRESHOLD || true }}
-          thresholdVolatilityMultiplier: ${{ vars.THRESHOLD_VOLATILITY_MULTIPLIER || 1.5 }}
-          volatilityWindowDays: ${{ vars.VOLATILITY_WINDOW_DAYS || 30 }}
-
-          neverExceedExemptionLimit: ${{ vars.NEVER_EXCEED_EXEMPTION_LIMIT || false }}
-
-          dryRun: ${{ github.event.inputs.dry_run || false }}
+          minRebalanceIntervalSeconds: 7200
+          useAdaptiveThreshold: true
+          thresholdVolatilityMultiplier: 1.5
+          volatilityWindowDays: 30
+          neverExceedExemptionLimit: false
+          dryRun: false
           logLevel: info
 
           dbPath: ./data/shannonfi.db
           jsonRetentionDays: 15
+
+          anthropicApiKey: "${{ secrets.ANTHROPIC_API_KEY }}"
           EOF
 
-      - name: Run rebalance check
-        run: node dist/index.js --once
-        timeout-minutes: 4
+      - name: Generate monthly report
+        run: |
+          MONTH_ARG=""
+          if [ -n "${{ github.event.inputs.month }}" ]; then
+            MONTH_ARG="--month ${{ github.event.inputs.month }}"
+          fi
+          TZ=America/Sao_Paulo node dist/scripts/monthly-report.js $MONTH_ARG
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
 
-      - name: Save SQLite database to cache
-        if: always()
-        uses: actions/cache/save@v4
-        with:
-          path: bot/data/shannonfi.db
-          key: bot-sqlite-${{ github.repository }}
-
-      - name: Upload data artifacts
-        if: always()
+      - name: Upload report artifact
         uses: actions/upload-artifact@v4
         with:
-          name: bot-data-${{ github.run_number }}
-          path: |
-            bot/data/trade_history.json
-            bot/data/cost_basis.json
-            bot/data/tax_events.json
-            bot/data/portfolio_snapshots.json
-          retention-days: 90
-          if-no-files-found: ignore
+          name: monthly-report-${{ github.run_number }}
+          path: bot/data/reports/*.md
+          retention-days: 365
+          if-no-files-found: warn
 
       - name: Notify on failure
         if: failure()
@@ -113,12 +104,11 @@ jobs:
         with:
           payload: |
             {
-              "text": "Shannon's Demon bot failed",
+              "text": "Shannon's Demon monthly report generation failed",
               "attachments": [{
                 "color": "danger",
                 "text": "Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
               }]
-            }
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
         continue-on-error: true

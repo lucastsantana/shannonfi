@@ -47,6 +47,11 @@ const ConfigSchema = z.object({
   // ─── Data paths ──────────────────────────────────────────────────────────────
   dbPath: z.string().default('./data/shannonfi.db'),
   jsonRetentionDays: z.number().int().min(0).max(365).default(15),
+
+  // ─── Reports ─────────────────────────────────────────────────────────────────
+  // Optional Anthropic API key for Claude-generated commentary in monthly reports.
+  // Falls back to ANTHROPIC_API_KEY environment variable if not set here.
+  anthropicApiKey: z.string().optional(),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;
