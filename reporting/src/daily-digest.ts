@@ -154,29 +154,39 @@ function renderEmailHtml(digest: DailyDigest): string {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <style>
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; line-height: 1.6; color: #333; }
-    .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-    h1 { color: #1f2937; margin: 0 0 10px 0; font-size: 24px; }
-    .date { color: #6b7280; font-size: 14px; }
-    .card { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; padding: 20px; margin: 20px 0; }
-    .metric { display: flex; justify-content: space-between; margin: 10px 0; }
-    .metric-label { font-weight: 500; color: #4b5563; }
-    .metric-value { font-weight: 600; color: #1f2937; }
-    .return-value { color: ${returnColor}; font-size: 18px; }
-    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin: 15px 0; }
-    .box { background: white; border: 1px solid #e5e7eb; border-radius: 6px; padding: 12px; }
-    .box-label { font-size: 12px; color: #6b7280; text-transform: uppercase; letter-spacing: 0.5px; }
-    .box-value { font-size: 16px; font-weight: 600; color: #1f2937; margin-top: 4px; }
-    table { width: 100%; border-collapse: collapse; margin: 15px 0; }
-    th { background: #f3f4f6; padding: 10px; text-align: left; font-weight: 600; color: #4b5563; font-size: 12px; border-bottom: 1px solid #e5e7eb; }
-    td { padding: 10px; border-bottom: 1px solid #e5e7eb; }
-    .footer { font-size: 12px; color: #9ca3af; margin-top: 30px; padding-top: 20px; border-top: 1px solid #e5e7eb; }
+    * { margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; line-height: 1.6; color: #333; background: #ffffff; }
+    .container { max-width: 600px; margin: 0 auto; padding: 24px; background: #ffffff; }
+    h1 { color: #1f2937; margin: 0 0 8px 0; font-size: 28px; font-weight: 700; letter-spacing: -0.5px; }
+    .date { color: #9ca3af; font-size: 13px; margin-bottom: 24px; }
+    .card { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 12px; padding: 24px; margin: 24px 0; }
+    .card h2 { margin: 0 0 20px 0; font-size: 16px; font-weight: 600; color: #1f2937; }
+    .card h2:not(:first-child) { margin-top: 24px; }
+    .metric { display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid #f3f4f6; }
+    .metric:last-child { border-bottom: none; padding-bottom: 0; }
+    .metric-label { font-weight: 500; color: #6b7280; font-size: 14px; }
+    .metric-value { font-weight: 600; color: #1f2937; font-size: 15px; text-align: right; }
+    .return-value { color: ${returnColor}; font-size: 18px; font-weight: 700; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 20px 0; }
+    .box { background: white; border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px; }
+    .box-label { font-size: 11px; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.8px; font-weight: 600; margin-bottom: 8px; }
+    .box-value { font-size: 18px; font-weight: 700; color: #1f2937; line-height: 1.3; }
+    .box-subvalue { font-size: 13px; color: #9ca3af; margin-top: 6px; }
+    table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+    th { background: #f3f4f6; padding: 12px; text-align: left; font-weight: 600; color: #4b5563; font-size: 13px; border: none; }
+    td { padding: 14px 12px; border-bottom: 1px solid #f3f4f6; font-size: 14px; }
+    td:last-child { text-align: right; }
+    tr:last-child td { border-bottom: none; }
+    .footer { font-size: 12px; color: #9ca3af; margin-top: 32px; padding-top: 24px; border-top: 2px solid #f3f4f6; }
+    .footer p { margin-bottom: 8px; }
+    .footer p:last-child { margin-bottom: 0; }
+    .footer code { background: #f3f4f6; padding: 2px 6px; border-radius: 3px; font-family: 'Monaco', 'Courier New', monospace; font-size: 11px; }
   </style>
 </head>
 <body>
   <div class="container">
-    <h1>Shannon's Demon Daily Digest</h1>
-    <div class="date">${dateStr}</div>
+    <h1>Shannon's Demon</h1>
+    <div class="date">Daily Digest — ${dateStr}</div>
 
     <div class="card">
       <div class="metric">
@@ -196,15 +206,15 @@ function renderEmailHtml(digest: DailyDigest): string {
     </div>
 
     <div class="card">
-      <h2 style="margin-top: 0; font-size: 16px; color: #1f2937;">Portfolio Composition</h2>
+      <h2>Portfolio Composition</h2>
       <div class="grid">
         <div class="box">
-          <div class="box-label">SOL</div>
+          <div class="box-label">SOL Balance</div>
           <div class="box-value">${digest.solEnd.toFixed(6)}</div>
-          <div style="font-size: 12px; color: #9ca3af; margin-top: 4px;">${fmtBrl(digest.solEnd * digest.solPriceEnd)}</div>
+          <div class="box-subvalue">${fmtBrl(digest.solEnd * digest.solPriceEnd)}</div>
         </div>
         <div class="box">
-          <div class="box-label">BRL</div>
+          <div class="box-label">BRL Balance</div>
           <div class="box-value">${fmtBrl(digest.brlEnd)}</div>
         </div>
       </div>
@@ -213,13 +223,13 @@ function renderEmailHtml(digest: DailyDigest): string {
         <span class="metric-value">${digest.solRatioEnd.toFixed(2)}%</span>
       </div>
       <div class="metric">
-        <span class="metric-label">Drift from Target (50%)</span>
+        <span class="metric-label">Drift from 50% Target</span>
         <span class="metric-value">${digest.deviationEnd >= 0 ? '+' : ''}${digest.deviationEnd.toFixed(2)}%</span>
       </div>
     </div>
 
     <div class="card">
-      <h2 style="margin-top: 0; font-size: 16px; color: #1f2937;">Trading Activity</h2>
+      <h2>Trading Activity</h2>
       <table>
         <tr>
           <th>Metric</th>
@@ -245,7 +255,7 @@ function renderEmailHtml(digest: DailyDigest): string {
     </div>
 
     <div class="card">
-      <h2 style="margin-top: 0; font-size: 16px; color: #1f2937;">Price Movement</h2>
+      <h2>Price Movement</h2>
       <div class="metric">
         <span class="metric-label">SOL Start</span>
         <span class="metric-value">${fmtBrl(digest.solPriceStart)}</span>
