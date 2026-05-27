@@ -100,10 +100,3 @@ dbPath: ./data/shannonfi.db
 # Number of days to keep data in JSON backup files (0 = disable JSON backup).
 # After 15 days, older records are pruned from JSON but stay in SQLite.
 jsonRetentionDays: 15
-
-
-# ── Monthly reporting ─────────────────────────────────────────────────────────
-# Optional: Anthropic API key for Claude-generated executive commentary in monthly reports.
-# Falls back to ANTHROPIC_API_KEY environment variable if not set here.
-# Store locally via GNOME Keyring: secret-tool store --label="Anthropic API Key" service anthropic key apiKey
-# anthropicApiKey: "sk-ant-..."

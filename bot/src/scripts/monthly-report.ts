@@ -1,16 +1,15 @@
 #!/usr/bin/env node
 /**
  * Monthly performance report generator.
- * Assembles data from SQLite, fetches CDI/IBOV benchmarks, and calls Claude
- * to write an executive commentary. Writes Markdown to bot/data/reports/YYYY-MM.md.
+ * Assembles data from SQLite, fetches CDI/IBOV benchmarks, and generates
+ * rule-based executive commentary. Writes Markdown to bot/data/reports/YYYY-MM.md.
  *
  * Usage:
- *   ts-node src/scripts/monthly-report.ts [--month YYYY-MM] [--config path] [--no-claude]
+ *   ts-node src/scripts/monthly-report.ts [--month YYYY-MM] [--config path]
  */
 
 import * as fs from 'fs';
 import * as path from 'path';
-import Anthropic from '@anthropic-ai/sdk';
 import { TradeHistoryService } from '../core/tracker/history';
 import { TaxService } from '../core/tracker/tax';
 import { CostBasisService } from '../core/tracker/costbasis';
@@ -27,16 +26,6 @@ const EN_MONTHS = [
   'January', 'February', 'March', 'April', 'May', 'June',
   'July', 'August', 'September', 'October', 'November', 'December',
 ];
-
-const SYSTEM_PROMPT = `You are a quantitative portfolio analyst writing a concise monthly performance commentary for the Shannon's Demon strategy — a volatility-harvesting portfolio rebalancer that maintains a 50/50 SOL/BRL allocation on Mercado Bitcoin.
-
-Write 3–5 paragraphs in clear, professional English. Do NOT repeat numbers that are already in the accompanying tables. Focus on:
-- Qualitative interpretation of the month's performance in context
-- How the strategy compares to benchmarks and what drove the difference
-- Observations about rebalancing activity and what it reveals about market conditions
-- Forward-looking considerations based on the data (without making financial predictions)
-
-Tone: analytical but accessible, not overly technical. Audience: the strategy owner tracking performance over 12 months.`;
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -63,11 +52,6 @@ function fmtBrl(n: number): string {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(n);
 }
 
-function benchmarkPct(b: BenchmarkReturn, useMonthly: boolean): string {
-  if (!b.available) return 'N/A';
-  return fmtPct((useMonthly ? b.monthlyReturn : b.cumulativeReturn) * 100);
-}
-
 function computeMaxDrawdown(values: number[]): number {
   if (values.length === 0) return 0;
   let peak = values[0]!;
@@ -80,9 +64,144 @@ function computeMaxDrawdown(values: number[]): number {
   return maxDD;
 }
 
+// ─── Rule-based commentary ────────────────────────────────────────────────────
+
+function generateCommentary(p: ReportPayload): string {
+  const { monthly, cumulative, benchmarks, taxSummary, portfolio } = p;
+  const paragraphs: string[] = [];
+
+  // ── Paragraph 1: Overall performance this month ───────────────────────────
+  const portfolioVsSol = monthly.monthlyReturnPct - monthly.solOnlyReturnPct;
+  let p1: string;
+  if (monthly.isSparse) {
+    p1 = `This report covers a partial month with only ${monthly.daysWithData} days of portfolio data, ` +
+      `so figures should be interpreted with caution. ` +
+      `The strategy recorded a return of ${fmtPct(monthly.monthlyReturnPct)} over the available period, ` +
+      `while SOL/BRL moved ${fmtPct(monthly.solOnlyReturnPct)} over the same window.`;
+  } else if (Math.abs(portfolioVsSol) < 0.5) {
+    p1 = `Shannon's Demon tracked closely with SOL's raw price move this month, ` +
+      `with the portfolio returning ${fmtPct(monthly.monthlyReturnPct)} against a ${fmtPct(monthly.solOnlyReturnPct)} ` +
+      `move in SOL/BRL. When the two figures are this close it typically indicates a directional ` +
+      `market where mean-reversion opportunities were limited — the strategy's edge comes from ` +
+      `harvesting volatility around a mean, not from trending periods.`;
+  } else if (portfolioVsSol > 0) {
+    p1 = `The strategy outperformed a passive SOL position this month, returning ` +
+      `${fmtPct(monthly.monthlyReturnPct)} against a ${fmtPct(monthly.solOnlyReturnPct)} move in SOL/BRL. ` +
+      `This is the core Shannon's Demon effect: rebalancing captured the spread between SOL price ` +
+      `oscillations and the stable BRL leg, converting volatility into portfolio gains above what ` +
+      `either asset delivered on its own.`;
+  } else {
+    p1 = `SOL outpaced the balanced portfolio this month — SOL/BRL moved ${fmtPct(monthly.solOnlyReturnPct)} ` +
+      `while the strategy returned ${fmtPct(monthly.monthlyReturnPct)}. This is expected during strongly ` +
+      `trending periods: the 50/50 rebalancing discipline trims the winning asset as it rises, ` +
+      `reducing upside participation in exchange for lower drawdown. The cost of that protection ` +
+      `shows up in months like this one.`;
+  }
+  paragraphs.push(p1);
+
+  // ── Paragraph 2: Benchmark context (CDI / IBOV) ───────────────────────────
+  const hasCdi = benchmarks.cdi.available;
+  const hasIbov = benchmarks.ibov.available;
+  if (hasCdi || hasIbov) {
+    const parts: string[] = [];
+    if (hasCdi) {
+      const cdiPct = benchmarks.cdi.monthlyReturn * 100;
+      const vsRiskFree = monthly.monthlyReturnPct - cdiPct;
+      if (vsRiskFree > 0.5) {
+        parts.push(`The portfolio beat the CDI (Brazil's interbank risk-free rate) by ${fmtPct(vsRiskFree)}, ` +
+          `meaning the strategy delivered a positive real spread over simply holding cash in a fixed-income fund this month.`);
+      } else if (vsRiskFree < -0.5) {
+        parts.push(`The portfolio returned ${fmtPct(Math.abs(vsRiskFree))} less than CDI this month. ` +
+          `In periods of low SOL volatility or directional moves, the strategy's risk premium over ` +
+          `the risk-free rate can turn negative — this is a normal occurrence and expected to ` +
+          `reverse over the full cycle.`);
+      } else {
+        parts.push(`Returns were roughly in line with CDI this month, suggesting the volatility premium ` +
+          `was close to neutral — neither capturing excess gains nor lagging the risk-free benchmark meaningfully.`);
+      }
+    }
+    if (hasIbov) {
+      const ibovPct = benchmarks.ibov.monthlyReturn * 100;
+      const vsIbov = monthly.monthlyReturnPct - ibovPct;
+      if (ibovPct < -3) {
+        parts.push(`IBOV fell sharply this month, providing useful context: the SOL/BRL balanced portfolio ` +
+          `behaved as an uncorrelated asset class relative to Brazilian equities${vsIbov > 0 ? ', and outperformed IBOV' : ''}.`);
+      } else if (vsIbov > 2) {
+        parts.push(`The strategy also outperformed IBOV by ${fmtPct(vsIbov)}, underscoring the benefit of ` +
+          `holding a volatile, globally-priced asset like SOL alongside local currency.`);
+      } else if (vsIbov < -2) {
+        parts.push(`IBOV outperformed the portfolio by ${fmtPct(Math.abs(vsIbov))} this month, ` +
+          `reflecting a period of relative strength in Brazilian equities.`);
+      }
+    }
+    if (parts.length > 0) paragraphs.push(parts.join(' '));
+  }
+
+  // ── Paragraph 3: Rebalancing activity ─────────────────────────────────────
+  let p3: string;
+  if (monthly.rebalanceCount === 0) {
+    p3 = `No rebalances were triggered this month. The portfolio drifted within the adaptive ` +
+      `threshold throughout the period, indicating either a low-volatility environment or ` +
+      `a directional move that kept the portfolio close to the 50/50 target without crossing ` +
+      `the trigger. Zero-rebalance months minimise fees and preserve the position without sacrificing allocation discipline.`;
+  } else if (monthly.rebalanceCount === 1) {
+    const dir = p.trades[0]?.direction ?? '';
+    const dirStr = dir.startsWith('Buy') ? 'buying SOL on a dip' : 'selling SOL into strength';
+    p3 = `One rebalance was executed this month — ${dirStr} — bringing the portfolio back to its ` +
+      `50/50 target. A single rebalance is a healthy signal: enough volatility to generate an ` +
+      `opportunity, but not so much churn that fees erode the gains.`;
+  } else if (monthly.rebalanceCount <= 4) {
+    p3 = `${monthly.rebalanceCount} rebalances were executed across ${monthly.buyCount} buys and ` +
+      `${monthly.sellCount} sells, reflecting moderate volatility in the SOL/BRL price. Each ` +
+      `rebalance represents the strategy mechanically buying low and selling high relative to ` +
+      `the portfolio's own target allocation — the source of Shannon's Demon's long-run edge.`;
+  } else {
+    p3 = `${monthly.rebalanceCount} rebalances this month indicate elevated volatility in SOL/BRL, ` +
+      `giving the strategy multiple opportunities to harvest the spread. High rebalance frequency ` +
+      `is exactly when the strategy's compounding edge is strongest, though it also means higher ` +
+      `cumulative fees (${fmtBrl(monthly.totalFeesBrl)} this month). Net of fees, frequent ` +
+      `rebalancing in a volatile market tends to be a net positive for this strategy.`;
+  }
+  paragraphs.push(p3);
+
+  // ── Paragraph 4: Drawdown & risk ──────────────────────────────────────────
+  if (monthly.maxDrawdownPct > 5 || cumulative.maxDrawdownPct > 10) {
+    let p4 = '';
+    if (monthly.maxDrawdownPct > 5) {
+      p4 += `A peak-to-trough drawdown of ${fmtPct(monthly.maxDrawdownPct)} occurred within the month. `;
+    }
+    if (cumulative.maxDrawdownPct > 10) {
+      p4 += `The all-time maximum drawdown now stands at ${fmtPct(cumulative.maxDrawdownPct)}, ` +
+        `which is worth monitoring as the strategy matures. `;
+    }
+    p4 += `The BRL leg provides a natural cushion during SOL downturns — when SOL falls sharply, ` +
+      `the rebalancer buys more at lower prices, which is the mechanism that tends to recover ` +
+      `drawdowns faster than a fully concentrated SOL position would.`;
+    paragraphs.push(p4);
+  }
+
+  // ── Paragraph 5: Tax / unrealized position ────────────────────────────────
+  const lines: string[] = [];
+  if (!taxSummary.exempt && taxSummary.totalSalesBrl > 0) {
+    lines.push(`SELL proceeds crossed the R$35,000 monthly threshold this month, making the ` +
+      `realized gain taxable under Lei 9.250/1995 Art. 21. A DARF payment is due by ` +
+      `${taxSummary.paymentDeadline ?? 'the last business day of next month'} — ensure this is scheduled.`);
+  }
+  if (Math.abs(portfolio.unrealizedGainPct) > 5) {
+    const direction = portfolio.unrealizedGainBrl >= 0 ? 'gain' : 'loss';
+    lines.push(`The current SOL position carries an unrealized ${direction} of ` +
+      `${fmtBrl(Math.abs(portfolio.unrealizedGainBrl))} (${fmtPct(Math.abs(portfolio.unrealizedGainPct))}) ` +
+      `against the AVCO cost basis of ${fmtBrl(portfolio.averageCostBrl)}/SOL. ` +
+      `This unrealized ${direction} will only crystalise as a tax event if and when SOL is sold.`);
+  }
+  if (lines.length > 0) paragraphs.push(lines.join(' '));
+
+  return paragraphs.join('\n\n');
+}
+
 // ─── Markdown renderer ────────────────────────────────────────────────────────
 
-function renderReport(p: ReportPayload, commentary: string | null): string {
+function renderReport(p: ReportPayload, commentary: string): string {
   const [y, m] = p.monthBRT.split('-');
   const label = `${EN_MONTHS[parseInt(m!) - 1]} ${y}`;
   const genDate = new Date(p.generatedAt);
@@ -92,9 +211,7 @@ function renderReport(p: ReportPayload, commentary: string | null): string {
     ? `\n> **Warning:** Incomplete data for this month (${p.monthly.daysWithData} days of data). Metrics may not be representative.\n`
     : '';
 
-  const commentarySection = commentary
-    ? commentary
-    : '> *Executive commentary unavailable (ANTHROPIC_API_KEY not configured or API error).*';
+  const commentarySection = commentary;
 
   const tradesTable = p.trades.length === 0
     ? '_No rebalances this month._'
@@ -213,7 +330,6 @@ async function main() {
   const args = process.argv.slice(2);
   const monthIdx = args.indexOf('--month');
   const monthArg = monthIdx !== -1 ? args[monthIdx + 1] : undefined;
-  const noClaude = args.includes('--no-claude');
   const configIdx = args.indexOf('--config');
   const configPath = configIdx !== -1 ? args[configIdx + 1] : undefined;
 
@@ -227,14 +343,11 @@ async function main() {
 
   // Load config
   let dbPath: string | undefined;
-  let apiKey: string | undefined;
   try {
     const config = loadConfig(configPath);
     dbPath = config.dbPath;
-    apiKey = config.anthropicApiKey ?? process.env['ANTHROPIC_API_KEY'];
   } catch {
-    // Config may not exist in CI; fall back to env
-    apiKey = process.env['ANTHROPIC_API_KEY'];
+    // Config may not exist in CI; use service defaults
   }
 
   // Init services
@@ -408,32 +521,8 @@ async function main() {
     generatedAt: new Date().toISOString(),
   };
 
-  // ── Claude commentary ──────────────────────────────────────────────────────
-  let commentary: string | null = null;
-  if (!noClaude && apiKey) {
-    console.log('Generating executive commentary via Claude...');
-    try {
-      const client = new Anthropic({ apiKey });
-      const response = await client.messages.create({
-        model: 'claude-sonnet-4-6',
-        max_tokens: 1024,
-        system: SYSTEM_PROMPT,
-        messages: [
-          {
-            role: 'user',
-            content: `Here is the monthly report data for Shannon's Demon strategy:\n\n\`\`\`json\n${JSON.stringify(payload, null, 2)}\n\`\`\`\n\nWrite the Executive Summary commentary.`,
-          },
-        ],
-      });
-      if (response.content[0]?.type === 'text') {
-        commentary = response.content[0].text;
-      }
-    } catch (err) {
-      console.warn(`Claude API error: ${(err as Error).message}. Report will be generated without commentary.`);
-    }
-  } else if (!noClaude && !apiKey) {
-    console.warn('ANTHROPIC_API_KEY not set. Report will be generated without commentary. Pass --no-claude to suppress this warning.');
-  }
+  // ── Generate commentary ────────────────────────────────────────────────────
+  const commentary = generateCommentary(payload);
 
   // ── Write report ───────────────────────────────────────────────────────────
   const reportsDir = path.resolve(__dirname, '../../data/reports');
