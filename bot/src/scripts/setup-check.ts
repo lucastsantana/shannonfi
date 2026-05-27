@@ -5,18 +5,46 @@
  *   npm run setup-check
  *
  * Validates config, tests Mercado Bitcoin connectivity, and reports balances.
- * Requires a valid shannonfi.config.yaml in the bot/ directory.
+ * Reads credentials from GNOME Keyring (same as start.sh).
  */
 
 import { loadConfig } from '../config';
 import { MbClient } from '../adapters/mercadobitcoin/client';
 import { MbEndpoints } from '../adapters/mercadobitcoin/endpoints';
+import { execSync } from 'child_process';
+
+function getCredentialsFromKeyring(): { clientId: string; clientSecret: string } {
+  try {
+    const clientId = execSync('secret-tool lookup service mercadobitcoin key clientId 2>/dev/null', {
+      encoding: 'utf-8',
+      stdio: ['pipe', 'pipe', 'ignore'],
+    }).trim();
+    const clientSecret = execSync('secret-tool lookup service mercadobitcoin key clientSecret 2>/dev/null', {
+      encoding: 'utf-8',
+      stdio: ['pipe', 'pipe', 'ignore'],
+    }).trim();
+
+    if (!clientId || !clientSecret) {
+      throw new Error('Credentials not found in keyring');
+    }
+
+    return { clientId, clientSecret };
+  } catch {
+    throw new Error(
+      'MB credentials not found in GNOME Keyring.\n' +
+      'Store them with:\n' +
+      '  secret-tool store service mercadobitcoin key clientId\n' +
+      '  secret-tool store service mercadobitcoin key clientSecret',
+    );
+  }
+}
 
 async function checkMercadoBitcoin(): Promise<void> {
   const config = loadConfig();
-  const { mercadobitcoin: mb } = config;
+  const { clientId, clientSecret } = getCredentialsFromKeyring();
+  const apiBaseUrl = config.mercadobitcoin.apiBaseUrl;
 
-  const client = new MbClient(mb.clientId, mb.clientSecret, mb.apiBaseUrl);
+  const client = new MbClient(clientId, clientSecret, apiBaseUrl);
   const endpoints = new MbEndpoints(client);
 
   console.log('\n2. Testing Mercado Bitcoin API authentication...');
