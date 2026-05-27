@@ -1,13 +1,6 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { TradeHistoryService } from '../../src/core/tracker/history';
 import { TradeRecord, Portfolio } from '../../src/adapters/types';
-import * as fs from 'fs';
-import * as os from 'os';
-import * as path from 'path';
-
-function tmpPath(suffix: string): string {
-  return path.join(os.tmpdir(), `bot-history-test-${suffix}-${Date.now()}.json`);
-}
 
 function makePortfolio(): Portfolio {
   return {
@@ -22,11 +15,14 @@ function makePortfolio(): Portfolio {
   };
 }
 
+let tradeIdCounter = 0;
+
 function makeTrade(overrides: Partial<TradeRecord> = {}): TradeRecord {
+  const id = overrides.id || `trade-${++tradeIdCounter}`;
   return {
-    id: 'trade-1',
-    clientOrderId: 'client-1',
-    exchangeOrderId: 'exch-1',
+    id,
+    clientOrderId: `client-${id}`,
+    exchangeOrderId: `exch-${id}`,
     exchange: 'mercadobitcoin',
     timestamp: new Date().toISOString(),
     direction: 'SELL_SOL',
@@ -46,35 +42,27 @@ function makeTrade(overrides: Partial<TradeRecord> = {}): TradeRecord {
 }
 
 describe('TradeHistoryService', () => {
-  let histPath: string;
-  let snapPath: string;
   let svc: TradeHistoryService;
 
   beforeEach(() => {
-    histPath = tmpPath('hist');
-    snapPath = tmpPath('snap');
-    svc = new TradeHistoryService(histPath, snapPath);
-  });
-
-  afterEach(() => {
-    for (const p of [histPath, snapPath]) {
-      if (fs.existsSync(p)) fs.unlinkSync(p);
-    }
+    tradeIdCounter = 0;
+    const testPath = `:memory:?mode=memory&cache=shared&hash=${Math.random()}`;
+    svc = new TradeHistoryService(testPath);
   });
 
   it('starts with empty trade list', () => {
     expect(svc.readTrades()).toHaveLength(0);
   });
 
-  it('appends and reads trades', async () => {
-    await svc.appendTrade(makeTrade());
+  it('appends and reads trades', () => {
+    svc.appendTrade(makeTrade());
     expect(svc.readTrades()).toHaveLength(1);
   });
 
-  it('getRebalanceCount counts FILLED and DRY_RUN', async () => {
-    await svc.appendTrade(makeTrade({ status: 'FILLED' }));
-    await svc.appendTrade(makeTrade({ id: 't2', status: 'DRY_RUN' }));
-    await svc.appendTrade(makeTrade({ id: 't3', status: 'CANCELLED' }));
+  it('getRebalanceCount counts FILLED and DRY_RUN', () => {
+    svc.appendTrade(makeTrade({ status: 'FILLED' }));
+    svc.appendTrade(makeTrade({ id: 't2', status: 'DRY_RUN' }));
+    svc.appendTrade(makeTrade({ id: 't3', status: 'CANCELLED' }));
     expect(svc.getRebalanceCount()).toBe(2);
   });
 
@@ -82,16 +70,16 @@ describe('TradeHistoryService', () => {
     expect(svc.getLastRebalanceTime()).toBe(0);
   });
 
-  it('getLastRebalanceTime returns timestamp of latest trade', async () => {
+  it('getLastRebalanceTime returns timestamp of latest trade', () => {
     const t1 = new Date('2026-04-10T10:00:00Z');
     const t2 = new Date('2026-04-15T10:00:00Z');
-    await svc.appendTrade(makeTrade({ id: 't1', timestamp: t1.toISOString() }));
-    await svc.appendTrade(makeTrade({ id: 't2', timestamp: t2.toISOString() }));
+    svc.appendTrade(makeTrade({ id: 't1', timestamp: t1.toISOString() }));
+    svc.appendTrade(makeTrade({ id: 't2', timestamp: t2.toISOString() }));
     expect(svc.getLastRebalanceTime()).toBe(t2.getTime());
   });
 
-  it('getLastRebalanceInfo returns BRT date and direction', async () => {
-    await svc.appendTrade(
+  it('getLastRebalanceInfo returns BRT date and direction', () => {
+    svc.appendTrade(
       makeTrade({ tradeDateBRT: '2026-04-15', direction: 'SELL_SOL' }),
     );
     const { dateBRT, direction } = svc.getLastRebalanceInfo();

@@ -31,6 +31,12 @@ Thumbs.db
 .env.local
 .env.*.local
 
+# Data files (never commit live trading data)
+bot/data/*.db
+bot/data/*.db-wal
+bot/data/*.db-shm
+bot/data/*.json
+
 # Anchor
 .anchor/
 **/.anchor/

@@ -1,7 +1,18 @@
+/**
+ * Tax tracking service — backed by SQLite.
+ * Brazilian tax compliance (Lei 9.250/1995 Art. 21) for domestic crypto trading.
+ * Also dual-writes to JSON files for 15-day rolling backup.
+ */
+
+import Database from 'better-sqlite3';
 import * as fs from 'fs';
 import * as path from 'path';
 import { logger } from './logger';
 import { BR_MONTHLY_EXEMPTION_LIMIT_BRL, BR_HOLIDAYS } from '../../constants';
+import { getDb } from './db';
+import { loadConfig } from '../../config';
+
+const DATA_DIR = path.resolve(__dirname, '../../../data');
 
 export interface TaxEvent {
   tradeId: string;
@@ -12,8 +23,7 @@ export interface TaxEvent {
   grossProceedsBrl: number;       // same as tradedVolumeBrl
   costBasisBrl: number;           // cost basis in BRL (SELL only; 0 for BUY)
   realizedGainBrl: number;        // proceeds - costBasis (SELL only; 0 for BUY)
-  // Cumulative monthly totals used for exemption tracking
-  cumMonthlySalesBrl: number;     // running SELL proceeds this month (exemption basis)
+  cumMonthlySalesBrl: number;     // running SELL proceeds this month
   cumMonthlyGainBrl: number;      // running SELL gains this month
   exempt: boolean;                // true if cumMonthlySalesBrl <= R$35,000
   paymentDeadline: string | null; // last BR business day of following month, or null if exempt
@@ -30,36 +40,70 @@ export interface MonthlySummary {
 }
 
 /**
- * Append-only ledger of all rebalance trades for Brazilian tax reporting.
- *
- * Mercado Bitcoin (domestic exchange):
- *   Only SELL_SOL gross proceeds count toward the R$35,000 monthly exemption
- *   (Lei 9.250/1995 Art. 21). BUY_SOL does not count.
+ * Tracks tax events for Brazilian compliance (Lei 9.250/1995 Art. 21).
+ * Only SELL_SOL gross proceeds count toward the R$35,000 monthly exemption.
+ * BUY_SOL does not count.
  */
 export class TaxService {
-  private filePath: string;
+  private db: Database.Database;
+  private retentionDays: number;
 
-  constructor(filePath: string) {
-    this.filePath = path.resolve(filePath);
-    fs.mkdirSync(path.dirname(this.filePath), { recursive: true });
-    if (!fs.existsSync(this.filePath)) {
-      fs.writeFileSync(this.filePath, JSON.stringify([], null, 2));
+  constructor(dbPath?: string) {
+    this.db = getDb(dbPath);
+    try {
+      const config = loadConfig();
+      this.retentionDays = config.jsonRetentionDays ?? 15;
+    } catch {
+      this.retentionDays = 15; // default
     }
   }
 
   readEvents(): TaxEvent[] {
-    try {
-      const raw = fs.readFileSync(this.filePath, 'utf-8');
-      return JSON.parse(raw) as TaxEvent[];
-    } catch {
-      return [];
-    }
+    const stmt = this.db.prepare('SELECT * FROM tax_events ORDER BY trade_date_brt ASC');
+    const rows = stmt.all() as any[];
+
+    return rows.map((row) => ({
+      tradeId: row.trade_id,
+      tradeDateBRT: row.trade_date_brt,
+      monthBRT: row.month_brt,
+      direction: row.direction,
+      tradedVolumeBrl: row.traded_volume_brl,
+      grossProceedsBrl: row.gross_proceeds_brl,
+      costBasisBrl: row.cost_basis_brl,
+      realizedGainBrl: row.realized_gain_brl,
+      cumMonthlySalesBrl: row.cum_monthly_sales_brl,
+      cumMonthlyGainBrl: row.cum_monthly_gain_brl,
+      exempt: row.exempt === 1,
+      paymentDeadline: row.payment_deadline,
+      exchange: row.exchange,
+    } as TaxEvent));
   }
 
   appendTaxEvent(event: TaxEvent): void {
-    const events = this.readEvents();
-    events.push(event);
-    fs.writeFileSync(this.filePath, JSON.stringify(events, null, 2));
+    const stmt = this.db.prepare(`
+      INSERT INTO tax_events (
+        trade_id, trade_date_brt, month_brt, direction, traded_volume_brl,
+        gross_proceeds_brl, cost_basis_brl, realized_gain_brl,
+        cum_monthly_sales_brl, cum_monthly_gain_brl, exempt, payment_deadline, exchange
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    stmt.run(
+      event.tradeId,
+      event.tradeDateBRT,
+      event.monthBRT,
+      event.direction,
+      event.tradedVolumeBrl,
+      event.grossProceedsBrl,
+      event.costBasisBrl,
+      event.realizedGainBrl,
+      event.cumMonthlySalesBrl,
+      event.cumMonthlyGainBrl,
+      event.exempt ? 1 : 0,
+      event.paymentDeadline,
+      event.exchange,
+    );
+
     logger.debug('Tax event persisted', {
       tradeId: event.tradeId,
       month: event.monthBRT,
@@ -67,33 +111,76 @@ export class TaxService {
       gainBrl: event.realizedGainBrl.toFixed(2),
       exempt: event.exempt,
     });
+    this.writeTaxEventsToJson();
+  }
+
+  private writeTaxEventsToJson(): void {
+    if (this.retentionDays === 0) return;
+    try {
+      const events = this.readEvents();
+      const cutoff = this.getCutoffDateBrt();
+      const filtered = events.filter((e) => e.tradeDateBRT >= cutoff);
+      fs.mkdirSync(DATA_DIR, { recursive: true });
+      fs.writeFileSync(path.join(DATA_DIR, 'tax_events.json'), JSON.stringify(filtered, null, 2), 'utf-8');
+    } catch (err) {
+      logger.debug('Failed to write tax events JSON', { error: (err as Error).message });
+    }
+  }
+
+  private getCutoffDateBrt(): string {
+    const d = new Date();
+    d.setDate(d.getDate() - this.retentionDays);
+    d.setHours(0, 0, 0, 0);
+    return d.toISOString().slice(0, 10); // YYYY-MM-DD
   }
 
   /** Gross BRL proceeds from SELL trades this month (domestic exemption threshold). */
   getMonthlySalesBrl(monthBRT: string): number {
-    return this.readEvents()
-      .filter((e) => e.monthBRT === monthBRT && e.direction === 'SELL_SOL')
-      .reduce((s, e) => s + e.tradedVolumeBrl, 0);
+    const stmt = this.db.prepare(`
+      SELECT COALESCE(SUM(traded_volume_brl), 0) as total
+      FROM tax_events
+      WHERE month_brt = ? AND direction = 'SELL_SOL'
+    `);
+    const result = stmt.get(monthBRT) as { total: number };
+    return result.total;
   }
 
-  /** Total BRL traded volume (SELL events only, for tax reporting). */
+  /** Total realized gain from SELL trades this month. */
   getMonthlyGainBrl(monthBRT: string): number {
-    return this.readEvents()
-      .filter((e) => e.monthBRT === monthBRT && e.direction === 'SELL_SOL')
-      .reduce((s, e) => s + e.realizedGainBrl, 0);
+    const stmt = this.db.prepare(`
+      SELECT COALESCE(SUM(realized_gain_brl), 0) as total
+      FROM tax_events
+      WHERE month_brt = ? AND direction = 'SELL_SOL'
+    `);
+    const result = stmt.get(monthBRT) as { total: number };
+    return result.total;
   }
 
   getMonthlySummary(monthBRT: string): MonthlySummary {
-    const events = this.readEvents().filter((e) => e.monthBRT === monthBRT);
-    const sells = events.filter((e) => e.direction === 'SELL_SOL');
-    const totalSales = sells.reduce((s, e) => s + e.tradedVolumeBrl, 0);
-    const totalGain = sells.reduce((s, e) => s + e.realizedGainBrl, 0);
+    const stmtSells = this.db.prepare(`
+      SELECT
+        COALESCE(SUM(traded_volume_brl), 0) as total_sales,
+        COALESCE(SUM(realized_gain_brl), 0) as total_gain
+      FROM tax_events
+      WHERE month_brt = ? AND direction = 'SELL_SOL'
+    `);
+    const sellsResult = stmtSells.get(monthBRT) as { total_sales: number; total_gain: number };
+
+    const stmtCount = this.db.prepare(`
+      SELECT COUNT(*) as count
+      FROM tax_events
+      WHERE month_brt = ?
+    `);
+    const countResult = stmtCount.get(monthBRT) as { count: number };
+
+    const totalSales = sellsResult.total_sales;
     const exempt = totalSales <= BR_MONTHLY_EXEMPTION_LIMIT_BRL;
+
     return {
       monthBRT,
       totalSalesBrl: totalSales,
-      totalRealizedGainBrl: totalGain,
-      tradeCount: events.length,
+      totalRealizedGainBrl: sellsResult.total_gain,
+      tradeCount: countResult.count,
       exempt,
       paymentDeadline: exempt ? null : this.computePaymentDeadline(monthBRT),
     };
@@ -106,11 +193,13 @@ export class TaxService {
     const nextMonth = month === 12 ? 1 : month + 1;
     const nextYear = month === 12 ? year + 1 : year;
     const lastDay = new Date(nextYear, nextMonth, 0).getDate();
+
     for (let d = lastDay; d >= 1; d--) {
       const dateStr = `${String(nextYear).padStart(4, '0')}-${String(nextMonth).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
       const dow = new Date(`${dateStr}T12:00:00Z`).getUTCDay();
       if (dow !== 0 && dow !== 6 && !BR_HOLIDAYS.has(dateStr)) return dateStr;
     }
+
     return `${String(nextYear).padStart(4, '0')}-${String(nextMonth).padStart(2, '0')}-01`;
   }
 

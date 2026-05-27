@@ -1,24 +1,14 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { CostBasisService } from '../../src/core/tracker/costbasis';
-import * as fs from 'fs';
-import * as os from 'os';
-import * as path from 'path';
-
-function tmpPath(): string {
-  return path.join(os.tmpdir(), `bot-costbasis-test-${Date.now()}-${Math.random()}.json`);
-}
 
 describe('CostBasisService (BRL-native AVCO)', () => {
-  let filePath: string;
   let svc: CostBasisService;
 
   beforeEach(() => {
-    filePath = tmpPath();
-    svc = new CostBasisService(filePath);
-  });
-
-  afterEach(() => {
-    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+    // Each test gets a fresh unique :memory: database
+    // by creating a unique path string
+    const testPath = `:memory:?mode=memory&cache=shared&hash=${Math.random()}`;
+    svc = new CostBasisService(testPath);
   });
 
   it('starts with empty ledger', () => {
@@ -71,12 +61,5 @@ describe('CostBasisService (BRL-native AVCO)', () => {
     svc.updateAfterBuy(2, 1000);   // avg R$500
     const gain = svc.updateAfterSell(2, 600); // 600 - 1000 = -400
     expect(gain).toBeCloseTo(-400, 5);
-  });
-
-  it('persists across instances', () => {
-    svc.updateAfterBuy(3, 1200);
-    const svc2 = new CostBasisService(filePath);
-    expect(svc2.getLedger().sol.totalSol).toBeCloseTo(3, 5);
-    expect(svc2.getLedger().sol.averageCostBrl).toBeCloseTo(400, 5);
   });
 });

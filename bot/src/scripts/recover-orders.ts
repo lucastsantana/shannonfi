@@ -12,10 +12,7 @@ async function main() {
   const config = loadConfig();
   logger.level = 'info';
 
-  const history = new TradeHistoryService(
-    config.tradeHistoryPath,
-    config.portfolioSnapshotsPath,
-  );
+  const history = new TradeHistoryService(config.dbPath);
 
   const trades = history.readTrades();
   const recordedOrderIds = new Set(trades.map((t) => t.exchangeOrderId).filter(Boolean));

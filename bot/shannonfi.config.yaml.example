@@ -91,11 +91,12 @@ dryRun: false
 logLevel: info
 
 
-# ── Data file paths ────────────────────────────────────────────────────────────
-# Paths are relative to the directory where the bot process runs (typically bot/).
-# These files are created automatically on first run.
+# ── Data persistence ────────────────────────────────────────────────────────────
+# SQLite database for all trade history, portfolio snapshots, and tax tracking.
+# Also maintains a rolling 15-day JSON backup window for recovery.
 
-tradeHistoryPath: ./data/trade_history.json
-portfolioSnapshotsPath: ./data/portfolio_snapshots.json
-costBasisPath: ./data/cost_basis.json
-taxEventsPath: ./data/tax_events.json
+dbPath: ./data/shannonfi.db
+
+# Number of days to keep data in JSON backup files (0 = disable JSON backup).
+# After 15 days, older records are pruned from JSON but stay in SQLite.
+jsonRetentionDays: 15

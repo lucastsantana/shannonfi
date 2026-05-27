@@ -39,13 +39,10 @@ async function main(): Promise<void> {
   logger.info('Using Mercado Bitcoin adapter (SOL-BRL, Lei 9.250/1995)');
 
   // ── Build services ─────────────────────────────────────────────────────────
-  const history = new TradeHistoryService(
-    config.tradeHistoryPath,
-    config.portfolioSnapshotsPath,
-  );
+  const history = new TradeHistoryService(config.dbPath);
   const pnl = new PnlService(history);
-  const costBasis = new CostBasisService(config.costBasisPath);
-  const tax = new TaxService(config.taxEventsPath);
+  const costBasis = new CostBasisService(config.dbPath);
+  const tax = new TaxService(config.dbPath);
   const volatility = new VolatilityService(adapter, config.volatilityWindowDays);
   const metrics = new MetricsService(history);
 

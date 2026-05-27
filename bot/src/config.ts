@@ -45,10 +45,8 @@ const ConfigSchema = z.object({
   logLevel: z.enum(['error', 'warn', 'info', 'debug']).default('info'),
 
   // ─── Data paths ──────────────────────────────────────────────────────────────
-  tradeHistoryPath: z.string().default('./data/trade_history.json'),
-  portfolioSnapshotsPath: z.string().default('./data/portfolio_snapshots.json'),
-  costBasisPath: z.string().default('./data/cost_basis.json'),
-  taxEventsPath: z.string().default('./data/tax_events.json'),
+  dbPath: z.string().default('./data/shannonfi.db'),
+  jsonRetentionDays: z.number().int().min(0).max(365).default(15),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;

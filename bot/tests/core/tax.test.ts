@@ -1,29 +1,73 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { TaxService } from '../../src/core/tracker/tax';
-import * as fs from 'fs';
-import * as os from 'os';
-import * as path from 'path';
-
-function tmpPath(): string {
-  return path.join(os.tmpdir(), `bot-tax-test-${Date.now()}-${Math.random()}.json`);
-}
+import Database from 'better-sqlite3';
 
 describe('TaxService', () => {
-  let filePath: string;
   let svc: TaxService;
+  let db: Database.Database;
 
   beforeEach(() => {
-    filePath = tmpPath();
-    svc = new TaxService(filePath);
+    const testPath = `:memory:?mode=memory&cache=shared&hash=${Math.random()}`;
+    svc = new TaxService(testPath);
+    // Get the same database instance to create dummy trades
+    db = new Database(testPath);
+    // Create the trades table if needed
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS trades (
+        id TEXT PRIMARY KEY,
+        client_order_id TEXT NOT NULL,
+        exchange_order_id TEXT,
+        exchange TEXT NOT NULL DEFAULT 'mercadobitcoin',
+        timestamp TEXT NOT NULL,
+        direction TEXT NOT NULL,
+        brl_amount_target REAL NOT NULL,
+        sol_amount_filled REAL,
+        brl_amount_filled REAL,
+        fill_price REAL,
+        fee_brl REAL,
+        status TEXT NOT NULL,
+        dry_run INTEGER NOT NULL DEFAULT 0,
+        realized_gain_brl REAL,
+        trade_date_brt TEXT,
+        before_sol_balance REAL NOT NULL,
+        before_brl_balance REAL NOT NULL,
+        before_sol_price REAL NOT NULL,
+        before_sol_value REAL NOT NULL,
+        before_total_value REAL NOT NULL,
+        before_sol_ratio_bps INTEGER NOT NULL,
+        before_deviation_bps INTEGER NOT NULL,
+        before_timestamp TEXT NOT NULL,
+        after_sol_balance REAL,
+        after_brl_balance REAL,
+        after_sol_price REAL,
+        after_sol_value REAL,
+        after_total_value REAL,
+        after_sol_ratio_bps INTEGER,
+        after_deviation_bps INTEGER,
+        after_timestamp TEXT
+      );
+    `);
   });
 
-  afterEach(() => {
-    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
-  });
+  const createDummyTrade = (tradeId: string) => {
+    const stmt = db.prepare(`
+      INSERT OR IGNORE INTO trades (
+        id, client_order_id, exchange_order_id, exchange, timestamp,
+        direction, brl_amount_target, status, dry_run,
+        before_sol_balance, before_brl_balance, before_sol_price,
+        before_sol_value, before_total_value, before_sol_ratio_bps,
+        before_deviation_bps, before_timestamp
+      ) VALUES (?, ?, ?, 'mercadobitcoin', ?, 'SELL_SOL', 1000, 'FILLED', 0,
+                10, 2000, 400, 4000, 6000, 6667, 1667, ?)
+    `);
+    stmt.run(tradeId, `client-${tradeId}`, `exch-${tradeId}`, new Date().toISOString(), new Date().toISOString());
+  };
 
-  const sellEvent = (overrides = {}) =>
-    svc.buildTaxEvent({
-      tradeId: 'trade-1',
+  const sellEvent = (overrides = {}) => {
+    const tradeId = (overrides as any).tradeId || 'trade-1';
+    createDummyTrade(tradeId);
+    return svc.buildTaxEvent({
+      tradeId,
       tradeDateBRT: '2026-04-15',
       direction: 'SELL_SOL',
       tradedVolumeBrl: 10_000,
@@ -33,6 +77,7 @@ describe('TaxService', () => {
       exchange: 'mercadobitcoin',
       ...overrides,
     });
+  };
 
   it('starts empty', () => {
     expect(svc.readEvents()).toHaveLength(0);
@@ -46,6 +91,7 @@ describe('TaxService', () => {
 
   it('getMonthlySalesBrl sums SELL proceeds for the month', () => {
     svc.appendTaxEvent(sellEvent({ tradedVolumeBrl: 10_000, tradeDateBRT: '2026-04-15' }));
+    createDummyTrade('trade-2');
     svc.appendTaxEvent(
       svc.buildTaxEvent({
         tradeId: 'trade-2',
@@ -62,6 +108,7 @@ describe('TaxService', () => {
   });
 
   it('getMonthlySalesBrl ignores BUY trades', () => {
+    createDummyTrade('trade-buy');
     svc.appendTaxEvent(
       svc.buildTaxEvent({
         tradeId: 'trade-buy',
@@ -85,6 +132,7 @@ describe('TaxService', () => {
 
   it('buildTaxEvent marks non-exempt when cumulative sales > R$35,000', () => {
     svc.appendTaxEvent(sellEvent({ tradedVolumeBrl: 30_000 }));
+    createDummyTrade('trade-over');
     const event = svc.buildTaxEvent({
       tradeId: 'trade-over',
       tradeDateBRT: '2026-04-25',
@@ -102,6 +150,7 @@ describe('TaxService', () => {
 
   it('cumMonthlySalesBrl is cumulative across events in the same month', () => {
     svc.appendTaxEvent(sellEvent({ tradedVolumeBrl: 10_000, tradeId: 't1' }));
+    createDummyTrade('t2');
     const event2 = svc.buildTaxEvent({
       tradeId: 't2',
       tradeDateBRT: '2026-04-20',
