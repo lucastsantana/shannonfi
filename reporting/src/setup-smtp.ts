@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 /**
  * Setup SMTP credentials in GNOME Keyring.
  * Securely stores Yahoo app password and tests the connection.
@@ -8,7 +9,7 @@
  */
 
 import { execSync } from 'child_process';
-import { logger } from '../core/tracker/logger';
+import { logger } from '@shannonfi/bot/core/tracker/logger';
 
 /**
  * Store a secret in GNOME Keyring using secret-tool
