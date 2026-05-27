@@ -85,7 +85,7 @@ async function main() {
   // Load config
   let dbPath: string | undefined;
   try {
-    const { loadConfig } = await import('@shannonfi/bot/config');
+    const { loadConfig } = await import('../../bot/src/config');
     const config = loadConfig(configPath);
     dbPath = config.dbPath;
   } catch {

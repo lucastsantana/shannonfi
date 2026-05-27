@@ -9,7 +9,7 @@
  */
 
 import { execSync } from 'child_process';
-import { logger } from '@shannonfi/bot/core/tracker/logger';
+import { logger } from '../../bot/src/core/tracker/logger';
 
 /**
  * Store a secret in GNOME Keyring using secret-tool

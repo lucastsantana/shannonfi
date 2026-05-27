@@ -3,12 +3,12 @@
  * Used by both monthly-report.ts (Markdown) and latex-report.ts (PDF).
  */
 
-import { TradeHistoryService } from '@shannonfi/bot/core/tracker/history';
-import { TaxService } from '@shannonfi/bot/core/tracker/tax';
-import { CostBasisService } from '@shannonfi/bot/core/tracker/costbasis';
-import { MetricsService } from '@shannonfi/bot/core/tracker/metrics';
-import { BenchmarksService } from '@shannonfi/bot/core/benchmarks';
-import { loadConfig } from '@shannonfi/bot/config';
+import { TradeHistoryService } from '../../bot/src/core/tracker/history';
+import { TaxService } from '../../bot/src/core/tracker/tax';
+import { CostBasisService } from '../../bot/src/core/tracker/costbasis';
+import { MetricsService } from '../../bot/src/core/tracker/metrics';
+import { BenchmarksService } from '../../bot/src/core/benchmarks';
+import { loadConfig } from '../../bot/src/config';
 import {
   ReportPayload, MonthlyMetrics, CumulativeMetrics, TradeRow, BenchmarkReturn,
 } from './report-types';

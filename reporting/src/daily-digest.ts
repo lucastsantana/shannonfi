@@ -12,11 +12,11 @@ import * as nodemailer from 'nodemailer';
 import * as fs from 'fs';
 import * as path from 'path';
 import { execSync } from 'child_process';
-import { loadConfig } from '@shannonfi/bot/config';
-import { TradeHistoryService } from '@shannonfi/bot/core/tracker/history';
-import { TaxService } from '@shannonfi/bot/core/tracker/tax';
-import { CostBasisService } from '@shannonfi/bot/core/tracker/costbasis';
-import { logger } from '@shannonfi/bot/core/tracker/logger';
+import { loadConfig } from '../../bot/src/config';
+import { TradeHistoryService } from '../../bot/src/core/tracker/history';
+import { TaxService } from '../../bot/src/core/tracker/tax';
+import { CostBasisService } from '../../bot/src/core/tracker/costbasis';
+import { logger } from '../../bot/src/core/tracker/logger';
 import { fmtBrl, fmtPct } from './report-builder';
 
 interface DailyDigest {

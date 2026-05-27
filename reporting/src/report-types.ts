@@ -1,6 +1,6 @@
 /** Types for the monthly performance report. */
 
-import { BenchmarkReturn } from '@shannonfi/bot/core/benchmarks';
+import { BenchmarkReturn } from '../../bot/src/core/benchmarks';
 
 export type { BenchmarkReturn };
 

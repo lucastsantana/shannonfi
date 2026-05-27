@@ -1,0 +1,197 @@
+\documentclass[aspectratio=169,10pt]{beamer}
+
+% ── Packages ──────────────────────────────────────────────────────────────────
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage{booktabs}
+\usepackage{microtype}
+\usepackage{xcolor}
+\usepackage{graphicx}
+
+% ── Okabe-Ito Colorblind-Friendly Palette ─────────────────────────────────────
+\definecolor{OIDeepBlue}{HTML}{0072B2}
+\definecolor{OIVermillion}{HTML}{D55E00}
+\definecolor{OIGreen}{HTML}{009E73}
+\definecolor{OISkyBlue}{HTML}{56B4E9}
+\definecolor{OIOrange}{HTML}{E69F00}
+\definecolor{OIYellow}{HTML}{F0E442}
+\definecolor{OIBlack}{HTML}{000000}
+\definecolor{LightBg}{HTML}{F5F5F5}
+
+% ── Madrid Theme (fallback) ───────────────────────────────────────────────
+\usetheme{Madrid}
+\usecolortheme{default}
+\setbeamercolor{palette primary}{bg=OIDeepBlue,fg=white}
+\setbeamercolor{palette secondary}{bg=OIDeepBlue!80,fg=white}
+\setbeamercolor{palette tertiary}{bg=OIDeepBlue!60,fg=white}
+\setbeamercolor{palette quaternary}{bg=OIDeepBlue!40,fg=white}
+\setbeamercolor{structure}{fg=OIDeepBlue}
+\setbeamercolor{title}{fg=white,bg=OIDeepBlue}
+\setbeamercolor{frametitle}{fg=white,bg=OIDeepBlue}
+\setbeamercolor{block title}{fg=white,bg=OIDeepBlue}
+\setbeamercolor{block body}{bg=LightBg}
+
+% ── Footer (copyright on every slide) ──────────────────────────────────────────
+\setbeamertemplate{footline}{%
+  \leavevmode%
+  \hbox{%
+    \begin{beamercolorbox}[wd=\paperwidth,ht=2.5ex,dp=1.5ex,leftskip=0.5em]{palette secondary}%
+      {\tiny \textcopyright{} Shannon Capital --- Confidential. Not for distribution.%
+       \hfill \insertframenumber{} / \inserttotalframenumber\hspace*{0.5em}}%
+    \end{beamercolorbox}}%
+  \vskip0pt%
+}
+\setbeamertemplate{navigation symbols}{}
+
+% ── Typography ────────────────────────────────────────────────────────────────
+\setbeamerfont{title}{size=\large,series=\bfseries}
+\setbeamerfont{frametitle}{size=\normalsize,series=\bfseries}
+
+% ── Metadata ───────────────────────────────────────────────────────────────────
+\title{Shannon's Demon}
+\subtitle{Monthly Performance Report --- May 2026}
+\author{Shannon Capital}
+\date{Generated: May 27, 2026, 3:45 PM BRT}
+\institute{}
+
+
+\begin{document}
+
+\begin{frame}
+\titlepage
+\end{frame}
+\begin{frame}{Executive Summary}
+\begin{block}{}
+\small
+This report covers a partial month with only 1 days of portfolio data, so figures should be interpreted with caution. The strategy recorded a return of +0.00\% over the available period, while SOL/BRL moved +0.00\% over the same window.
+
+The portfolio returned +0.91\% less than CDI this month. In periods of low SOL volatility or directional moves, the strategy's risk premium over the risk-free rate can turn negative — this is a normal occurrence and expected to reverse over the full cycle. IBOV fell sharply this month, providing useful context: the SOL/BRL balanced portfolio behaved as an uncorrelated asset class relative to Brazilian equities, and outperformed IBOV.
+
+
+\textit{See full commentary in the accompanying Markdown report.}
+\end{block}
+\end{frame}
+\begin{frame}{Month Performance: May 2026}
+\begin{center}
+\begin{tabular}{lr}
+\toprule
+\textbf{Metric} & \textbf{Value} \\
+\midrule
+Portfolio Return & \textcolor{OIDeepBlue}{+0.00\%} \\
+SOL/BRL Price Change & \textcolor{OIDeepBlue}{+0.00\%} \\
+CDI (month) & \textcolor{OIDeepBlue}{+0.91\%} \\
+IBOV (month) & \textcolor{OIDeepBlue}{-5.12\%} \\
+Days with Data & 1 \\
+Rebalances & 1 (1 buys, 0 sells) \\
+Fees Paid & R\$ 0,25 \\
+Max Drawdown & \textcolor{OIVermillion}{-0.00\%} \\
+Portfolio Start & R\$ 100,00 \\
+Portfolio End & R\$ 100,00 \\
+\bottomrule
+\end{tabular}
+\end{center}
+\end{frame}
+\begin{frame}{Rebalance History}
+
+\begin{center}
+\begin{tabular}{lllllll}
+\toprule
+\textbf{Date} & \textbf{Dir} & \textbf{Amount (BRL)} & \textbf{Fill Price} & \textbf{Fee (BRL)} & \textbf{Realized Gain} & \textbf{Drift} \\
+\midrule
+2026-05-26 & Buy & R\$ 50,00 & R\$ 422,44/SOL & R\$ 0,25 & — & 50.00\% \\
+\bottomrule
+\end{tabular}
+\end{center}
+\end{frame}
+\begin{frame}{Benchmark Comparison (Since Inception)}
+\begin{center}
+\begin{tabular}{lrr}
+\toprule
+\textbf{Benchmark} & \textbf{This Month} & \textbf{Since Inception} \\
+\midrule
+Shannon's Demon & +0.00\% & +0.00\% \\
+SOL Buy-and-Hold & +0.00\% & +0.00\% \\
+CDI & +0.91\% & +0.05\% \\
+IBOV & -5.12\% & -0.28\% \\
+\bottomrule
+\end{tabular}
+\end{center}
+\end{frame}
+\begin{frame}{Tax Summary (Lei 9.250/1995 Art. 21)}
+\begin{center}
+\begin{tabular}{lr}
+\toprule
+\textbf{Metric} & \textbf{Value} \\
+\midrule
+Gross SELL Proceeds & R\$ 0,00 \\
+Realized Gain & R\$ 0,00 \\
+Trades & 0 \\
+Status & Exempt (sales \(\leq\) R\$35{,}000) \\
+Payment Deadline & — \\
+\bottomrule
+\end{tabular}
+\end{center}
+\end{frame}
+\begin{frame}{Current Portfolio}
+\begin{center}
+\begin{tabular}{lrr}
+\toprule
+\textbf{Asset} & \textbf{Quantity} & \textbf{Value (BRL)} \\
+\midrule
+SOL & 0.118346 & R\$ 50,00 \\
+BRL & — & R\$ 50,00 \\
+\textbf{Total} & — & \textbf{R\$ 100,00} \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\medskip
+\textbf{Average Cost (AVCO):} R\$ 422,44/SOL
+
+\medskip
+\textbf{Unrealized P\&L:} \textcolor{OIDeepBlue}{R\$ 0,01 (+0.02\%)}
+\end{frame}
+\begin{frame}{Cumulative Track Record}
+\begin{center}
+\begin{tabular}{lr}
+\toprule
+\textbf{Metric} & \textbf{Value} \\
+\midrule
+Since & 2026-05-26 \\
+Total Days & 1 \\
+Total Return & +0.00\% \\
+CAGR & +0.00\% \\
+Sharpe Ratio & N/A \\
+Max Drawdown & \textcolor{OIVermillion}{-0.00\%} \\
+Total Rebalances & 1 \\
+Total Fees & R\$ 0,25 \\
+\bottomrule
+\end{tabular}
+\end{center}
+\end{frame}
+\begin{frame}[allowframebreaks]{Important Disclosures}
+\begin{block}{}
+\tiny
+
+\textbf{NOT INVESTMENT ADVICE.} This material has been prepared by Shannon Capital for informational purposes only. It does not constitute an offer, solicitation, or recommendation to buy or sell any financial instrument or digital asset.
+
+\medskip
+\textbf{PAST PERFORMANCE.} Past performance does not guarantee future results. Returns shown are historical and may not be representative of future performance.
+
+\medskip
+\textbf{RISK FACTORS.} This strategy involves investment in highly volatile digital assets. Risks include: (i)~extreme price volatility and potential total loss of capital; (ii)~liquidity risk --- positions may not be exitable at prevailing market prices; (iii)~no guarantee of positive returns; (iv)~the strategy may underperform a passive buy-and-hold position or risk-free rate (CDI) during sustained directional markets; (v)~operational risks including exchange downtime, API failures, and software errors.
+
+\medskip
+\textbf{REGULATORY.} This material has not been reviewed or approved by any regulatory authority (CVM or otherwise). Shannon Capital is an independent asset manager. This document does not constitute investment advice within the meaning of Lei 6.385/1976 or applicable CVM regulations. Recipients should obtain independent financial, legal, and tax advice before making any investment decision.
+
+\medskip
+\textbf{TAX.} Tax information relating to Lei 9.250/1995 Art.~21 is provided for illustrative purposes only and does not constitute tax advice. Recipients are solely responsible for their own tax compliance obligations.
+
+\medskip
+\textcopyright{} Shannon Capital. Confidential --- Not for distribution. All rights reserved. Unauthorized reproduction or redistribution is prohibited.
+
+\end{block}
+\end{frame}
+
+\end{document}
