@@ -42,10 +42,22 @@ interface DailyDigest {
  * Get yesterday's date in BRT as YYYY-MM-DD
  */
 function getYesterdayBRT(): string {
-  const now = new Date(new Date().toLocaleString('en-CA', { timeZone: 'America/Sao_Paulo' }));
-  const yesterday = new Date(now);
-  yesterday.setDate(yesterday.getDate() - 1);
-  return yesterday.toISOString().split('T')[0]!;
+  // Get current time in BRT by parsing offset
+  const now = new Date();
+  // BRT is UTC-3, so we need to adjust
+  const utcTime = now.getTime();
+  const brtTime = new Date(utcTime - (3 * 60 * 60 * 1000)); // Convert to BRT
+
+  // Get yesterday in BRT
+  const yesterday = new Date(brtTime);
+  yesterday.setUTCDate(yesterday.getUTCDate() - 1);
+
+  // Format as YYYY-MM-DD
+  const year = yesterday.getUTCFullYear();
+  const month = String(yesterday.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(yesterday.getUTCDate()).padStart(2, '0');
+
+  return `${year}-${month}-${day}`;
 }
 
 /**
