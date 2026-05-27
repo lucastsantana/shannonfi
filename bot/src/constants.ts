@@ -1,4 +1,4 @@
-// Ported from programs/shannonfi/src/constants.rs where noted.
+// Strategy constants for Shannon's Demon rebalancer
 
 export const BPS_DENOMINATOR = 10_000;
 export const TARGET_ALLOCATION_BPS = 5_000;   // 50%

@@ -2,8 +2,6 @@
  * Pure math functions for Shannon's Demon rebalancing.
  * All monetary values are BRL throughout — adapters convert from native currency
  * before calling these functions.
- *
- * Ported from programs/shannonfi/src/math.rs where noted.
  */
 
 import {
