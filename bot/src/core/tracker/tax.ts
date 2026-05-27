@@ -76,7 +76,7 @@ export class TaxService {
       .reduce((s, e) => s + e.tradedVolumeBrl, 0);
   }
 
-  /** Total BRL traded volume both directions (Coinbase volume-cap tracking). */
+  /** Total BRL traded volume (SELL events only, for tax reporting). */
   getMonthlyGainBrl(monthBRT: string): number {
     return this.readEvents()
       .filter((e) => e.monthBRT === monthBRT && e.direction === 'SELL_SOL')

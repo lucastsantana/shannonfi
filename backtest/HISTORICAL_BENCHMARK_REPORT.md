@@ -218,7 +218,7 @@ If SOL traded ±5% repeatedly (not observed 2025-2026):
 **Assumptions Made:**
 - Perfect execution (no slippage in real world; expect 0.05-0.3% per swap)
 - Immediate price fills at daily closing prices
-- Transaction fees: ~0.1% keeper fee (already modeled in separate analysis)
+- Transaction fees: ~0.3% Mercado Bitcoin taker fee per rebalance (modeled as trade cost)
 - No impermanent loss (vault doesn't provide liquidity)
 - Rebalance threshold: 5% allocation drift (trigger at ±5% from 50% target)
 - Rebalance interval: 30 days minimum between triggers
@@ -259,7 +259,7 @@ Based on this 12-month historical analysis:
   - 2026: 2 rebalances in 5 months (low volatility period) ✓
   - Avoided overtrading but captured major moves
   
-- **Cost-benefit:** Net value-add in volatility capture > 0.1% keeper fee
+- **Cost-benefit:** Net value-add in volatility capture > rebalancing taker fees
 
 ### 3. **Allocation Target Validation**
 
@@ -338,7 +338,7 @@ EMERGENCY_STOP:        Available for upgrade authority
 
 ### The Reality:
 - **Trade-off:** In bull markets, expected to capture only 50-60% of upside
-- **Cost:** 0.1% keeper fee + 0.05-0.1% slippage = ~0.2% annually
+- **Cost:** ~0.3% Mercado Bitcoin taker fee per trade + 0.05-0.1% slippage modeled in backtest
 - **Sweet spot:** Choppy/bear markets (like 2025-2026 environment)
 
 ### Recommendation:

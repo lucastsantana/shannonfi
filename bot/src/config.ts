@@ -37,9 +37,7 @@ const ConfigSchema = z.object({
 
   // ─── Tax compliance ──────────────────────────────────────────────────────────
   // Mercado Bitcoin: caps SELL_SOL trades so monthly sales stay under R$35,000
-  // (Lei 9.250/1995 Art. 21 domestic exemption — applies to MB, not Coinbase).
-  // Coinbase: caps total traded volume as a discretionary strategy constraint
-  // (Lei 14.754/2023 governs Coinbase; the domestic exemption does not apply).
+  // Lei 9.250/1995 Art. 21: domestic crypto trading exemption (MB only)
   neverExceedExemptionLimit: z.boolean().default(false),
 
   // ─── Runtime ────────────────────────────────────────────────────────────────

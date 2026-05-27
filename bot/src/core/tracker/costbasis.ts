@@ -15,12 +15,7 @@ const EMPTY_LEDGER: CostBasisLedger = {
   lastUpdated: '',
 };
 
-/**
- * Tracks AVCO (average cost) basis for the SOL position in BRL.
- *
- * Always receives BRL amounts — the Coinbase adapter converts USD→BRL before
- * calling these methods, so this service never needs to know about USD.
- */
+/** Tracks AVCO (average cost) basis for the SOL position in BRL. */
 export class CostBasisService {
   private filePath: string;
 

@@ -22,10 +22,7 @@ export function computeDeviationBps(solRatioBps: number): number {
   return Math.abs(solRatioBps - TARGET_ALLOCATION_BPS);
 }
 
-/**
- * Returns true if drift strictly exceeds threshold.
- * Uses strict > to match the Rust on-chain BelowThreshold semantics.
- */
+/** Returns true if drift strictly exceeds threshold. */
 export function shouldRebalance(solRatioBps: number, thresholdBps: number): boolean {
   return computeDeviationBps(solRatioBps) > thresholdBps;
 }
@@ -53,14 +50,6 @@ export function brlToSol(brlAmount: number, solPriceBrl: number, precision = 8):
   return Math.floor(raw * factor) / factor;
 }
 
-/**
- * Convert USD amount to SOL quantity at a given price.
- * Used internally by the Coinbase adapter.
- */
-export function usdToSol(usdAmount: number, solPriceUsd: number, precision = 8): number {
-  if (solPriceUsd <= 0) throw new Error('solPrice must be positive');
-  return parseFloat((usdAmount / solPriceUsd).toFixed(precision));
-}
 
 /**
  * Mean absolute daily return over an array of close prices (oldest first).

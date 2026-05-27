@@ -50,11 +50,7 @@ jobs:
       - name: Write config from secrets
         run: |
           cat > shannonfi.config.yaml << 'EOF'
-          exchange: ${{ vars.EXCHANGE }}
-
-          coinbase:
-            apiKeyName: "${{ secrets.COINBASE_API_KEY_NAME }}"
-            privateKey: "${{ secrets.COINBASE_API_KEY_PRIVATE_KEY }}"
+          exchange: mercadobitcoin
 
           mercadobitcoin:
             clientId: "${{ secrets.MB_CLIENT_ID }}"

@@ -5,7 +5,6 @@ import {
   shouldRebalance,
   computeRebalanceTrade,
   brlToSol,
-  usdToSol,
   computeMeanAbsoluteDailyReturn,
   computeAdaptiveThresholdBps,
   isSlippageAcceptable,
@@ -89,15 +88,6 @@ describe('brlToSol', () => {
   });
 });
 
-describe('usdToSol', () => {
-  it('converts USD to SOL at given price', () => {
-    expect(usdToSol(200, 100, 8)).toBeCloseTo(2, 5);
-  });
-
-  it('throws for zero price', () => {
-    expect(() => usdToSol(100, 0)).toThrow();
-  });
-});
 
 describe('computeMeanAbsoluteDailyReturn', () => {
   it('returns 0 for fewer than 2 prices', () => {

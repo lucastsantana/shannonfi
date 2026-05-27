@@ -33,6 +33,70 @@ bash start.sh           # run continuously with credentials from keyring
 
 ---
 
+## Deployment
+
+### Local (PM2)
+
+**Prerequisites:** Node.js 20+, GNOME Keyring (WSL2/Linux)
+
+1. Store credentials:
+   ```bash
+   secret-tool store service mercadobitcoin key clientId <your-mb-client-id>
+   secret-tool store service mercadobitcoin key clientSecret <your-mb-client-secret>
+   ```
+
+2. Build and run:
+   ```bash
+   cd bot
+   npm install && npm run build
+   bash start.sh --once        # test dry-run first
+   pm2 start ./start.sh --name shannonfi  # run continuously
+   ```
+
+3. Monitor:
+   ```bash
+   pm2 logs shannonfi
+   pm2 show shannonfi
+   ```
+
+See **[bot/README.md](./bot/README.md)** for full setup guide, tuning options, and troubleshooting.
+
+### GitHub Actions (Scheduled)
+
+Deploy via **[`.github/workflows/rebalancer.yml`](./.github/workflows/rebalancer.yml)** — runs every 15 minutes.
+
+**Required Secrets:**
+- `MB_CLIENT_ID` — Mercado Bitcoin OAuth client ID
+- `MB_CLIENT_SECRET` — Mercado Bitcoin OAuth client secret
+- `SLACK_WEBHOOK_URL` (optional) — Slack failure notifications
+
+**Configuration Variables:**
+- `REBALANCE_THRESHOLD_BPS` (default: 100 = 1%)
+- `MAX_SLIPPAGE_BPS` (default: 100 = 1%)
+- `VOLATILITY_MULTIPLIER` (default: 1.5)
+- `VOLATILITY_WINDOW_DAYS` (default: 30)
+- `NEVER_EXCEED_EXEMPTION_LIMIT` (default: false)
+
+---
+
+## Dependency Map
+
+```
+Node.js 20
+├── bot/package.json
+│   ├── axios — HTTP client for Mercado Bitcoin REST API
+│   ├── zod — Config schema validation
+│   ├── winston — Structured logging
+│   ├── @types/node, typescript — Build tools
+│   └── vitest — Unit test framework
+├── Mercado Bitcoin API v4
+│   └── OAuth2 (client credentials) → SOL/BRL market orders, price candles
+└── GNOME Keyring (local only)
+    └── secret-tool lookup → store/retrieve credentials
+```
+
+---
+
 ## Resources
 
 - [Shannon's Demon Strategy](https://en.wikipedia.org/wiki/Entropy_and_second_law_of_thermodynamics) — The volatility-harvesting concept

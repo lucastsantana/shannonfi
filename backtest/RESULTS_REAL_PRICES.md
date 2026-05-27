@@ -237,8 +237,8 @@ SOL Performance: +31.47%
 Based on this backtest:
 
 1. **Fee Structure:** Rebalancing cost ~0.39% over 5 months
-   - Justifies 0.1% keeper fee (break-even on costs)
-   - Can support operational overhead
+   - Mercado Bitcoin taker fee: ~0.3% per trade, built into cost model
+   - Trade cost amortized across rebalance frequency
 
 2. **Slippage Allowance:** Should permit ~0.5% slippage
    - Real Jupiter swaps: 0.1-0.3% typical

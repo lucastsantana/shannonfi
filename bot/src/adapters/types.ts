@@ -1,9 +1,7 @@
 /**
  * Shared BRL-native types and the ExchangeAdapter interface.
  *
- * All monetary values are in BRL throughout the engine. Each adapter is
- * responsible for converting from its native currency (USD for Coinbase,
- * BRL for Mercado Bitcoin) before returning these types.
+ * All monetary values are in BRL throughout the engine.
  */
 
 // ─── ExchangeAdapter interface ────────────────────────────────────────────────

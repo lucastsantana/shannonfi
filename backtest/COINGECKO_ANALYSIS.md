@@ -214,8 +214,8 @@ Despite not rebalancing, buy-and-hold 50/50 stayed close to the strategy:
 ### 🎯 Deployment Recommendations
 
 **1. Fee Structure**
-- 0.1-0.2% keeper fee justified by downside protection
-- Rebalancing cost: ~0.1% per swap (small relative to benefit)
+- Mercado Bitcoin taker fee: ~0.3% per rebalance trade
+- Break-even: Volatility capture outperformance > rebalancing costs
 - Performance fee: Could charge 20-30% of outperformance vs. all-SOL
 
 **2. Rebalance Frequency**
