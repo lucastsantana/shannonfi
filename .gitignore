@@ -47,6 +47,15 @@ bot/data/reports/*.snm
 bot/data/reports/*.toc
 bot/data/reports/*.fls
 bot/data/reports/*.fdb_latexmk
+data/reports/*.pdf
+data/reports/*.aux
+data/reports/*.log
+data/reports/*.nav
+data/reports/*.out
+data/reports/*.snm
+data/reports/*.toc
+data/reports/*.fls
+data/reports/*.fdb_latexmk
 
 # Stray SQLite files from in-memory test URIs
 bot/:memory:*

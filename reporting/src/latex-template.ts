@@ -1,17 +1,16 @@
 /**
  * LaTeX/Beamer template for monthly PDF reports.
- * Generates a complete Beamer presentation with colorblind-friendly palette,
- * Shannon Capital branding, and full regulatory disclaimer.
+ * Generates a complete Beamer presentation with Shannon Capital branding
+ * and full regulatory disclaimer.
  */
 
-import { execSync } from 'child_process';
 import { ReportPayload } from './report-types';
 import { fmtPct, fmtBrl, EN_MONTHS } from './report-builder';
 
 // ─── LaTeX Escape Utility ──────────────────────────────────────────────────────
 
 const LATEX_ESCAPES: Array<[RegExp, string]> = [
-  [/\\/g,  '\\textbackslash{}'],  // MUST be first (before other escapes that use \)
+  [/\\/g,  '\\textbackslash{}'],  // MUST be first
   [/\{/g,  '\\{'],
   [/\}/g,  '\\}'],
   [/\$/g,  '\\$'],
@@ -35,15 +34,10 @@ function escPct(n: number, decimals = 2): string {
   return escLtx(fmtPct(n, decimals));
 }
 
-// ─── Theme Detection ──────────────────────────────────────────────────────────
-
-function hasMetropolisTheme(): boolean {
-  try {
-    execSync('kpsewhich beamerthememetropolis.sty', { stdio: 'pipe' });
-    return true;
-  } catch {
-    return false;
-  }
+function coloredReturn(value: number, formatted: string): string {
+  return value >= 0
+    ? `\\textcolor{Success}{${formatted}}`
+    : `\\textcolor{Danger}{${formatted}}`;
 }
 
 // ─── Main Document Generator ──────────────────────────────────────────────────
@@ -58,9 +52,7 @@ export function buildLatexDocument(payload: ReportPayload, commentary: string): 
     dateStyle: 'medium',
     timeStyle: 'short',
   });
-  const metropolis = hasMetropolisTheme();
 
-  // ── Build slides ───────────────────────────────────────────────────────────
   const slides = [
     buildSlide1_Title(monthLabel, genDate),
     buildSlide2_ExecutiveSummary(commentary),
@@ -71,10 +63,9 @@ export function buildLatexDocument(payload: ReportPayload, commentary: string): 
     buildSlide7_CurrentPortfolio(payload),
     buildSlide8_CumulativeTrackRecord(payload),
     buildSlide9_Disclaimer(),
-  ].join('\n');
+  ].join('\n\n');
 
-  // ── Assemble document ──────────────────────────────────────────────────────
-  return `${buildPreamble(monthLabel, genDate, metropolis)}
+  return `${buildPreamble(monthLabel, genDate)}
 
 \\begin{document}
 
@@ -86,136 +77,153 @@ ${slides}
 
 // ─── Preamble ─────────────────────────────────────────────────────────────────
 
-function buildPreamble(monthLabel: string, genDate: string, metropolis: boolean): string {
-  const themeBlock = metropolis
-    ? `% ── Metropolis Theme ──────────────────────────────────────────────────────
-\\usetheme{metropolis}
-\\metroset{block=fill}
-\\setbeamercolor{alerted text}{fg=OIVermillion}
-\\setbeamercolor{progress bar}{fg=OIVermillion,bg=OIDeepBlue}`
-    : `% ── Madrid Theme (fallback) ───────────────────────────────────────────────
-\\usetheme{Madrid}
-\\usecolortheme{default}
-\\setbeamercolor{palette primary}{bg=OIDeepBlue,fg=white}
-\\setbeamercolor{palette secondary}{bg=OIDeepBlue!80,fg=white}
-\\setbeamercolor{palette tertiary}{bg=OIDeepBlue!60,fg=white}
-\\setbeamercolor{palette quaternary}{bg=OIDeepBlue!40,fg=white}
-\\setbeamercolor{structure}{fg=OIDeepBlue}
-\\setbeamercolor{title}{fg=white,bg=OIDeepBlue}
-\\setbeamercolor{frametitle}{fg=white,bg=OIDeepBlue}
-\\setbeamercolor{block title}{fg=white,bg=OIDeepBlue}
-\\setbeamercolor{block body}{bg=LightBg}`;
-
+function buildPreamble(monthLabel: string, genDate: string): string {
   return `\\documentclass[aspectratio=169,10pt]{beamer}
 
 % ── Packages ──────────────────────────────────────────────────────────────────
 \\usepackage[T1]{fontenc}
 \\usepackage[utf8]{inputenc}
-\\usepackage{lmodern}
+\\usepackage{inconsolata}
 \\usepackage{booktabs}
 \\usepackage{microtype}
 \\usepackage{xcolor}
-\\usepackage{graphicx}
+\\usepackage{tikz}
+\\usepackage{array}
+\\usepackage{colortbl}
 
-% ── Okabe-Ito Colorblind-Friendly Palette ─────────────────────────────────────
-\\definecolor{OIDeepBlue}{HTML}{0072B2}
-\\definecolor{OIVermillion}{HTML}{D55E00}
-\\definecolor{OIGreen}{HTML}{009E73}
-\\definecolor{OISkyBlue}{HTML}{56B4E9}
-\\definecolor{OIOrange}{HTML}{E69F00}
-\\definecolor{OIYellow}{HTML}{F0E442}
-\\definecolor{OIBlack}{HTML}{000000}
-\\definecolor{LightBg}{HTML}{F5F5F5}
+% ── Color Palette ─────────────────────────────────────────────────────────────
+\\definecolor{Navy}{HTML}{0A2540}       % deep navy — primary brand
+\\definecolor{Gold}{HTML}{C49A19}       % gold — accent & decorative
+\\definecolor{PageBg}{HTML}{FAFAFA}     % near-white page background
+\\definecolor{TableHdr}{HTML}{EEF2F7}   % light blue-grey for table shading
+\\definecolor{RuleColor}{HTML}{CBD5E1}  % light border / rule color
+\\definecolor{BodyText}{HTML}{0A2540}   % dark navy body text
+\\definecolor{MutedText}{HTML}{6B7280}  % muted grey for secondary text
+\\definecolor{Success}{HTML}{059669}    % financial green
+\\definecolor{Danger}{HTML}{DC2626}     % financial red
 
-${themeBlock}
-
-% ── Footer (copyright on every slide) ──────────────────────────────────────────
-\\setbeamertemplate{footline}{%
-  \\leavevmode%
-  \\hbox{%
-    \\begin{beamercolorbox}[wd=\\paperwidth,ht=2.5ex,dp=1.5ex,leftskip=0.5em]{palette secondary}%
-      {\\tiny \\textcopyright{} Shannon Capital --- Confidential. Not for distribution.%
-       \\hfill \\insertframenumber{} / \\inserttotalframenumber\\hspace*{0.5em}}%
-    \\end{beamercolorbox}}%
-  \\vskip0pt%
-}
+% ── Theme Base ────────────────────────────────────────────────────────────────
+\\usetheme{default}
 \\setbeamertemplate{navigation symbols}{}
+\\setbeamercolor{background canvas}{bg=PageBg}
+\\setbeamercolor{normal text}{fg=BodyText}
+\\setbeamercolor{frametitle}{fg=white,bg=Navy}
+\\setbeamercolor{structure}{fg=Navy}
+\\setbeamercolor{alerted text}{fg=Danger}
+\\setbeamercolor{block title}{fg=white,bg=Navy}
+\\setbeamercolor{block body}{fg=BodyText,bg=TableHdr}
+
+% ── Frame Title ───────────────────────────────────────────────────────────────
+% Navy bar + gold underline. Uses beamercolorbox — no fragile TikZ overlay.
+\\setbeamertemplate{frametitle}{%
+  \\nointerlineskip
+  \\begin{beamercolorbox}[%
+    wd=\\paperwidth,ht=2.6ex,dp=1.0ex,%
+    leftskip=1.2cm,rightskip=1.2cm]{frametitle}%
+    \\usebeamerfont{frametitle}\\insertframetitle%
+  \\end{beamercolorbox}%
+  \\nointerlineskip
+  {\\color{Gold}\\hrule height 1.5pt}%
+}
+
+% ── Footline ──────────────────────────────────────────────────────────────────
+% Light separator rule + copyright / page number. No TikZ — reliable stacking.
+\\setbeamertemplate{footline}{%
+  \\nointerlineskip
+  {\\color{RuleColor}\\hrule height 0.4pt}%
+  \\begin{beamercolorbox}[%
+    wd=\\paperwidth,ht=2.2ex,dp=0.8ex,%
+    leftskip=0.8cm,rightskip=0.8cm]{normal text}%
+    {\\tiny\\color{MutedText}\\textcopyright{} Shannon Capital --- Confidential}%
+    \\hfill
+    {\\tiny\\color{MutedText}\\insertframenumber\\,/\\,\\inserttotalframenumber}%
+  \\end{beamercolorbox}%
+}
 
 % ── Typography ────────────────────────────────────────────────────────────────
-\\setbeamerfont{title}{size=\\large,series=\\bfseries}
 \\setbeamerfont{frametitle}{size=\\normalsize,series=\\bfseries}
+\\setbeamerfont{title}{size=\\LARGE,series=\\bfseries}
+\\setbeamerfont{subtitle}{size=\\small,series=\\mdseries}
+\\setbeamersize{text margin left=1.2cm,text margin right=1.2cm}
 
-% ── Metadata ───────────────────────────────────────────────────────────────────
+% Paragraph spacing — Beamer defaults parskip to 0; restore readable breathing room
+\\setlength{\\parskip}{0.45em}
+\\setlength{\\parindent}{0pt}
+
+% ── Metadata ──────────────────────────────────────────────────────────────────
 \\title{Shannon's Demon}
 \\subtitle{Monthly Performance Report --- ${escLtx(monthLabel)}}
 \\author{Shannon Capital}
-\\date{Generated: ${escLtx(genDate)} BRT}
-\\institute{}
-`;
+\\date{${escLtx(genDate)} BRT}
+\\institute{}`;
 }
 
 // ─── Slide Builders ───────────────────────────────────────────────────────────
 
 function buildSlide1_Title(monthLabel: string, genDate: string): string {
-  return `\\begin{frame}
-\\titlepage
-\\end{frame}`;
+  // Full-bleed dark title: set background color, then reset for remaining slides.
+  // TikZ is used only for the thin gold accent bars at top/bottom edges (no text overlap).
+  return `\\setbeamercolor{background canvas}{bg=Navy}
+\\begin{frame}[plain]
+\\begin{tikzpicture}[remember picture,overlay]
+  \\fill[Gold] (current page.north west) rectangle ([yshift=-0.18cm]current page.north east);
+  \\fill[Gold] (current page.south west) rectangle ([yshift=0.09cm]current page.south east);
+\\end{tikzpicture}
+\\vspace{2.0cm}
+\\begin{center}
+  {\\color{white}\\fontsize{26}{32}\\selectfont\\bfseries Shannon's Demon}\\\\[0.4cm]
+  {\\color{Gold}\\rule{7cm}{0.6pt}}\\\\[0.35cm]
+  {\\color{white!70!black}\\normalsize\\mdseries Monthly Performance Report}\\\\[0.15cm]
+  {\\color{Gold}\\large\\bfseries ${escLtx(monthLabel)}}\\\\[1.0cm]
+  {\\color{white!50!black}\\small Shannon Capital}\\\\[0.1cm]
+  {\\color{white!35!black}\\scriptsize Generated: ${escLtx(genDate)} BRT}
+\\end{center}
+\\end{frame}
+\\setbeamercolor{background canvas}{bg=PageBg}`;
 }
 
 function buildSlide2_ExecutiveSummary(commentary: string): string {
-  // Limit to first 2 paragraphs; add note if longer
   const paragraphs = commentary.split('\n\n');
   const displayText = paragraphs.slice(0, 2).join('\n\n');
   const hasMore = paragraphs.length > 2;
 
   return `\\begin{frame}{Executive Summary}
-\\begin{block}{}
-\\small
+\\vspace{0.4em}
+{\\small\\color{BodyText}
 ${escLtx(displayText)}
-${hasMore ? '\n\n\\textit{See full commentary in the accompanying Markdown report.}' : ''}
-\\end{block}
+}${hasMore ? '\n\\vspace{0.4em}\n{\\scriptsize\\color{MutedText}\\textit{See full commentary in the accompanying Markdown report.}}' : ''}
 \\end{frame}`;
 }
 
 function buildSlide3_MonthPerformance(p: ReportPayload, monthLabel: string): string {
-  const monthReturn = p.monthly.monthlyReturnPct;
-  const monthReturnStr = monthReturn >= 0
-    ? `\\textcolor{OIDeepBlue}{${escPct(monthReturn)}}`
-    : `\\textcolor{OIVermillion}{${escPct(monthReturn)}}`;
-
-  const solReturn = p.monthly.solOnlyReturnPct;
-  const solReturnStr = solReturn >= 0
-    ? `\\textcolor{OIDeepBlue}{${escPct(solReturn)}}`
-    : `\\textcolor{OIVermillion}{${escPct(solReturn)}}`;
-
+  const monthReturnStr  = coloredReturn(p.monthly.monthlyReturnPct,  escPct(p.monthly.monthlyReturnPct));
+  const solReturnStr    = coloredReturn(p.monthly.solOnlyReturnPct,   escPct(p.monthly.solOnlyReturnPct));
   const cdiMonthly = p.benchmarks.cdi.available
-    ? `\\textcolor{OIDeepBlue}{${escPct(p.benchmarks.cdi.monthlyReturn * 100)}}`
+    ? coloredReturn(p.benchmarks.cdi.monthlyReturn * 100, escPct(p.benchmarks.cdi.monthlyReturn * 100))
     : 'N/A';
-
   const ibovMonthly = p.benchmarks.ibov.available
-    ? `\\textcolor{OIDeepBlue}{${escPct(p.benchmarks.ibov.monthlyReturn * 100)}}`
+    ? coloredReturn(p.benchmarks.ibov.monthlyReturn * 100, escPct(p.benchmarks.ibov.monthlyReturn * 100))
     : 'N/A';
-
-  const maxDD = p.monthly.maxDrawdownPct >= 0
-    ? `\\textcolor{OIVermillion}{-${p.monthly.maxDrawdownPct.toFixed(2)}\\%}`
-    : `\\textcolor{OIVermillion}{${p.monthly.maxDrawdownPct.toFixed(2)}\\%}`;
+  const maxDD = `\\textcolor{Danger}{$-$${p.monthly.maxDrawdownPct.toFixed(2)}\\%}`;
 
   return `\\begin{frame}{Month Performance: ${escLtx(monthLabel)}}
+\\vspace{0.3em}
 \\begin{center}
-\\begin{tabular}{lr}
+\\arrayrulecolor{RuleColor}
+\\begin{tabular}{@{\\hspace{0.5em}}l@{\\hspace{2em}}r@{\\hspace{0.5em}}}
 \\toprule
-\\textbf{Metric} & \\textbf{Value} \\\\
+\\rowcolor{Navy}\\textcolor{white}{\\textbf{Metric}} & \\textcolor{white}{\\textbf{Value}} \\\\
 \\midrule
-Portfolio Return & ${monthReturnStr} \\\\
-SOL/BRL Price Change & ${solReturnStr} \\\\
-CDI (month) & ${cdiMonthly} \\\\
-IBOV (month) & ${ibovMonthly} \\\\
-Days with Data & ${p.monthly.daysWithData} \\\\
-Rebalances & ${p.monthly.rebalanceCount} (${p.monthly.buyCount} buys, ${p.monthly.sellCount} sells) \\\\
-Fees Paid & ${escBrl(p.monthly.totalFeesBrl)} \\\\
-Max Drawdown & ${maxDD} \\\\
-Portfolio Start & ${escBrl(p.monthly.startValueBrl)} \\\\
-Portfolio End & ${escBrl(p.monthly.endValueBrl)} \\\\
+Portfolio Return       & ${monthReturnStr} \\\\
+SOL/BRL Price Change   & ${solReturnStr} \\\\
+CDI (month)            & ${cdiMonthly} \\\\
+IBOV (month)           & ${ibovMonthly} \\\\
+Days with Data         & ${p.monthly.daysWithData} \\\\
+Rebalances             & ${p.monthly.rebalanceCount} (${p.monthly.buyCount} buys, ${p.monthly.sellCount} sells) \\\\
+Fees Paid              & ${escBrl(p.monthly.totalFeesBrl)} \\\\
+Max Drawdown           & ${maxDD} \\\\
+Portfolio Start        & ${escBrl(p.monthly.startValueBrl)} \\\\
+Portfolio End          & ${escBrl(p.monthly.endValueBrl)} \\\\
 \\bottomrule
 \\end{tabular}
 \\end{center}
@@ -225,25 +233,32 @@ Portfolio End & ${escBrl(p.monthly.endValueBrl)} \\\\
 function buildSlide4_RebalanceHistory(p: ReportPayload): string {
   if (p.trades.length === 0) {
     return `\\begin{frame}{Rebalance History}
+\\vspace{1.5em}
 \\begin{center}
-\\textit{No rebalances this month.}
+{\\color{MutedText}\\itshape No rebalances this month.}
 \\end{center}
 \\end{frame}`;
   }
 
-  const fontCmd = p.trades.length > 8 ? '\\small' : '';
+  const sizeCmd = p.trades.length > 6 ? '\\footnotesize' : '\\small';
   const tradeRows = p.trades.map(t => {
+    const dirColor = t.direction.includes('Buy') ? 'Success' : 'Danger';
     const dirStr = t.direction.includes('Buy') ? 'Buy' : 'Sell';
-    const realizedGainStr = t.realizedGainBrl != null ? escBrl(t.realizedGainBrl) : '—';
-    return `${t.date} & ${dirStr} & ${escBrl(t.brlAmount)} & ${escBrl(t.fillPrice)}/SOL & ${escBrl(t.feeBrl)} & ${realizedGainStr} & ${t.driftBeforePct.toFixed(2)}\\% \\\\`;
+    const realizedStr = t.realizedGainBrl != null
+      ? coloredReturn(t.realizedGainBrl, escBrl(t.realizedGainBrl))
+      : '{\\color{MutedText}---}';
+    const driftColor = t.driftBeforePct > 5 ? 'Danger' : 'BodyText';
+    return `${t.date} & \\textcolor{${dirColor}}{${dirStr}} & ${escBrl(t.brlAmount)} & ${escBrl(t.fillPrice)}/SOL & ${escBrl(t.feeBrl)} & ${realizedStr} & {\\color{${driftColor}}${t.driftBeforePct.toFixed(2)}\\%} \\\\`;
   }).join('\n');
 
   return `\\begin{frame}{Rebalance History}
-${fontCmd}
+\\vspace{0.3em}
+${sizeCmd}
 \\begin{center}
-\\begin{tabular}{lllllll}
+\\arrayrulecolor{RuleColor}
+\\begin{tabular}{@{\\hspace{0.3em}}l l r r r r r@{\\hspace{0.3em}}}
 \\toprule
-\\textbf{Date} & \\textbf{Dir} & \\textbf{Amount (BRL)} & \\textbf{Fill Price} & \\textbf{Fee (BRL)} & \\textbf{Realized Gain} & \\textbf{Drift} \\\\
+\\rowcolor{Navy}\\textcolor{white}{\\textbf{Date}} & \\textcolor{white}{\\textbf{Dir}} & \\textcolor{white}{\\textbf{Amount}} & \\textcolor{white}{\\textbf{Fill Price}} & \\textcolor{white}{\\textbf{Fee}} & \\textcolor{white}{\\textbf{P\\&L}} & \\textcolor{white}{\\textbf{Drift}} \\\\
 \\midrule
 ${tradeRows}
 \\bottomrule
@@ -253,35 +268,36 @@ ${tradeRows}
 }
 
 function buildSlide5_BenchmarkComparison(p: ReportPayload): string {
-  const sdMonthly = escPct(p.monthly.monthlyReturnPct);
-  const sdCumul = escPct(p.cumulative.totalReturnPct);
-  const solMonthly = escPct(p.monthly.solOnlyReturnPct);
-  const solCumul = escPct(p.cumulative.solOnlyCumulativeReturnPct);
+  const sdMonthly  = coloredReturn(p.monthly.monthlyReturnPct,                  escPct(p.monthly.monthlyReturnPct));
+  const sdCumul    = coloredReturn(p.cumulative.totalReturnPct,                  escPct(p.cumulative.totalReturnPct));
+  const solMonthly = coloredReturn(p.monthly.solOnlyReturnPct,                   escPct(p.monthly.solOnlyReturnPct));
+  const solCumul   = coloredReturn(p.cumulative.solOnlyCumulativeReturnPct,       escPct(p.cumulative.solOnlyCumulativeReturnPct));
 
   const cdiMonthly = p.benchmarks.cdi.available
-    ? escPct(p.benchmarks.cdi.monthlyReturn * 100)
+    ? coloredReturn(p.benchmarks.cdi.monthlyReturn * 100,    escPct(p.benchmarks.cdi.monthlyReturn * 100))
     : 'N/A';
   const cdiCumul = p.benchmarks.cdi.available
-    ? escPct(p.benchmarks.cdi.cumulativeReturn * 100)
+    ? coloredReturn(p.benchmarks.cdi.cumulativeReturn * 100, escPct(p.benchmarks.cdi.cumulativeReturn * 100))
     : 'N/A';
-
   const ibovMonthly = p.benchmarks.ibov.available
-    ? escPct(p.benchmarks.ibov.monthlyReturn * 100)
+    ? coloredReturn(p.benchmarks.ibov.monthlyReturn * 100,    escPct(p.benchmarks.ibov.monthlyReturn * 100))
     : 'N/A';
   const ibovCumul = p.benchmarks.ibov.available
-    ? escPct(p.benchmarks.ibov.cumulativeReturn * 100)
+    ? coloredReturn(p.benchmarks.ibov.cumulativeReturn * 100, escPct(p.benchmarks.ibov.cumulativeReturn * 100))
     : 'N/A';
 
   return `\\begin{frame}{Benchmark Comparison (Since Inception)}
+\\vspace{0.3em}
 \\begin{center}
-\\begin{tabular}{lrr}
+\\arrayrulecolor{RuleColor}
+\\begin{tabular}{@{\\hspace{0.5em}}l@{\\hspace{2em}}r@{\\hspace{2em}}r@{\\hspace{0.5em}}}
 \\toprule
-\\textbf{Benchmark} & \\textbf{This Month} & \\textbf{Since Inception} \\\\
+\\rowcolor{Navy}\\textcolor{white}{\\textbf{Benchmark}} & \\textcolor{white}{\\textbf{This Month}} & \\textcolor{white}{\\textbf{Since Inception}} \\\\
 \\midrule
-Shannon's Demon & ${sdMonthly} & ${sdCumul} \\\\
-SOL Buy-and-Hold & ${solMonthly} & ${solCumul} \\\\
-CDI & ${cdiMonthly} & ${cdiCumul} \\\\
-IBOV & ${ibovMonthly} & ${ibovCumul} \\\\
+Shannon's Demon  & ${sdMonthly}   & ${sdCumul}   \\\\
+SOL Buy-and-Hold & ${solMonthly}  & ${solCumul}  \\\\
+CDI              & ${cdiMonthly}  & ${cdiCumul}  \\\\
+IBOV             & ${ibovMonthly} & ${ibovCumul} \\\\
 \\bottomrule
 \\end{tabular}
 \\end{center}
@@ -290,22 +306,23 @@ IBOV & ${ibovMonthly} & ${ibovCumul} \\\\
 
 function buildSlide6_TaxSummary(p: ReportPayload): string {
   const statusStr = p.taxSummary.exempt
-    ? 'Exempt (sales \\(\\leq\\) R\\$35{,}000)'
-    : `\\textcolor{OIVermillion}{Taxable --- DARF required}`;
+    ? `{\\color{Success}Exempt (sales $\\leq$ R\\$35{,}000)}`
+    : `{\\color{Danger}\\textbf{Taxable --- DARF required}}`;
+  const deadline = p.taxSummary.paymentDeadline ?? '---';
 
-  const deadline = p.taxSummary.paymentDeadline ?? '—';
-
-  return `\\begin{frame}{Tax Summary (Lei 9.250/1995 Art. 21)}
+  return `\\begin{frame}{Tax Summary (Lei 9.250/1995 Art.~21)}
+\\vspace{0.3em}
 \\begin{center}
-\\begin{tabular}{lr}
+\\arrayrulecolor{RuleColor}
+\\begin{tabular}{@{\\hspace{0.5em}}l@{\\hspace{2em}}r@{\\hspace{0.5em}}}
 \\toprule
-\\textbf{Metric} & \\textbf{Value} \\\\
+\\rowcolor{Navy}\\textcolor{white}{\\textbf{Metric}} & \\textcolor{white}{\\textbf{Value}} \\\\
 \\midrule
 Gross SELL Proceeds & ${escBrl(p.taxSummary.totalSalesBrl)} \\\\
-Realized Gain & ${escBrl(p.taxSummary.totalRealizedGainBrl)} \\\\
-Trades & ${p.taxSummary.tradeCount} \\\\
-Status & ${statusStr} \\\\
-Payment Deadline & ${escLtx(deadline)} \\\\
+Realized Gain       & ${coloredReturn(p.taxSummary.totalRealizedGainBrl, escBrl(p.taxSummary.totalRealizedGainBrl))} \\\\
+Trades              & ${p.taxSummary.tradeCount} \\\\
+Status              & ${statusStr} \\\\
+Payment Deadline    & ${escLtx(deadline)} \\\\
 \\bottomrule
 \\end{tabular}
 \\end{center}
@@ -313,51 +330,56 @@ Payment Deadline & ${escLtx(deadline)} \\\\
 }
 
 function buildSlide7_CurrentPortfolio(p: ReportPayload): string {
-  const solValue = p.portfolio.solBalance * p.portfolio.solPrice;
-  const unrealizedStr = p.portfolio.unrealizedGainPct >= 0
-    ? `\\textcolor{OIDeepBlue}{${escBrl(p.portfolio.unrealizedGainBrl)} (${escPct(p.portfolio.unrealizedGainPct)})}`
-    : `\\textcolor{OIVermillion}{${escBrl(p.portfolio.unrealizedGainBrl)} (${escPct(p.portfolio.unrealizedGainPct)})}`;
+  const solValue     = p.portfolio.solBalance * p.portfolio.solPrice;
+  const unrealizedStr = coloredReturn(
+    p.portfolio.unrealizedGainPct,
+    `${escBrl(p.portfolio.unrealizedGainBrl)} (${escPct(p.portfolio.unrealizedGainPct)})`,
+  );
 
   return `\\begin{frame}{Current Portfolio}
+\\vspace{0.3em}
 \\begin{center}
-\\begin{tabular}{lrr}
+\\arrayrulecolor{RuleColor}
+\\begin{tabular}{@{\\hspace{0.5em}}l@{\\hspace{2em}}r@{\\hspace{2em}}r@{\\hspace{0.5em}}}
 \\toprule
-\\textbf{Asset} & \\textbf{Quantity} & \\textbf{Value (BRL)} \\\\
+\\rowcolor{Navy}\\textcolor{white}{\\textbf{Asset}} & \\textcolor{white}{\\textbf{Quantity}} & \\textcolor{white}{\\textbf{Value (BRL)}} \\\\
 \\midrule
-SOL & ${p.portfolio.solBalance.toFixed(6)} & ${escBrl(solValue)} \\\\
-BRL & — & ${escBrl(p.portfolio.brlBalance)} \\\\
-\\textbf{Total} & — & \\textbf{${escBrl(p.portfolio.totalValueBrl)}} \\\\
+SOL              & ${p.portfolio.solBalance.toFixed(6)} & ${escBrl(solValue)} \\\\
+BRL              & {\\color{MutedText}---}              & ${escBrl(p.portfolio.brlBalance)} \\\\
+\\textbf{Total}  & {\\color{MutedText}---}              & \\textbf{${escBrl(p.portfolio.totalValueBrl)}} \\\\
 \\bottomrule
 \\end{tabular}
 \\end{center}
-
-\\medskip
-\\textbf{Average Cost (AVCO):} ${escBrl(p.portfolio.averageCostBrl)}/SOL
-
-\\medskip
-\\textbf{Unrealized P\\&L:} ${unrealizedStr}
+\\vspace{0.6em}
+\\begin{tabular}{@{}ll}
+  \\textbf{Average Cost (AVCO):} & ${escBrl(p.portfolio.averageCostBrl)}/SOL \\\\[0.2em]
+  \\textbf{Unrealized P\\&L:}     & ${unrealizedStr} \\\\
+\\end{tabular}
 \\end{frame}`;
 }
 
 function buildSlide8_CumulativeTrackRecord(p: ReportPayload): string {
-  const cagrStr = p.cumulative.cagr != null ? escPct(p.cumulative.cagr) : 'N/A';
-  const sharpeStr = p.cumulative.sharpeRatio != null ? p.cumulative.sharpeRatio.toFixed(3) : 'N/A';
-  const maxDD = `\\textcolor{OIVermillion}{-${p.cumulative.maxDrawdownPct.toFixed(2)}\\%}`;
+  const cagrStr   = p.cumulative.cagr        != null ? coloredReturn(p.cumulative.cagr,        escPct(p.cumulative.cagr))        : 'N/A';
+  const sharpeStr = p.cumulative.sharpeRatio  != null ? p.cumulative.sharpeRatio.toFixed(3) : 'N/A';
+  const totalRet  = coloredReturn(p.cumulative.totalReturnPct, escPct(p.cumulative.totalReturnPct));
+  const maxDD     = `\\textcolor{Danger}{$-$${p.cumulative.maxDrawdownPct.toFixed(2)}\\%}`;
 
   return `\\begin{frame}{Cumulative Track Record}
+\\vspace{0.3em}
 \\begin{center}
-\\begin{tabular}{lr}
+\\arrayrulecolor{RuleColor}
+\\begin{tabular}{@{\\hspace{0.5em}}l@{\\hspace{2em}}r@{\\hspace{0.5em}}}
 \\toprule
-\\textbf{Metric} & \\textbf{Value} \\\\
+\\rowcolor{Navy}\\textcolor{white}{\\textbf{Metric}} & \\textcolor{white}{\\textbf{Value}} \\\\
 \\midrule
-Since & ${escLtx(p.cumulative.inceptionDate)} \\\\
-Total Days & ${p.cumulative.totalDays} \\\\
-Total Return & ${escPct(p.cumulative.totalReturnPct)} \\\\
-CAGR & ${cagrStr} \\\\
-Sharpe Ratio & ${sharpeStr} \\\\
-Max Drawdown & ${maxDD} \\\\
-Total Rebalances & ${p.cumulative.totalRebalances} \\\\
-Total Fees & ${escBrl(p.cumulative.totalFeesBrl)} \\\\
+Since              & ${escLtx(p.cumulative.inceptionDate)} \\\\
+Total Days         & ${p.cumulative.totalDays} \\\\
+Total Return       & ${totalRet} \\\\
+CAGR               & ${cagrStr} \\\\
+Sharpe Ratio       & ${sharpeStr} \\\\
+Max Drawdown       & ${maxDD} \\\\
+Total Rebalances   & ${p.cumulative.totalRebalances} \\\\
+Total Fees         & ${escBrl(p.cumulative.totalFeesBrl)} \\\\
 \\bottomrule
 \\end{tabular}
 \\end{center}
@@ -365,27 +387,48 @@ Total Fees & ${escBrl(p.cumulative.totalFeesBrl)} \\\\
 }
 
 function buildSlide9_Disclaimer(): string {
+  // allowframebreaks auto-continues onto a second slide if content overflows.
+  // Font size and color are set as switches (not a brace group) so the splitter
+  // can find paragraph break points and carry settings across frame continuations.
   return `\\begin{frame}[allowframebreaks]{Important Disclosures}
-\\begin{block}{}
-\\tiny
+\\scriptsize
+\\color{BodyText}
+\\setlength{\\parskip}{0.5em}
 
-\\textbf{NOT INVESTMENT ADVICE.} This material has been prepared by Shannon Capital for informational purposes only. It does not constitute an offer, solicitation, or recommendation to buy or sell any financial instrument or digital asset.
+\\textcolor{Navy}{\\textbf{NOT INVESTMENT ADVICE}} \\quad
+This material has been prepared by Shannon Capital for informational purposes
+only. It does not constitute an offer, solicitation, or recommendation to buy
+or sell any financial instrument or digital asset.
 
-\\medskip
-\\textbf{PAST PERFORMANCE.} Past performance does not guarantee future results. Returns shown are historical and may not be representative of future performance.
+\\textcolor{Navy}{\\textbf{PAST PERFORMANCE}} \\quad
+Past performance does not guarantee future results. Returns shown are historical
+and may not be representative of future performance.
 
-\\medskip
-\\textbf{RISK FACTORS.} This strategy involves investment in highly volatile digital assets. Risks include: (i)~extreme price volatility and potential total loss of capital; (ii)~liquidity risk --- positions may not be exitable at prevailing market prices; (iii)~no guarantee of positive returns; (iv)~the strategy may underperform a passive buy-and-hold position or risk-free rate (CDI) during sustained directional markets; (v)~operational risks including exchange downtime, API failures, and software errors.
+\\textcolor{Navy}{\\textbf{RISK FACTORS}} \\quad
+This strategy involves investment in highly volatile digital assets. Risks
+include: (i)~extreme price volatility and potential total loss of capital;
+(ii)~liquidity risk --- positions may not be exitable at prevailing market
+prices; (iii)~no guarantee of positive returns; (iv)~the strategy may
+underperform a passive buy-and-hold position or risk-free rate (CDI) during
+sustained directional markets; (v)~operational risks including exchange
+downtime, API failures, and software errors.
 
-\\medskip
-\\textbf{REGULATORY.} This material has not been reviewed or approved by any regulatory authority (CVM or otherwise). Shannon Capital is an independent asset manager. This document does not constitute investment advice within the meaning of Lei 6.385/1976 or applicable CVM regulations. Recipients should obtain independent financial, legal, and tax advice before making any investment decision.
+\\textcolor{Navy}{\\textbf{REGULATORY}} \\quad
+This material has not been reviewed or approved by any regulatory authority
+(CVM or otherwise). Shannon Capital is an independent asset manager. This
+document does not constitute investment advice within the meaning of Lei
+6.385/1976 or applicable CVM regulations. Recipients should obtain independent
+financial, legal, and tax advice before making any investment decision.
 
-\\medskip
-\\textbf{TAX.} Tax information relating to Lei 9.250/1995 Art.~21 is provided for illustrative purposes only and does not constitute tax advice. Recipients are solely responsible for their own tax compliance obligations.
+\\textcolor{Navy}{\\textbf{TAX}} \\quad
+Tax information relating to Lei 9.250/1995 Art.~21 is provided for illustrative
+purposes only and does not constitute tax advice. Recipients are solely
+responsible for their own tax compliance obligations.
 
-\\medskip
-\\textcopyright{} Shannon Capital. Confidential --- Not for distribution. All rights reserved. Unauthorized reproduction or redistribution is prohibited.
+\\vspace{0.3em}
+{\\color{MutedText}\\textcopyright{} Shannon Capital. Confidential ---
+Not for distribution. All rights reserved. Unauthorized reproduction or
+redistribution is prohibited.}
 
-\\end{block}
 \\end{frame}`;
 }
