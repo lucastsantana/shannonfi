@@ -8,8 +8,6 @@ This repository provides a production-ready implementation running on **Mercado 
 
 ## Getting Started
 
-## Option B: CEX Bot (Mercado Bitcoin)
-
 A fully operational rebalancer for your Mercado Bitcoin account running the Shannon's Demon strategy on SOL/BRL — no smart contract deployment, no Solana toolchain, no blockchain fees.
 
 **Key facts:**
