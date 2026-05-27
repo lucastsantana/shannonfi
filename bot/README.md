@@ -170,17 +170,30 @@ dryRun: false
 logLevel: info
 ```
 
-### Data Files
+### Data Persistence
 
 ```yaml
-# Paths are relative to the bot/ directory
-# These files are created automatically on first run
+# Primary store: SQLite database (created automatically)
+dbPath: ./data/shannonfi.db
 
-tradeHistoryPath: ./data/trade_history.json              # all trades (for audit)
-portfolioSnapshotsPath: ./data/portfolio_snapshots.json  # daily NAV snapshots
-costBasisPath: ./data/cost_basis.json                    # AVCO cost basis tracking
-taxEventsPath: ./data/tax_events.json                    # realized gains per trade
+# Rolling JSON backup (keeps last 15 days, older records archived to SQLite)
+jsonRetentionDays: 15
+
+# Generated files
+# data/reports/YYYY-MM.md  — Monthly performance reports (generated on 1st of month)
 ```
+
+**SQLite tables** (all auto-created):
+- `trades` — All rebalance trades with pre/post portfolio snapshots
+- `portfolio_snapshots` — Daily NAV and allocation for performance tracking
+- `tax_events` — Realized gains per trade for tax reporting
+- `cost_basis` — AVCO (weighted average) cost in BRL
+
+**JSON backup** (15-day rolling window):
+- `data/trade_history.json` — Recent trades (audit trail)
+- `data/portfolio_snapshots.json` — Recent daily snapshots
+- `data/tax_events.json` — Recent tax events
+- `data/cost_basis.json` — Current cost basis state
 
 ---
 
@@ -255,15 +268,29 @@ PM2 will keep the bot alive if it crashes and auto-restart on system reboot.
 ### View Performance
 
 ```bash
+# Quick all-time summary
 bash start.sh --report
+
+# Generate monthly report (shows executive commentary, benchmarks, tax summary)
+npm run report -- --month 2026-05
 ```
 
-Prints:
+**All-time report** prints:
 - Total return (%) and CAGR
 - Max drawdown
 - Number of rebalances executed
 - Total fees paid
 - Days since last rebalance
+
+**Monthly report** generates a Markdown file with:
+- Executive summary with rule-based commentary
+- Monthly performance vs SOL-only, CDI, and IBOV benchmarks
+- Rebalance history table
+- Tax compliance summary (Lei 9.250/1995 Art. 21)
+- Current portfolio and unrealized P&L
+- Cumulative track record metrics
+
+Reports are written to `data/reports/YYYY-MM.md` and are auto-generated monthly via systemd timer (local) or GitHub Actions (if deployed).
 
 ### Interpret the Logs
 
@@ -327,6 +354,77 @@ See `data/tax_events.json` for the complete ledger.
 
 ---
 
+## Monthly Reporting
+
+The bot auto-generates a comprehensive monthly performance report on the **1st of each month at 3:00 AM BRT**.
+
+### Manual Report Generation
+
+```bash
+# Generate report for a specific month
+npm run report -- --month 2026-05
+
+# Generate report for previous month (automatic)
+npm run report
+```
+
+Reports are saved to `data/reports/YYYY-MM.md` and include:
+
+**Executive Summary:**
+- Rule-based commentary (no external API calls; deterministic)
+- Contextualizes performance vs benchmarks and market conditions
+- Flags tax implications, volatility insights, and portfolio position
+
+**Performance Tables:**
+- Month and cumulative return metrics
+- Comparison vs SOL-only (buy-and-hold), CDI (risk-free rate), IBOV (equity benchmark)
+- Rebalance history with prices, fees, and realized gains
+
+**Tax Summary:**
+- Lei 9.250/1995 Art. 21 compliance: exemption status and payment deadline
+- Realized gains per trade; cumulative monthly sales
+
+**Portfolio State:**
+- Current SOL/BRL holdings, AVCO cost basis, unrealized P&L
+- All-time metrics: CAGR, Sharpe ratio, max drawdown, total fees
+
+### Automated Monthly Reports (Scheduled)
+
+**Local (systemd):**
+
+The bot installs a systemd user timer that fires the report every month:
+
+```bash
+# Enable and start the timer
+systemctl --user daemon-reload
+systemctl --user enable --now shannonfi-monthly-report.timer
+
+# Check next scheduled fire time
+systemctl --user list-timers shannonfi-monthly-report.timer
+
+# View recent runs
+journalctl --user -u shannonfi-monthly-report.service --no-pager
+```
+
+The timer runs at **06:00 UTC (03:00 BRT)** on the **1st of each month**.
+
+**GitHub Actions:**
+
+If deployed on GitHub, the monthly report runs automatically via `.github/workflows/monthly-report.yml` on the same schedule. Artifacts are retained for 365 days.
+
+### Commentary Generation
+
+The report's executive summary uses deterministic rule-based logic (no API key required) that adapts to the month's metrics:
+
+- **Performance vs benchmarks**: Explains whether the strategy outperformed/underperformed vs CDI, IBOV, and SOL-only
+- **Rebalancing context**: Interprets 0, 1, few, or many rebalances in terms of market conditions and fee efficiency
+- **Risk perspective**: Notes significant drawdowns and the BRL cushion's role in recovery
+- **Tax flags**: Highlights DARF payment obligations or unrealized position impacts
+
+Commentary reads naturally because it focuses on *why the metrics matter* rather than repeating numbers already in tables.
+
+---
+
 ## Troubleshooting
 
 ### "Cannot fetch price" or 400 errors
@@ -381,4 +479,4 @@ eval $(gnome-keyring-daemon --start --components=secrets)
 
 ---
 
-**Last Updated:** 2026-05-26
+**Last Updated:** 2026-05-27

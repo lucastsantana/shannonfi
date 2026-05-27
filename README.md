@@ -14,8 +14,9 @@ A fully operational rebalancer for your Mercado Bitcoin account running the Shan
 - Funds stay in your Mercado Bitcoin account (no on-chain custody)
 - Trades SOL/BRL natively via Mercado Bitcoin REST API (market orders)
 - Automatic Brazilian tax compliance tracking (Lei 9.250/1995 Art. 21)
-- Cooldown and trade history persists across restarts via local JSON files
-- 5+ unit tests, TypeScript, dry-run mode, PM2 for continuous operation
+- SQLite persistence with 15-day JSON rolling backup for audit trails
+- Automatic monthly performance reports with rule-based commentary (no API key needed)
+- 62 unit tests, TypeScript, dry-run mode, PM2 for continuous operation
 - Mercado Bitcoin taker fees (~0.3%) apply per rebalance
 - Volatility-adaptive rebalance threshold for regime-responsive timing
 
@@ -30,6 +31,30 @@ npm run setup-check     # validate credentials and account
 DRY_RUN=true node dist/index.js --once   # test without real orders
 bash start.sh           # run continuously with credentials from keyring
 ```
+
+---
+
+## Monthly Reporting
+
+The bot auto-generates a comprehensive performance report on the **1st of each month at 3:00 AM BRT**. You can also generate reports manually:
+
+```bash
+cd bot
+npm run report -- --month 2026-05    # specific month
+npm run report                        # previous month
+```
+
+Each report includes:
+- **Executive summary** with rule-based commentary (no API key required)
+- **Performance metrics** vs SOL-only, CDI (risk-free), and IBOV (equity) benchmarks
+- **Rebalance history** with prices and fees
+- **Tax summary** per Lei 9.250/1995 Art. 21 (exemption status, DARF deadlines)
+- **Portfolio state** with AVCO cost basis and unrealized P&L
+- **Track record** (CAGR, Sharpe, max drawdown, total fees)
+
+Reports are saved to `data/reports/YYYY-MM.md` and scheduled via systemd (local) or GitHub Actions (cloud).
+
+See **[bot/README.md § Monthly Reporting](./bot/README.md#monthly-reporting)** for setup and customization.
 
 ---
 
@@ -63,7 +88,9 @@ See **[bot/README.md](./bot/README.md)** for full setup guide, tuning options, a
 
 ### GitHub Actions (Scheduled)
 
-Deploy via **[`.github/workflows/rebalancer.yml`](./.github/workflows/rebalancer.yml)** — runs every 15 minutes.
+Two workflows run automatically on GitHub:
+
+**Rebalancer** — **[`.github/workflows/rebalancer.yml`](./.github/workflows/rebalancer.yml)** — every 15 minutes
 
 **Required Secrets:**
 - `MB_CLIENT_ID` — Mercado Bitcoin OAuth client ID
@@ -76,6 +103,10 @@ Deploy via **[`.github/workflows/rebalancer.yml`](./.github/workflows/rebalancer
 - `VOLATILITY_MULTIPLIER` (default: 1.5)
 - `VOLATILITY_WINDOW_DAYS` (default: 30)
 - `NEVER_EXCEED_EXEMPTION_LIMIT` (default: false)
+
+**Monthly Report** — **[`.github/workflows/monthly-report.yml`](./.github/workflows/monthly-report.yml)** — 1st of each month at 06:00 UTC (03:00 BRT)
+
+Automatically generates and uploads monthly performance reports as artifacts (retained 365 days).
 
 ---
 
@@ -105,4 +136,4 @@ Node.js 20
 
 ---
 
-**Last Updated:** 2026-05-26
+**Last Updated:** 2026-05-27
