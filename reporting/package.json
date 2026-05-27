@@ -1,0 +1,30 @@
+{
+  "name": "@shannonfi/reporting",
+  "version": "1.0.0",
+  "description": "Report generation library for Shannon's Demon - generates Markdown and LaTeX/Beamer PDF reports",
+  "private": true,
+  "main": "dist/report-builder.js",
+  "exports": {
+    ".": {
+      "import": "./dist/report-builder.js",
+      "types": "./dist/report-builder.d.ts"
+    },
+    "./types": {
+      "import": "./dist/report-types.js",
+      "types": "./dist/report-types.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "report": "ts-node src/monthly-report.ts",
+    "report:pdf": "ts-node src/latex-report.ts"
+  },
+  "devDependencies": {
+    "typescript": "5.4.5",
+    "ts-node": "10.9.2",
+    "@types/node": "20.14.2"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

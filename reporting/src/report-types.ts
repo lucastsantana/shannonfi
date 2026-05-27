@@ -1,11 +1,8 @@
 /** Types for the monthly performance report. */
 
-export interface BenchmarkReturn {
-  monthlyReturn: number;    // fractional (0.03 = 3%)
-  cumulativeReturn: number; // fractional, from inception to month-end
-  available: boolean;
-  source: string;
-}
+import { BenchmarkReturn } from '@shannonfi/bot/core/benchmarks';
+
+export type { BenchmarkReturn };
 
 export interface MonthlyMetrics {
   monthBRT: string;

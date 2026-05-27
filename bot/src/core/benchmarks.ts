@@ -7,10 +7,16 @@
 
 import axios from 'axios';
 import axiosRetry from 'axios-retry';
-import { BenchmarkReturn } from '../scripts/report-types';
 
 const http = axios.create({ timeout: 10_000 });
 axiosRetry(http, { retries: 2, retryDelay: axiosRetry.exponentialDelay });
+
+export interface BenchmarkReturn {
+  monthlyReturn: number;
+  cumulativeReturn: number;
+  available: boolean;
+  source: string;
+}
 
 interface BacenDailyRate {
   data: string;   // "DD/MM/YYYY"

@@ -161,7 +161,7 @@ async function main() {
   // Load config
   let dbPath: string | undefined;
   try {
-    const { loadConfig } = await import('../config');
+    const { loadConfig } = await import('@shannonfi/bot/config');
     const config = loadConfig(configPath);
     dbPath = config.dbPath;
   } catch {
@@ -173,7 +173,7 @@ async function main() {
 
   if (!payload) {
     console.warn('No snapshot data found in database. Writing stub report.');
-    const reportsDir = path.resolve(__dirname, '../../data/reports');
+    const reportsDir = path.resolve(__dirname, '../../../bot/data/reports');
     fs.mkdirSync(reportsDir, { recursive: true });
     const stub = `# Shannon's Demon — Monthly Report: ${monthBRT}\n\n> No data available. The bot has not recorded any portfolio snapshots yet.\n`;
     fs.writeFileSync(path.join(reportsDir, `${monthBRT}.md`), stub, 'utf-8');
