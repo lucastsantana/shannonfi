@@ -367,17 +367,22 @@ async function main() {
   const ibovMonthly = ibovM.status === 'fulfilled' ? ibovM.value : { monthlyReturn: 0, cumulativeReturn: 0, available: false, source: 'Yahoo Finance ^BVSP' };
   const ibovCumul = ibovC.status === 'fulfilled' ? ibovC.value : { monthlyReturn: 0, cumulativeReturn: 0, available: false, source: 'Yahoo Finance ^BVSP' };
 
+  // When inception is within the report month, the cumulative range equals the monthly range.
+  // Fall back to monthly data for the cumulative column in that case.
+  const cdiCumulFinal = cdiCumul.available ? cdiCumul : cdiMonthly;
+  const ibovCumulFinal = ibovCumul.available ? ibovCumul : ibovMonthly;
+
   const benchmarkData = {
     cdi: {
       monthlyReturn: cdiMonthly.monthlyReturn,
-      cumulativeReturn: cdiCumul.cumulativeReturn,
-      available: cdiMonthly.available && cdiCumul.available,
+      cumulativeReturn: cdiCumulFinal.cumulativeReturn,
+      available: cdiMonthly.available,
       source: cdiMonthly.source,
     },
     ibov: {
       monthlyReturn: ibovMonthly.monthlyReturn,
-      cumulativeReturn: ibovCumul.cumulativeReturn,
-      available: ibovMonthly.available && ibovCumul.available,
+      cumulativeReturn: ibovCumulFinal.cumulativeReturn,
+      available: ibovMonthly.available,
       source: ibovMonthly.source,
     },
   };

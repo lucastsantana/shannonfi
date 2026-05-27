@@ -41,7 +41,7 @@ export class BenchmarksService {
   async fetchCdi(startDate: string, endDate: string): Promise<BenchmarkReturn> {
     try {
       const url =
-        `https://api.bcb.gov.br/dados/serie/bcdata.sgs.12/dados.json` +
+        `https://api.bcb.gov.br/dados/serie/bcdata.sgs.12/dados` +
         `?formato=json&dataInicial=${formatBacenDate(startDate)}&dataFinal=${formatBacenDate(endDate)}`;
       const res = await http.get<BacenDailyRate[]>(url);
       const rates = res.data;
