@@ -36,7 +36,17 @@ bot/data/*.db
 bot/data/*.db-wal
 bot/data/*.db-shm
 bot/data/*.json
-bot/data/reports/
+
+# Report artifacts (PDF and LaTeX build artifacts, keep .tex source)
+bot/data/reports/*.pdf
+bot/data/reports/*.aux
+bot/data/reports/*.log
+bot/data/reports/*.nav
+bot/data/reports/*.out
+bot/data/reports/*.snm
+bot/data/reports/*.toc
+bot/data/reports/*.fls
+bot/data/reports/*.fdb_latexmk
 
 # Stray SQLite files from in-memory test URIs
 bot/:memory:*
