@@ -19,6 +19,8 @@
     "daily-digest:built": "node ../reporting/dist/daily-digest.js",
     "setup-smtp": "ts-node ../reporting/src/setup-smtp.ts",
     "setup-smtp:built": "node ../reporting/dist/setup-smtp.js",
+    "strategy-deck": "ts-node ../reporting/src/strategy-deck.ts",
+    "strategy-deck:built": "node ../reporting/dist/strategy-deck.js",
     "setup-check": "ts-node src/scripts/setup-check.ts",
     "test": "vitest run",
     "test:watch": "vitest",
