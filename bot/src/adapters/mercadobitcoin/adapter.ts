@@ -186,7 +186,7 @@ export class MercadoBitcoinAdapter implements ExchangeAdapter {
 
     logger.info('Mercado Bitcoin order filled', {
       orderId: created.orderId,
-      solFilled: filledQty.toFixed(6),
+      baseFilled: filledQty.toFixed(6),
       brlFilled: brlFilled.toFixed(2),
       fillPriceBrl: fillPriceBrl.toFixed(2),
       feeBrl: feeBrl.toFixed(2),

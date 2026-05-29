@@ -285,6 +285,9 @@ export class RebalancerBot {
     const tradeRecord = await this.adapter.executeTrade(direction, brlAmount, portfolio);
     tradeRecord.tradeDateBRT = todayBRT;
 
+    // Declared here so it's in scope after the status block, for FK-ordered persistence.
+    let pendingTaxEvent: ReturnType<TaxService['buildTaxEvent']> | null = null;
+
     if (tradeRecord.status === 'FILLED' || tradeRecord.status === 'DRY_RUN') {
       this.lastRebalanceTime = now;
       this.lastRebalanceDateBRT = todayBRT;
@@ -296,6 +299,9 @@ export class RebalancerBot {
       }
 
       // ── Cost basis and tax recording ────────────────────────────────────────
+      // Build tax event in memory first (so realizedGainBrl is set on tradeRecord),
+      // then persist trade before tax event (tax_events.trade_id FK → trades.id).
+
       if (direction === 'SELL_BASE' && tradeRecord.baseAmountFilled != null) {
         const baseSold = tradeRecord.baseAmountFilled;
         const brlReceived = tradeRecord.brlAmountFilled ?? brlAmount;
@@ -304,7 +310,7 @@ export class RebalancerBot {
         const realizedGainBrl = this.costBasis.updateAfterSell(baseSold, brlReceived);
         tradeRecord.realizedGainBrl = realizedGainBrl;
 
-        const taxEvent = this.tax.buildTaxEvent({
+        pendingTaxEvent = this.tax.buildTaxEvent({
           tradeId: tradeRecord.id,
           tradeDateBRT: todayBRT,
           direction,
@@ -314,15 +320,6 @@ export class RebalancerBot {
           realizedGainBrl,
           exchange: tradeRecord.exchange,
         });
-        this.tax.appendTaxEvent(taxEvent);
-
-        logger.info('Tax event recorded (SELL_BASE)', {
-          tradedVolumeBrl: brlReceived.toFixed(2),
-          realizedGainBrl: realizedGainBrl.toFixed(2),
-          cumMonthlySalesBrl: taxEvent.cumMonthlySalesBrl.toFixed(2),
-          exempt: taxEvent.exempt,
-          paymentDeadline: taxEvent.paymentDeadline ?? 'exempt',
-        });
 
       } else if (direction === 'BUY_BASE' && tradeRecord.baseAmountFilled != null) {
         const baseAcquired = tradeRecord.baseAmountFilled;
@@ -330,7 +327,7 @@ export class RebalancerBot {
         this.costBasis.updateAfterBuy(baseAcquired, brlSpent);
         tradeRecord.realizedGainBrl = 0;
 
-        const taxEvent = this.tax.buildTaxEvent({
+        pendingTaxEvent = this.tax.buildTaxEvent({
           tradeId: tradeRecord.id,
           tradeDateBRT: todayBRT,
           direction,
@@ -340,16 +337,29 @@ export class RebalancerBot {
           realizedGainBrl: 0,
           exchange: tradeRecord.exchange,
         });
-        this.tax.appendTaxEvent(taxEvent);
-
-        logger.info('Cost basis updated (BUY_BASE)', {
-          baseAcquired: baseAcquired.toFixed(6),
-          brlSpent: brlSpent.toFixed(2),
-        });
       }
     }
 
+    // Persist trade first so tax_events FK constraint is satisfied
     await this.history.appendTrade(tradeRecord);
+
+    if (pendingTaxEvent) {
+      this.tax.appendTaxEvent(pendingTaxEvent);
+      if (tradeRecord.direction === 'SELL_BASE') {
+        logger.info('Tax event recorded (SELL_BASE)', {
+          tradedVolumeBrl: pendingTaxEvent.tradedVolumeBrl.toFixed(2),
+          realizedGainBrl: pendingTaxEvent.realizedGainBrl.toFixed(2),
+          cumMonthlySalesBrl: pendingTaxEvent.cumMonthlySalesBrl.toFixed(2),
+          exempt: pendingTaxEvent.exempt,
+          paymentDeadline: pendingTaxEvent.paymentDeadline ?? 'exempt',
+        });
+      } else {
+        logger.info('Cost basis updated (BUY_BASE)', {
+          baseAcquired: (tradeRecord.baseAmountFilled ?? 0).toFixed(6),
+          brlSpent: (tradeRecord.brlAmountFilled ?? brlAmount).toFixed(2),
+        });
+      }
+    }
     await this.pnl.logRebalance(tradeRecord);
     await this.persistSnapshot(portfolio, true, effectiveThresholdBps);
   }
