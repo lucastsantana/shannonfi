@@ -3,6 +3,7 @@ import {
   MbAccount,
   MbBalance,
   MbCreateOrderRequest,
+  MbCreateOrderResponse,
   MbOrder,
   MbCandlesResponse,
   MbCandleResolution,
@@ -21,8 +22,8 @@ export class MbEndpoints {
     return this.client.get<MbBalance[]>(`/accounts/${accountId}/balances`);
   }
 
-  async createOrder(accountId: string, request: MbCreateOrderRequest): Promise<MbOrder> {
-    return this.client.post<MbCreateOrderRequest, MbOrder>(
+  async createOrder(accountId: string, request: MbCreateOrderRequest): Promise<MbCreateOrderResponse> {
+    return this.client.post<MbCreateOrderRequest, MbCreateOrderResponse>(
       `/accounts/${accountId}/${this.symbol}/orders`,
       request,
     );

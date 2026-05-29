@@ -148,9 +148,9 @@ export class MercadoBitcoinAdapter implements ExchangeAdapter {
     });
 
     const created = await this.endpoints.createOrder(accountId, orderRequest);
-    record.exchangeOrderId = created.id;
+    record.exchangeOrderId = created.orderId;
 
-    const filled = await this.pollOrderFill(accountId, created.id);
+    const filled = await this.pollOrderFill(accountId, created.orderId);
     const normalizedStatus =
       filled.status === 'filled' ? 'FILLED'
       : (filled.status.toUpperCase() as TradeRecord['status']);
@@ -158,7 +158,7 @@ export class MercadoBitcoinAdapter implements ExchangeAdapter {
 
     if (filled.status !== 'filled' && filled.status !== 'partially_filled') {
       logger.warn('Mercado Bitcoin order did not fill', {
-        orderId: created.id,
+        orderId: created.orderId,
         status: filled.status,
       });
       return record;
@@ -184,7 +184,7 @@ export class MercadoBitcoinAdapter implements ExchangeAdapter {
     record.status = 'FILLED';
 
     logger.info('Mercado Bitcoin order filled', {
-      orderId: created.id,
+      orderId: created.orderId,
       solFilled: filledQty.toFixed(6),
       brlFilled: brlFilled.toFixed(2),
       fillPriceBrl: fillPriceBrl.toFixed(2),

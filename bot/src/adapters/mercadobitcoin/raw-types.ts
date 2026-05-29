@@ -36,10 +36,17 @@ export type MbOrderType = 'market' | 'limit' | 'stoplimit' | 'post-only';
 export interface MbCreateOrderRequest {
   type: MbOrderType;
   side: MbOrderSide;
-  qty?: string;        // SOL quantity — for SELL (base asset)
-  cost?: number;       // BRL to spend — for market BUY (quote asset)
+  qty?: string;        // base asset quantity — for SELL
+  cost?: number;       // BRL to spend — for market BUY
   async?: boolean;
   externalId?: string; // client order ID
+}
+
+// MB POST /orders returns a minimal response — orderId + status only.
+// The full MbOrder shape is only returned by GET /orders/{orderId}.
+export interface MbCreateOrderResponse {
+  orderId: string;
+  status: string;
 }
 
 export type MbOrderStatus = 'created' | 'working' | 'filled' | 'cancelled' | 'partially_filled';
