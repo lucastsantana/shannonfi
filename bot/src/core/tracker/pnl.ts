@@ -14,14 +14,14 @@ export class PnlService {
       status: record.status,
       dryRun: record.dryRun,
       brlTarget: record.brlAmountTarget.toFixed(2),
-      solFilled: record.solAmountFilled?.toFixed(6) ?? 'N/A',
+      baseFilled: record.baseAmountFilled?.toFixed(6) ?? 'N/A',
       brlFilled: record.brlAmountFilled?.toFixed(2) ?? 'N/A',
       fillPriceBrl: record.fillPrice?.toFixed(2) ?? 'N/A',
       feeBrl: record.feeBrl?.toFixed(2) ?? 'N/A',
       portfolioValueBefore: 'R$' + before.totalValueBrl.toFixed(2),
       portfolioValueAfter: after ? 'R$' + after.totalValueBrl.toFixed(2) : 'N/A',
-      solRatioBefore: (before.solRatioBps / 100).toFixed(2) + '%',
-      solRatioAfter: after ? (after.solRatioBps / 100).toFixed(2) + '%' : 'N/A',
+      baseRatioBefore: (before.baseRatioBps / 100).toFixed(2) + '%',
+      baseRatioAfter: after ? (after.baseRatioBps / 100).toFixed(2) + '%' : 'N/A',
     });
   }
 

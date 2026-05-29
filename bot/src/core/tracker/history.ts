@@ -60,7 +60,7 @@ export class TradeHistoryService {
       record.timestamp,
       record.direction,
       record.brlAmountTarget,
-      record.solAmountFilled ?? null,
+      record.baseAmountFilled ?? null,
       record.brlAmountFilled ?? null,
       record.fillPrice ?? null,
       record.feeBrl ?? null,
@@ -68,20 +68,20 @@ export class TradeHistoryService {
       record.dryRun ? 1 : 0,
       record.realizedGainBrl ?? null,
       record.tradeDateBRT ?? null,
-      before.solBalance,
+      before.baseBalance,
       before.brlBalance,
-      before.solPrice,
-      before.solValueBrl,
+      before.basePrice,
+      before.baseValueBrl,
       before.totalValueBrl,
-      before.solRatioBps,
+      before.baseRatioBps,
       before.deviationBps,
       before.timestamp,
-      after?.solBalance ?? null,
+      after?.baseBalance ?? null,
       after?.brlBalance ?? null,
-      after?.solPrice ?? null,
-      after?.solValueBrl ?? null,
+      after?.basePrice ?? null,
+      after?.baseValueBrl ?? null,
       after?.totalValueBrl ?? null,
-      after?.solRatioBps ?? null,
+      after?.baseRatioBps ?? null,
       after?.deviationBps ?? null,
       after?.timestamp ?? null,
     );
@@ -122,7 +122,7 @@ export class TradeHistoryService {
       timestamp: row.timestamp,
       direction: row.direction,
       brlAmountTarget: row.brl_amount_target,
-      solAmountFilled: row.sol_amount_filled,
+      baseAmountFilled: row.sol_amount_filled,
       brlAmountFilled: row.brl_amount_filled,
       fillPrice: row.fill_price,
       feeBrl: row.fee_brl,
@@ -131,22 +131,22 @@ export class TradeHistoryService {
       realizedGainBrl: row.realized_gain_brl,
       tradeDateBRT: row.trade_date_brt,
       portfolioBefore: {
-        solBalance: row.before_sol_balance,
+        baseBalance: row.before_sol_balance,
         brlBalance: row.before_brl_balance,
-        solPrice: row.before_sol_price,
-        solValueBrl: row.before_sol_value,
+        basePrice: row.before_sol_price,
+        baseValueBrl: row.before_sol_value,
         totalValueBrl: row.before_total_value,
-        solRatioBps: row.before_sol_ratio_bps,
+        baseRatioBps: row.before_sol_ratio_bps,
         deviationBps: row.before_deviation_bps,
         timestamp: row.before_timestamp,
       },
       portfolioAfter: row.after_sol_balance !== null ? {
-        solBalance: row.after_sol_balance,
+        baseBalance: row.after_sol_balance,
         brlBalance: row.after_brl_balance,
-        solPrice: row.after_sol_price,
-        solValueBrl: row.after_sol_value,
+        basePrice: row.after_sol_price,
+        baseValueBrl: row.after_sol_value,
         totalValueBrl: row.after_total_value,
-        solRatioBps: row.after_sol_ratio_bps,
+        baseRatioBps: row.after_sol_ratio_bps,
         deviationBps: row.after_deviation_bps,
         timestamp: row.after_timestamp,
       } : null,
@@ -172,7 +172,7 @@ export class TradeHistoryService {
 
   getLastRebalanceInfo(): {
     dateBRT: string | null;
-    direction: 'BUY_SOL' | 'SELL_SOL' | null;
+    direction: 'BUY_BASE' | 'SELL_BASE' | null;
   } {
     const stmt = this.db.prepare(`
       SELECT trade_date_brt, direction, timestamp
@@ -190,7 +190,7 @@ export class TradeHistoryService {
         timeZone: 'America/Sao_Paulo',
       });
 
-    return { dateBRT, direction: result.direction as 'BUY_SOL' | 'SELL_SOL' };
+    return { dateBRT, direction: result.direction as 'BUY_BASE' | 'SELL_BASE' };
   }
 
   appendSnapshot(snapshot: PortfolioSnapshot): void {
@@ -205,10 +205,10 @@ export class TradeHistoryService {
       snapshot.dateBRT,
       snapshot.timestamp,
       snapshot.totalValueBrl,
-      snapshot.solBalance,
+      snapshot.baseBalance,
       snapshot.brlBalance,
-      snapshot.solPrice,
-      snapshot.solRatioBps,
+      snapshot.basePrice,
+      snapshot.baseRatioBps,
       snapshot.effectiveThresholdBps,
       snapshot.rebalancedToday ? 1 : 0,
       snapshot.exchange,
@@ -244,10 +244,10 @@ export class TradeHistoryService {
       dateBRT: row.date_brt,
       timestamp: row.timestamp,
       totalValueBrl: row.total_value_brl,
-      solBalance: row.sol_balance,
+      baseBalance: row.sol_balance,
       brlBalance: row.brl_balance,
-      solPrice: row.sol_price,
-      solRatioBps: row.sol_ratio_bps,
+      basePrice: row.sol_price,
+      baseRatioBps: row.sol_ratio_bps,
       effectiveThresholdBps: row.effective_threshold_bps,
       rebalancedToday: row.rebalanced_today === 1,
       exchange: row.exchange,

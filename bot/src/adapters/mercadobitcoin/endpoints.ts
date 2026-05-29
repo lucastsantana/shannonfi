@@ -7,10 +7,8 @@ import {
   MbCandlesResponse,
   MbCandleResolution,
 } from './raw-types';
-import { MB_SYMBOL } from '../../constants';
-
 export class MbEndpoints {
-  constructor(private client: MbClient) {}
+  constructor(private client: MbClient, private symbol: string) {}
 
   async getAccountId(): Promise<string> {
     const accounts = await this.client.get<MbAccount[]>('/accounts');
@@ -25,27 +23,27 @@ export class MbEndpoints {
 
   async createOrder(accountId: string, request: MbCreateOrderRequest): Promise<MbOrder> {
     return this.client.post<MbCreateOrderRequest, MbOrder>(
-      `/accounts/${accountId}/${MB_SYMBOL}/orders`,
+      `/accounts/${accountId}/${this.symbol}/orders`,
       request,
     );
   }
 
   async getOrder(accountId: string, orderId: string): Promise<MbOrder> {
-    return this.client.get<MbOrder>(`/accounts/${accountId}/${MB_SYMBOL}/orders/${orderId}`);
+    return this.client.get<MbOrder>(`/accounts/${accountId}/${this.symbol}/orders/${orderId}`);
   }
 
   async getOrders(accountId: string, limit: number = 100): Promise<MbOrder[]> {
-    return this.client.get<MbOrder[]>(`/accounts/${accountId}/${MB_SYMBOL}/orders`, { limit });
+    return this.client.get<MbOrder[]>(`/accounts/${accountId}/${this.symbol}/orders`, { limit });
   }
 
   async getCandles(
     countback: number,
     resolution: MbCandleResolution = '1d',
-    symbol = MB_SYMBOL,
+    symbolOverride?: string,
   ): Promise<MbCandlesResponse> {
     const to = Math.floor(Date.now() / 1000);
     return this.client.getPublic<MbCandlesResponse>('/candles', {
-      symbol, resolution, to, countback,
+      symbol: symbolOverride ?? this.symbol, resolution, to, countback,
     });
   }
 }

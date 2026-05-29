@@ -4,12 +4,12 @@ import { TradeRecord, Portfolio } from '../../src/adapters/types';
 
 function makePortfolio(): Portfolio {
   return {
-    solBalance: 10,
+    baseBalance: 10,
     brlBalance: 2000,
-    solPrice: 400,
-    solValueBrl: 4000,
+    basePrice: 400,
+    baseValueBrl: 4000,
     totalValueBrl: 6000,
-    solRatioBps: 6667,
+    baseRatioBps: 6667,
     deviationBps: 1667,
     timestamp: new Date().toISOString(),
   };
@@ -25,9 +25,9 @@ function makeTrade(overrides: Partial<TradeRecord> = {}): TradeRecord {
     exchangeOrderId: `exch-${id}`,
     exchange: 'mercadobitcoin',
     timestamp: new Date().toISOString(),
-    direction: 'SELL_SOL',
+    direction: 'SELL_BASE',
     brlAmountTarget: 1000,
-    solAmountFilled: 2.5,
+    baseAmountFilled: 2.5,
     brlAmountFilled: 1000,
     fillPrice: 400,
     feeBrl: 7,
@@ -80,11 +80,11 @@ describe('TradeHistoryService', () => {
 
   it('getLastRebalanceInfo returns BRT date and direction', () => {
     svc.appendTrade(
-      makeTrade({ tradeDateBRT: '2026-04-15', direction: 'SELL_SOL' }),
+      makeTrade({ tradeDateBRT: '2026-04-15', direction: 'SELL_BASE' }),
     );
     const { dateBRT, direction } = svc.getLastRebalanceInfo();
     expect(dateBRT).toBe('2026-04-15');
-    expect(direction).toBe('SELL_SOL');
+    expect(direction).toBe('SELL_BASE');
   });
 
   it('getLastRebalanceInfo returns nulls for empty history', () => {

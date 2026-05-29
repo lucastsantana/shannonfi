@@ -36,12 +36,12 @@ const testConfig: Config = {
 
 function makePortfolio(overrides: Partial<Portfolio> = {}): Portfolio {
   return {
-    solBalance: 10,
+    baseBalance: 10,
     brlBalance: 2000,
-    solPrice: 400,
-    solValueBrl: 4000,
+    basePrice: 400,
+    baseValueBrl: 4000,
     totalValueBrl: 6000,
-    solRatioBps: 6667,
+    baseRatioBps: 6667,
     deviationBps: 1667,
     timestamp: new Date().toISOString(),
     ...overrides,
@@ -55,9 +55,9 @@ function makeTradeRecord(overrides: Partial<TradeRecord> = {}): TradeRecord {
     exchangeOrderId: null,
     exchange: 'mercadobitcoin',
     timestamp: new Date().toISOString(),
-    direction: 'SELL_SOL',
+    direction: 'SELL_BASE',
     brlAmountTarget: 1000,
-    solAmountFilled: 2.5,
+    baseAmountFilled: 2.5,
     brlAmountFilled: 1000,
     fillPrice: 400,
     feeBrl: 7,
@@ -75,7 +75,7 @@ function makeBot(historyOverrides = {}, configOverrides: Partial<Config> = {}) {
   const portfolio = makePortfolio();
 
   const adapter = {
-    getPrice: vi.fn().mockResolvedValue(portfolio.solPrice),
+    getPrice: vi.fn().mockResolvedValue(portfolio.basePrice),
     getPortfolio: vi.fn().mockResolvedValue(portfolio),
     executeTrade: vi.fn(),
     getCandles: vi.fn().mockResolvedValue([]),
@@ -97,7 +97,7 @@ function makeBot(historyOverrides = {}, configOverrides: Partial<Config> = {}) {
   } as unknown as PnlService;
 
   const costBasis = {
-    getLedger: vi.fn().mockReturnValue({ sol: { averageCostBrl: 400, totalSol: 10 }, lastUpdated: '' }),
+    getLedger: vi.fn().mockReturnValue({ base: { averageCostBrl: 400, totalBase: 10 }, lastUpdated: '' }),
     updateAfterBuy: vi.fn(),
     updateAfterSell: vi.fn().mockReturnValue(200),
     computeRealizedGainBrl: vi.fn().mockReturnValue(200),
@@ -110,7 +110,7 @@ function makeBot(historyOverrides = {}, configOverrides: Partial<Config> = {}) {
       tradeId: 'test',
       tradeDateBRT: '2026-04-15',
       monthBRT: '2026-04',
-      direction: 'SELL_SOL',
+      direction: 'SELL_BASE',
       tradedVolumeBrl: 1000,
       grossProceedsBrl: 1000,
       costBasisBrl: 800,
@@ -145,7 +145,7 @@ describe('RebalancerBot', () => {
     // Portfolio at 50/50 — no rebalance needed
     vi.mocked(adapter.getPrice).mockResolvedValue(400);
     vi.mocked(adapter.getPortfolio).mockResolvedValue(
-      makePortfolio({ solRatioBps: 5000, deviationBps: 0 }),
+      makePortfolio({ baseRatioBps: 5000, deviationBps: 0 }),
     );
     await bot.checkAndRebalance();
     expect(adapter.getPrice).toHaveBeenCalledTimes(1);
@@ -168,10 +168,10 @@ describe('RebalancerBot', () => {
     vi.mocked(adapter.getPrice).mockResolvedValue(400);
     vi.mocked(adapter.getPortfolio).mockResolvedValue(
       makePortfolio({
-        solValueBrl: 3020,
+        baseValueBrl: 3020,
         brlBalance: 2980,
         totalValueBrl: 6000,
-        solRatioBps: 5033,
+        baseRatioBps: 5033,
         deviationBps: 33,
       }),
     );
@@ -184,7 +184,7 @@ describe('RebalancerBot', () => {
     vi.mocked(adapter.getPortfolio).mockResolvedValue(makePortfolio());
     vi.mocked(adapter.executeTrade).mockResolvedValue(makeTradeRecord());
     await bot.checkAndRebalance();
-    expect(adapter.executeTrade).toHaveBeenCalledWith('SELL_SOL', expect.any(Number), expect.any(Object));
+    expect(adapter.executeTrade).toHaveBeenCalledWith('SELL_BASE', expect.any(Number), expect.any(Object));
   });
 
   it('records trade and logs PnL when triggered', async () => {
@@ -221,12 +221,12 @@ describe('RebalancerBot', () => {
   it('blocks opposite-direction trade on same BRT day', async () => {
     const todayBRT = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
     const { bot, adapter } = makeBot({
-      getLastRebalanceInfo: vi.fn().mockReturnValue({ dateBRT: todayBRT, direction: 'SELL_SOL' }),
+      getLastRebalanceInfo: vi.fn().mockReturnValue({ dateBRT: todayBRT, direction: 'SELL_BASE' }),
     });
     // BUY direction: SOL underweight
     vi.mocked(adapter.getPrice).mockResolvedValue(400);
     vi.mocked(adapter.getPortfolio).mockResolvedValue(
-      makePortfolio({ solValueBrl: 1500, brlBalance: 4500, totalValueBrl: 6000, solRatioBps: 2500, deviationBps: 2500 }),
+      makePortfolio({ baseValueBrl: 1500, brlBalance: 4500, totalValueBrl: 6000, baseRatioBps: 2500, deviationBps: 2500 }),
     );
     await bot.checkAndRebalance();
     expect(adapter.executeTrade).not.toHaveBeenCalled();
@@ -235,7 +235,7 @@ describe('RebalancerBot', () => {
   it('allows same-direction trade on same BRT day', async () => {
     const todayBRT = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
     const { bot, adapter } = makeBot({
-      getLastRebalanceInfo: vi.fn().mockReturnValue({ dateBRT: todayBRT, direction: 'SELL_SOL' }),
+      getLastRebalanceInfo: vi.fn().mockReturnValue({ dateBRT: todayBRT, direction: 'SELL_BASE' }),
     });
     vi.mocked(adapter.getPortfolio).mockResolvedValue(makePortfolio());
     vi.mocked(adapter.executeTrade).mockResolvedValue(makeTradeRecord());
@@ -245,13 +245,13 @@ describe('RebalancerBot', () => {
 
   it('allows opposite-direction trade on a different BRT day', async () => {
     const { bot, adapter } = makeBot({
-      getLastRebalanceInfo: vi.fn().mockReturnValue({ dateBRT: '2020-01-01', direction: 'SELL_SOL' }),
+      getLastRebalanceInfo: vi.fn().mockReturnValue({ dateBRT: '2020-01-01', direction: 'SELL_BASE' }),
     });
     vi.mocked(adapter.getPrice).mockResolvedValue(400);
     vi.mocked(adapter.getPortfolio).mockResolvedValue(
-      makePortfolio({ solValueBrl: 1500, brlBalance: 4500, totalValueBrl: 6000, solRatioBps: 2500, deviationBps: 2500 }),
+      makePortfolio({ baseValueBrl: 1500, brlBalance: 4500, totalValueBrl: 6000, baseRatioBps: 2500, deviationBps: 2500 }),
     );
-    vi.mocked(adapter.executeTrade).mockResolvedValue(makeTradeRecord({ direction: 'BUY_SOL' }));
+    vi.mocked(adapter.executeTrade).mockResolvedValue(makeTradeRecord({ direction: 'BUY_BASE' }));
     await bot.checkAndRebalance();
     expect(adapter.executeTrade).toHaveBeenCalled();
   });
@@ -291,9 +291,9 @@ describe('RebalancerBot', () => {
     vi.mocked(tax.getMonthlySalesBrl).mockReturnValue(34_000);
     vi.mocked(adapter.getPrice).mockResolvedValue(400);
     vi.mocked(adapter.getPortfolio).mockResolvedValue(
-      makePortfolio({ solValueBrl: 1500, brlBalance: 4500, totalValueBrl: 6000, solRatioBps: 2500, deviationBps: 2500 }),
+      makePortfolio({ baseValueBrl: 1500, brlBalance: 4500, totalValueBrl: 6000, baseRatioBps: 2500, deviationBps: 2500 }),
     );
-    vi.mocked(adapter.executeTrade).mockResolvedValue(makeTradeRecord({ direction: 'BUY_SOL' }));
+    vi.mocked(adapter.executeTrade).mockResolvedValue(makeTradeRecord({ direction: 'BUY_BASE' }));
     await bot.checkAndRebalance();
     expect(adapter.executeTrade).toHaveBeenCalled();
     expect(vi.mocked(adapter.executeTrade).mock.calls[0]![1]).toBeGreaterThan(650);

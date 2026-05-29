@@ -18,7 +18,7 @@ export interface TaxEvent {
   tradeId: string;
   tradeDateBRT: string;           // YYYY-MM-DD
   monthBRT: string;               // YYYY-MM
-  direction: 'BUY_SOL' | 'SELL_SOL';
+  direction: 'BUY_BASE' | 'SELL_BASE';
   tradedVolumeBrl: number;        // BRL proceeds (SELL only; 0 for BUY)
   grossProceedsBrl: number;       // same as tradedVolumeBrl
   costBasisBrl: number;           // cost basis in BRL (SELL only; 0 for BUY)
@@ -41,8 +41,8 @@ export interface MonthlySummary {
 
 /**
  * Tracks tax events for Brazilian compliance (Lei 9.250/1995 Art. 21).
- * Only SELL_SOL gross proceeds count toward the R$35,000 monthly exemption.
- * BUY_SOL does not count.
+ * Only SELL_BASE gross proceeds count toward the R$35,000 monthly exemption.
+ * BUY_BASE does not count.
  */
 export class TaxService {
   private db: Database.Database;
@@ -139,7 +139,7 @@ export class TaxService {
     const stmt = this.db.prepare(`
       SELECT COALESCE(SUM(traded_volume_brl), 0) as total
       FROM tax_events
-      WHERE month_brt = ? AND direction = 'SELL_SOL'
+      WHERE month_brt = ? AND direction = 'SELL_BASE'
     `);
     const result = stmt.get(monthBRT) as { total: number };
     return result.total;
@@ -150,7 +150,7 @@ export class TaxService {
     const stmt = this.db.prepare(`
       SELECT COALESCE(SUM(realized_gain_brl), 0) as total
       FROM tax_events
-      WHERE month_brt = ? AND direction = 'SELL_SOL'
+      WHERE month_brt = ? AND direction = 'SELL_BASE'
     `);
     const result = stmt.get(monthBRT) as { total: number };
     return result.total;
@@ -162,7 +162,7 @@ export class TaxService {
         COALESCE(SUM(traded_volume_brl), 0) as total_sales,
         COALESCE(SUM(realized_gain_brl), 0) as total_gain
       FROM tax_events
-      WHERE month_brt = ? AND direction = 'SELL_SOL'
+      WHERE month_brt = ? AND direction = 'SELL_BASE'
     `);
     const sellsResult = stmtSells.get(monthBRT) as { total_sales: number; total_gain: number };
 
@@ -206,7 +206,7 @@ export class TaxService {
   buildTaxEvent(params: {
     tradeId: string;
     tradeDateBRT: string;
-    direction: 'BUY_SOL' | 'SELL_SOL';
+    direction: 'BUY_BASE' | 'SELL_BASE';
     tradedVolumeBrl: number;
     grossProceedsBrl: number;
     costBasisBrl: number;
@@ -218,7 +218,9 @@ export class TaxService {
     const priorGain = this.getMonthlyGainBrl(monthBRT);
 
     const cumMonthlySalesBrl =
-      params.direction === 'SELL_SOL' ? priorSales + params.tradedVolumeBrl : priorSales;
+      params.direction === 'SELL_BASE'
+        ? priorSales + params.tradedVolumeBrl
+        : priorSales;
     const cumMonthlyGainBrl = priorGain + params.realizedGainBrl;
     const exempt = cumMonthlySalesBrl <= BR_MONTHLY_EXEMPTION_LIMIT_BRL;
 

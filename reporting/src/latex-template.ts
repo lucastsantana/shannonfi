@@ -197,7 +197,7 @@ ${escLtx(displayText)}
 
 function buildSlide3_MonthPerformance(p: ReportPayload, monthLabel: string): string {
   const monthReturnStr  = coloredReturn(p.monthly.monthlyReturnPct,  escPct(p.monthly.monthlyReturnPct));
-  const solReturnStr    = coloredReturn(p.monthly.solOnlyReturnPct,   escPct(p.monthly.solOnlyReturnPct));
+  const solReturnStr    = coloredReturn(p.monthly.baseOnlyReturnPct,   escPct(p.monthly.baseOnlyReturnPct));
   const cdiMonthly = p.benchmarks.cdi.available
     ? coloredReturn(p.benchmarks.cdi.monthlyReturn * 100, escPct(p.benchmarks.cdi.monthlyReturn * 100))
     : 'N/A';
@@ -270,8 +270,8 @@ ${tradeRows}
 function buildSlide5_BenchmarkComparison(p: ReportPayload): string {
   const sdMonthly  = coloredReturn(p.monthly.monthlyReturnPct,                  escPct(p.monthly.monthlyReturnPct));
   const sdCumul    = coloredReturn(p.cumulative.totalReturnPct,                  escPct(p.cumulative.totalReturnPct));
-  const solMonthly = coloredReturn(p.monthly.solOnlyReturnPct,                   escPct(p.monthly.solOnlyReturnPct));
-  const solCumul   = coloredReturn(p.cumulative.solOnlyCumulativeReturnPct,       escPct(p.cumulative.solOnlyCumulativeReturnPct));
+  const solMonthly = coloredReturn(p.monthly.baseOnlyReturnPct,                   escPct(p.monthly.baseOnlyReturnPct));
+  const solCumul   = coloredReturn(p.cumulative.baseOnlyCumulativeReturnPct,       escPct(p.cumulative.baseOnlyCumulativeReturnPct));
 
   const cdiMonthly = p.benchmarks.cdi.available
     ? coloredReturn(p.benchmarks.cdi.monthlyReturn * 100,    escPct(p.benchmarks.cdi.monthlyReturn * 100))
@@ -330,7 +330,7 @@ Payment Deadline    & ${escLtx(deadline)} \\\\
 }
 
 function buildSlide7_CurrentPortfolio(p: ReportPayload): string {
-  const solValue     = p.portfolio.solBalance * p.portfolio.solPrice;
+  const baseValue    = p.portfolio.baseBalance * p.portfolio.basePrice;
   const unrealizedStr = coloredReturn(
     p.portfolio.unrealizedGainPct,
     `${escBrl(p.portfolio.unrealizedGainBrl)} (${escPct(p.portfolio.unrealizedGainPct)})`,
@@ -344,7 +344,7 @@ function buildSlide7_CurrentPortfolio(p: ReportPayload): string {
 \\toprule
 \\rowcolor{Navy}\\textcolor{white}{\\textbf{Asset}} & \\textcolor{white}{\\textbf{Quantity}} & \\textcolor{white}{\\textbf{Value (BRL)}} \\\\
 \\midrule
-SOL              & ${p.portfolio.solBalance.toFixed(6)} & ${escBrl(solValue)} \\\\
+Base             & ${p.portfolio.baseBalance.toFixed(6)} & ${escBrl(baseValue)} \\\\
 BRL              & {\\color{MutedText}---}              & ${escBrl(p.portfolio.brlBalance)} \\\\
 \\textbf{Total}  & {\\color{MutedText}---}              & \\textbf{${escBrl(p.portfolio.totalValueBrl)}} \\\\
 \\bottomrule
@@ -352,7 +352,7 @@ BRL              & {\\color{MutedText}---}              & ${escBrl(p.portfolio.b
 \\end{center}
 \\vspace{0.6em}
 \\begin{tabular}{@{}ll}
-  \\textbf{Average Cost (AVCO):} & ${escBrl(p.portfolio.averageCostBrl)}/SOL \\\\[0.2em]
+  \\textbf{Average Cost (AVCO):} & ${escBrl(p.portfolio.averageCostBrl)}/unit \\\\[0.2em]
   \\textbf{Unrealized P\\&L:}     & ${unrealizedStr} \\\\
 \\end{tabular}
 \\end{frame}`;

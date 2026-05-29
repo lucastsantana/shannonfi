@@ -12,9 +12,9 @@ export interface MonthlyMetrics {
   startValueBrl: number;
   endValueBrl: number;
   monthlyReturnPct: number;
-  solPriceStart: number;
-  solPriceEnd: number;
-  solOnlyReturnPct: number;     // pure buy-and-hold SOL return for the month
+  basePriceStart: number;
+  basePriceEnd: number;
+  baseOnlyReturnPct: number;    // pure buy-and-hold base asset return for the month
   rebalanceCount: number;
   totalFeesBrl: number;
   buyCount: number;
@@ -26,7 +26,7 @@ export interface CumulativeMetrics {
   inceptionDate: string;
   totalDays: number;
   totalReturnPct: number;
-  solOnlyCumulativeReturnPct: number;
+  baseOnlyCumulativeReturnPct: number;
   cagr: number | null;
   sharpeRatio: number | null;
   maxDrawdownPct: number;
@@ -60,9 +60,9 @@ export interface ReportPayload {
     paymentDeadline: string | null;
   };
   portfolio: {
-    solBalance: number;
+    baseBalance: number;
     brlBalance: number;
-    solPrice: number;
+    basePrice: number;
     totalValueBrl: number;
     averageCostBrl: number;
     unrealizedGainBrl: number;

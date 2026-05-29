@@ -1,26 +1,26 @@
 import { describe, it, expect } from 'vitest';
 import {
-  computeSolRatioBps,
+  computeBaseRatioBps,
   computeDeviationBps,
   shouldRebalance,
   computeRebalanceTrade,
-  brlToSol,
+  brlToBase,
   computeMeanAbsoluteDailyReturn,
   computeAdaptiveThresholdBps,
   isSlippageAcceptable,
 } from '../src/math';
 
-describe('computeSolRatioBps', () => {
+describe('computeBaseRatioBps', () => {
   it('returns 5000 for equal split', () => {
-    expect(computeSolRatioBps(1000, 2000)).toBe(5000);
+    expect(computeBaseRatioBps(1000, 2000)).toBe(5000);
   });
 
   it('returns 7500 for 75% SOL', () => {
-    expect(computeSolRatioBps(1500, 2000)).toBe(7500);
+    expect(computeBaseRatioBps(1500, 2000)).toBe(7500);
   });
 
   it('returns 0 for zero total', () => {
-    expect(computeSolRatioBps(0, 0)).toBe(0);
+    expect(computeBaseRatioBps(0, 0)).toBe(0);
   });
 });
 
@@ -60,30 +60,30 @@ describe('shouldRebalance', () => {
 describe('computeRebalanceTrade', () => {
   it('sells SOL when SOL is overweight', () => {
     const { direction, brlAmount } = computeRebalanceTrade(1500, 500);
-    expect(direction).toBe('SELL_SOL');
+    expect(direction).toBe('SELL_BASE');
     expect(brlAmount).toBeCloseTo(500, 2);
   });
 
   it('buys SOL when BRL is overweight', () => {
     const { direction, brlAmount } = computeRebalanceTrade(500, 1500);
-    expect(direction).toBe('BUY_SOL');
+    expect(direction).toBe('BUY_BASE');
     expect(brlAmount).toBeCloseTo(500, 2);
   });
 
   it('sells exactly half the excess', () => {
     const { direction, brlAmount } = computeRebalanceTrade(750, 250);
-    expect(direction).toBe('SELL_SOL');
+    expect(direction).toBe('SELL_BASE');
     expect(brlAmount).toBeCloseTo(250, 2);
   });
 });
 
-describe('brlToSol', () => {
+describe('brlToBase', () => {
   it('converts BRL to SOL at given price', () => {
-    expect(brlToSol(500, 250, 6)).toBeCloseTo(2, 5);
+    expect(brlToBase(500, 250, 6)).toBeCloseTo(2, 5);
   });
 
   it('floors to avoid rounding above available balance', () => {
-    const result = brlToSol(100, 3, 8);
+    const result = brlToBase(100, 3, 8);
     expect(result).toBeLessThanOrEqual(100 / 3);
   });
 });

@@ -11,41 +11,41 @@ import {
   MAX_ADAPTIVE_THRESHOLD_BPS,
 } from './constants';
 
-/** SOL allocation as basis points of total portfolio. */
-export function computeSolRatioBps(solValueBrl: number, totalValueBrl: number): number {
+/** Base asset allocation as basis points of total portfolio. */
+export function computeBaseRatioBps(baseValueBrl: number, totalValueBrl: number): number {
   if (totalValueBrl <= 0) return 0;
-  return Math.round((solValueBrl / totalValueBrl) * BPS_DENOMINATOR);
+  return Math.round((baseValueBrl / totalValueBrl) * BPS_DENOMINATOR);
 }
 
 /** Absolute deviation from 50/50 target in basis points. */
-export function computeDeviationBps(solRatioBps: number): number {
-  return Math.abs(solRatioBps - TARGET_ALLOCATION_BPS);
+export function computeDeviationBps(baseRatioBps: number): number {
+  return Math.abs(baseRatioBps - TARGET_ALLOCATION_BPS);
 }
 
 /** Returns true if drift strictly exceeds threshold. */
-export function shouldRebalance(solRatioBps: number, thresholdBps: number): boolean {
-  return computeDeviationBps(solRatioBps) > thresholdBps;
+export function shouldRebalance(baseRatioBps: number, thresholdBps: number): boolean {
+  return computeDeviationBps(baseRatioBps) > thresholdBps;
 }
 
 /** BRL amount and direction needed to restore 50/50. */
 export function computeRebalanceTrade(
-  solValueBrl: number,
+  baseValueBrl: number,
   brlBalance: number,
-): { direction: 'BUY_SOL' | 'SELL_SOL'; brlAmount: number } {
-  const total = solValueBrl + brlBalance;
+): { direction: 'BUY_BASE' | 'SELL_BASE'; brlAmount: number } {
+  const total = baseValueBrl + brlBalance;
   const target = total / 2;
-  if (solValueBrl > target) {
-    return { direction: 'SELL_SOL', brlAmount: solValueBrl - target };
+  if (baseValueBrl > target) {
+    return { direction: 'SELL_BASE', brlAmount: baseValueBrl - target };
   }
-  return { direction: 'BUY_SOL', brlAmount: target - solValueBrl };
+  return { direction: 'BUY_BASE', brlAmount: target - baseValueBrl };
 }
 
 /**
- * Convert BRL amount to SOL quantity at a given price.
- * Floors at `precision` decimal places to avoid rounding above available SOL.
+ * Convert BRL amount to base asset quantity at a given price.
+ * Floors at `precision` decimal places to avoid rounding above available balance.
  */
-export function brlToSol(brlAmount: number, solPriceBrl: number, precision = 8): number {
-  const raw = brlAmount / solPriceBrl;
+export function brlToBase(brlAmount: number, basePriceBrl: number, precision = 8): number {
+  const raw = brlAmount / basePriceBrl;
   const factor = Math.pow(10, precision);
   return Math.floor(raw * factor) / factor;
 }

@@ -19,6 +19,10 @@
 #   - Above threshold: DARF payment by last business day of the following month
 exchange: mercadobitcoin
 
+# Trading pair symbol. The base asset is the non-BRL side (e.g. SOL, HYPE, BTC).
+# Change to switch the bot to a different asset (e.g. HYPE-BRL).
+symbol: SOL-BRL
+
 mercadobitcoin:
   clientId: "your-client-id-here"
   clientSecret: "your-client-secret-here"

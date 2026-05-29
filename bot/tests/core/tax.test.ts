@@ -57,7 +57,7 @@ describe('TaxService', () => {
         before_sol_balance, before_brl_balance, before_sol_price,
         before_sol_value, before_total_value, before_sol_ratio_bps,
         before_deviation_bps, before_timestamp
-      ) VALUES (?, ?, ?, 'mercadobitcoin', ?, 'SELL_SOL', 1000, 'FILLED', 0,
+      ) VALUES (?, ?, ?, 'mercadobitcoin', ?, 'SELL_BASE', 1000, 'FILLED', 0,
                 10, 2000, 400, 4000, 6000, 6667, 1667, ?)
     `);
     stmt.run(tradeId, `client-${tradeId}`, `exch-${tradeId}`, new Date().toISOString(), new Date().toISOString());
@@ -69,7 +69,7 @@ describe('TaxService', () => {
     return svc.buildTaxEvent({
       tradeId,
       tradeDateBRT: '2026-04-15',
-      direction: 'SELL_SOL',
+      direction: 'SELL_BASE',
       tradedVolumeBrl: 10_000,
       grossProceedsBrl: 10_000,
       costBasisBrl: 8_000,
@@ -96,7 +96,7 @@ describe('TaxService', () => {
       svc.buildTaxEvent({
         tradeId: 'trade-2',
         tradeDateBRT: '2026-04-20',
-        direction: 'SELL_SOL',
+        direction: 'SELL_BASE',
         tradedVolumeBrl: 5_000,
         grossProceedsBrl: 5_000,
         costBasisBrl: 4_000,
@@ -113,7 +113,7 @@ describe('TaxService', () => {
       svc.buildTaxEvent({
         tradeId: 'trade-buy',
         tradeDateBRT: '2026-04-15',
-        direction: 'BUY_SOL',
+        direction: 'BUY_BASE',
         tradedVolumeBrl: 5_000,
         grossProceedsBrl: 0,
         costBasisBrl: 0,
@@ -136,7 +136,7 @@ describe('TaxService', () => {
     const event = svc.buildTaxEvent({
       tradeId: 'trade-over',
       tradeDateBRT: '2026-04-25',
-      direction: 'SELL_SOL',
+      direction: 'SELL_BASE',
       tradedVolumeBrl: 10_000,
       grossProceedsBrl: 10_000,
       costBasisBrl: 8_000,
@@ -154,7 +154,7 @@ describe('TaxService', () => {
     const event2 = svc.buildTaxEvent({
       tradeId: 't2',
       tradeDateBRT: '2026-04-20',
-      direction: 'SELL_SOL',
+      direction: 'SELL_BASE',
       tradedVolumeBrl: 8_000,
       grossProceedsBrl: 8_000,
       costBasisBrl: 6_000,

@@ -43,7 +43,7 @@ const INTER_REQUEST_DELAY_MS = 500;
 export class RebalancerBot {
   private lastRebalanceTime: number;
   private lastRebalanceDateBRT: string | null;
-  private lastRebalanceDirection: 'BUY_SOL' | 'SELL_SOL' | null;
+  private lastRebalanceDirection: 'BUY_BASE' | 'SELL_BASE' | null;
   private isRunning = false;
 
   constructor(
@@ -100,10 +100,10 @@ export class RebalancerBot {
     });
 
     // ── Step 1: fetch price only — cheapest possible request ───────────────────
-    const solPrice = await this.adapter.getPrice();
+    const basePrice = await this.adapter.getPrice();
     logger.info('Price check', {
       exchange: this.config.exchange,
-      solPriceBrl: solPrice.toFixed(2),
+      basePriceBrl: basePrice.toFixed(2),
     });
 
     // ── Step 2: get threshold (cached daily — zero cost after first call today) ─
@@ -134,23 +134,23 @@ export class RebalancerBot {
 
     if (lastTrade?.portfolioAfter) {
       const prev = lastTrade.portfolioAfter;
-      const prevPrice = prev.solPrice;
+      const prevPrice = prev.basePrice;
       if (prevPrice > 0) {
-        // Estimate current SOL value using price drift; cash is unchanged
-        const priceRatio = solPrice / prevPrice;
-        const estSolValueBrl = prev.solValueBrl * priceRatio;
-        const estTotal = estSolValueBrl + prev.brlBalance;
-        const estRatioBps = estTotal > 0 ? Math.round((estSolValueBrl / estTotal) * 10_000) : 5000;
+        // Estimate current base value using price drift; cash is unchanged
+        const priceRatio = basePrice / prevPrice;
+        const estBaseValueBrl = prev.baseValueBrl * priceRatio;
+        const estTotal = estBaseValueBrl + prev.brlBalance;
+        const estRatioBps = estTotal > 0 ? Math.round((estBaseValueBrl / estTotal) * 10_000) : 5000;
 
         if (!shouldRebalance(estRatioBps, effectiveThresholdBps)) {
           logger.info('No rebalance needed (price-only estimate)', {
-            estSolRatioBps: estRatioBps,
+            estBaseRatioBps: estRatioBps,
             effectiveThresholdBps,
           });
           return;
         }
         logger.debug('Price estimate suggests rebalance — fetching balances', {
-          estSolRatioBps: estRatioBps,
+          estBaseRatioBps: estRatioBps,
         });
       }
     }
@@ -182,15 +182,15 @@ export class RebalancerBot {
 
     // ── Step 6: fetch balances now that we're committed to possibly rebalancing ─
     await new Promise((r) => setTimeout(r, INTER_REQUEST_DELAY_MS));
-    const portfolio = await this.adapter.getPortfolio(solPrice);
+    const portfolio = await this.adapter.getPortfolio(basePrice);
 
     logger.info('Portfolio snapshot', {
       exchange: this.config.exchange,
-      solBalance: portfolio.solBalance.toFixed(6),
+      baseBalance: portfolio.baseBalance.toFixed(6),
       brlBalance: portfolio.brlBalance.toFixed(2),
-      solPriceBrl: portfolio.solPrice.toFixed(2),
+      basePriceBrl: portfolio.basePrice.toFixed(2),
       totalValueBrl: portfolio.totalValueBrl.toFixed(2),
-      solRatio: (portfolio.solRatioBps / 100).toFixed(2) + '%',
+      baseRatio: (portfolio.baseRatioBps / 100).toFixed(2) + '%',
       deviationBps: portfolio.deviationBps,
     });
 
@@ -205,7 +205,7 @@ export class RebalancerBot {
     }
 
     // ── Guard: drift threshold (precise, with actual balances) ─────────────────
-    if (!shouldRebalance(portfolio.solRatioBps, effectiveThresholdBps)) {
+    if (!shouldRebalance(portfolio.baseRatioBps, effectiveThresholdBps)) {
       logger.info('No rebalance needed', {
         deviationBps: portfolio.deviationBps,
         effectiveThresholdBps,
@@ -216,7 +216,7 @@ export class RebalancerBot {
 
     // ── Compute trade direction and amount ─────────────────────────────────────
     let { direction, brlAmount } = computeRebalanceTrade(
-      portfolio.solValueBrl,
+      portfolio.baseValueBrl,
       portfolio.brlBalance,
     );
 
@@ -235,7 +235,7 @@ export class RebalancerBot {
 
     // ── Guard: exemption / volume cap ─────────────────────────────────────────
     // Lei 9.250/1995 Art. 21: only SELL proceeds count toward the R$35k exemption limit
-    if (this.config.neverExceedExemptionLimit && direction === 'SELL_SOL') {
+    if (this.config.neverExceedExemptionLimit && direction === 'SELL_BASE') {
       const monthBRT = todayBRT.slice(0, 7);
       const volumeSoFar = this.tax.getMonthlySalesBrl(monthBRT);
 
@@ -276,7 +276,7 @@ export class RebalancerBot {
     logger.info('Rebalance triggered', {
       direction,
       brlAmount: brlAmount.toFixed(2),
-      solRatioBps: portfolio.solRatioBps,
+      baseRatioBps: portfolio.baseRatioBps,
       effectiveThresholdBps,
     });
 
@@ -296,12 +296,12 @@ export class RebalancerBot {
       }
 
       // ── Cost basis and tax recording ────────────────────────────────────────
-      if (direction === 'SELL_SOL' && tradeRecord.solAmountFilled != null) {
-        const solSold = tradeRecord.solAmountFilled;
+      if (direction === 'SELL_BASE' && tradeRecord.baseAmountFilled != null) {
+        const baseSold = tradeRecord.baseAmountFilled;
         const brlReceived = tradeRecord.brlAmountFilled ?? brlAmount;
         const ledger = this.costBasis.getLedger();
-        const costBasisBrl = ledger.sol.averageCostBrl * solSold;
-        const realizedGainBrl = this.costBasis.updateAfterSell(solSold, brlReceived);
+        const costBasisBrl = ledger.base.averageCostBrl * baseSold;
+        const realizedGainBrl = this.costBasis.updateAfterSell(baseSold, brlReceived);
         tradeRecord.realizedGainBrl = realizedGainBrl;
 
         const taxEvent = this.tax.buildTaxEvent({
@@ -316,7 +316,7 @@ export class RebalancerBot {
         });
         this.tax.appendTaxEvent(taxEvent);
 
-        logger.info('Tax event recorded (SELL_SOL)', {
+        logger.info('Tax event recorded (SELL_BASE)', {
           tradedVolumeBrl: brlReceived.toFixed(2),
           realizedGainBrl: realizedGainBrl.toFixed(2),
           cumMonthlySalesBrl: taxEvent.cumMonthlySalesBrl.toFixed(2),
@@ -324,10 +324,10 @@ export class RebalancerBot {
           paymentDeadline: taxEvent.paymentDeadline ?? 'exempt',
         });
 
-      } else if (direction === 'BUY_SOL' && tradeRecord.solAmountFilled != null) {
-        const solAcquired = tradeRecord.solAmountFilled;
+      } else if (direction === 'BUY_BASE' && tradeRecord.baseAmountFilled != null) {
+        const baseAcquired = tradeRecord.baseAmountFilled;
         const brlSpent = tradeRecord.brlAmountFilled ?? brlAmount;
-        this.costBasis.updateAfterBuy(solAcquired, brlSpent);
+        this.costBasis.updateAfterBuy(baseAcquired, brlSpent);
         tradeRecord.realizedGainBrl = 0;
 
         const taxEvent = this.tax.buildTaxEvent({
@@ -342,8 +342,8 @@ export class RebalancerBot {
         });
         this.tax.appendTaxEvent(taxEvent);
 
-        logger.info('Cost basis updated (BUY_SOL)', {
-          solAcquired: solAcquired.toFixed(6),
+        logger.info('Cost basis updated (BUY_BASE)', {
+          baseAcquired: baseAcquired.toFixed(6),
           brlSpent: brlSpent.toFixed(2),
         });
       }
@@ -369,10 +369,10 @@ export class RebalancerBot {
       dateBRT: todayBRT,
       timestamp: new Date().toISOString(),
       totalValueBrl: portfolio.totalValueBrl,
-      solBalance: portfolio.solBalance,
+      baseBalance: portfolio.baseBalance,
       brlBalance: portfolio.brlBalance,
-      solPrice: portfolio.solPrice,
-      solRatioBps: portfolio.solRatioBps,
+      basePrice: portfolio.basePrice,
+      baseRatioBps: portfolio.baseRatioBps,
       effectiveThresholdBps,
       rebalancedToday,
       exchange: this.config.exchange,

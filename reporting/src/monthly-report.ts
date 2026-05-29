@@ -67,7 +67,7 @@ ${commentarySection}
 | Metric | Value |
 |--------|-------|
 | Portfolio Return | ${fmtPct(p.monthly.monthlyReturnPct)} |
-| SOL/BRL Price Change | ${fmtPct(p.monthly.solOnlyReturnPct)} |
+| Base Asset Price Change | ${fmtPct(p.monthly.baseOnlyReturnPct)} |
 | CDI (month) | ${cdiMonthly} |
 | IBOV (month) | ${ibovMonthly} |
 | Days with Data | ${p.monthly.daysWithData} |
@@ -90,7 +90,7 @@ ${tradesTable}
 | Benchmark | This Month | Since Inception |
 |-----------|-----------|-----------------|
 | Shannon's Demon | ${fmtPct(p.monthly.monthlyReturnPct)} | ${fmtPct(p.cumulative.totalReturnPct)} |
-| SOL Buy-and-Hold | ${fmtPct(p.monthly.solOnlyReturnPct)} | ${fmtPct(p.cumulative.solOnlyCumulativeReturnPct)} |
+| Base Buy-and-Hold | ${fmtPct(p.monthly.baseOnlyReturnPct)} | ${fmtPct(p.cumulative.baseOnlyCumulativeReturnPct)} |
 | CDI | ${cdiMonthly} | ${cdiCumul} |
 | IBOV | ${ibovMonthly} | ${ibovCumul} |
 
@@ -112,11 +112,11 @@ ${tradesTable}
 
 | Asset | Quantity | Reference Price | Value (BRL) |
 |-------|----------|----------------|-------------|
-| SOL | ${p.portfolio.solBalance.toFixed(6)} | ${fmtBrl(p.portfolio.solPrice)}/SOL | ${fmtBrl(p.portfolio.solBalance * p.portfolio.solPrice)} |
+| Base | ${p.portfolio.baseBalance.toFixed(6)} | ${fmtBrl(p.portfolio.basePrice)}/unit | ${fmtBrl(p.portfolio.baseBalance * p.portfolio.basePrice)} |
 | BRL | ${fmtBrl(p.portfolio.brlBalance)} | — | ${fmtBrl(p.portfolio.brlBalance)} |
 | **Total** | — | — | **${fmtBrl(p.portfolio.totalValueBrl)}** |
 
-**Average Cost (AVCO):** ${fmtBrl(p.portfolio.averageCostBrl)}/SOL
+**Average Cost (AVCO):** ${fmtBrl(p.portfolio.averageCostBrl)}/unit
 **Unrealized P&L:** ${fmtBrl(p.portfolio.unrealizedGainBrl)} (${fmtPct(p.portfolio.unrealizedGainPct)})
 
 ---

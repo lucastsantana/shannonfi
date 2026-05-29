@@ -29,6 +29,10 @@ const SmtpSchema = z.object({
 const ConfigSchema = z.object({
   exchange: z.literal('mercadobitcoin'),
 
+  // Trading pair symbol (e.g. SOL-BRL, HYPE-BRL). The base asset is derived
+  // as the portion before the hyphen; the quote currency is always BRL.
+  symbol: z.string().regex(/^[A-Z]+-BRL$/, "Symbol must match BASE-BRL (e.g. 'SOL-BRL')").default('SOL-BRL'),
+
   mercadobitcoin: MercadoBitcoinSchema,
 
   // ─── Strategy ───────────────────────────────────────────────────────────────
@@ -45,7 +49,7 @@ const ConfigSchema = z.object({
   volatilityWindowDays: z.number().int().min(7).max(90).default(DEFAULT_VOLATILITY_WINDOW_DAYS),
 
   // ─── Tax compliance ──────────────────────────────────────────────────────────
-  // Mercado Bitcoin: caps SELL_SOL trades so monthly sales stay under R$35,000
+  // Mercado Bitcoin: caps SELL_BASE trades so monthly sales stay under R$35,000
   // Lei 9.250/1995 Art. 21: domestic crypto trading exemption (MB only)
   neverExceedExemptionLimit: z.boolean().default(false),
 

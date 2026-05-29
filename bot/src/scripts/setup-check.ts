@@ -45,30 +45,32 @@ async function checkMercadoBitcoin(): Promise<void> {
   const apiBaseUrl = config.mercadobitcoin.apiBaseUrl;
 
   const client = new MbClient(clientId, clientSecret, apiBaseUrl);
-  const endpoints = new MbEndpoints(client);
+  const endpoints = new MbEndpoints(client, config.symbol);
 
   console.log('\n2. Testing Mercado Bitcoin API authentication...');
   const accountId = await endpoints.getAccountId();
   console.log(`   OK — Authenticated. Account ID: ${accountId}`);
 
+  const baseAsset = config.symbol.split('-')[0]!;
+
   console.log('\n3. Fetching balances...');
   const balances = await endpoints.getBalances(accountId);
-  const solBalance = parseFloat(balances.find((b) => b.symbol === 'SOL')?.available ?? '0');
+  const baseBalance = parseFloat(balances.find((b) => b.symbol === baseAsset)?.available ?? '0');
   const brlBalance = parseFloat(balances.find((b) => b.symbol === 'BRL')?.available ?? '0');
-  console.log(`   SOL balance: ${solBalance.toFixed(6)} SOL`);
+  console.log(`   ${baseAsset} balance: ${baseBalance.toFixed(6)} ${baseAsset}`);
   console.log(`   BRL balance: R$${brlBalance.toFixed(2)}`);
 
-  if (brlBalance + solBalance === 0) {
+  if (brlBalance + baseBalance === 0) {
     console.warn('   WARN — All balances are zero');
   }
 
-  console.log('\n4. Checking SOL-BRL market (recent candles)...');
+  console.log(`\n4. Checking ${config.symbol} market (recent candles)...`);
   const candles = await endpoints.getCandles(7, '1d');
   const lastClose = candles.c[candles.c.length - 1];
   if (!lastClose) { console.error('   FAIL — No candle data returned'); process.exit(1); }
-  console.log(`   OK — ${candles.t.length} daily candles. Latest close: R$${parseFloat(lastClose).toFixed(2)}/SOL`);
+  console.log(`   OK — ${candles.t.length} daily candles. Latest close: R$${parseFloat(lastClose).toFixed(2)}/${baseAsset}`);
 
-  const totalBrl = brlBalance + solBalance * parseFloat(lastClose);
+  const totalBrl = brlBalance + baseBalance * parseFloat(lastClose);
   if (totalBrl < loadConfig().minPortfolioValueBrl) {
     console.warn(`   WARN — Total portfolio R$${totalBrl.toFixed(2)} is below minPortfolioValueBrl (R$${loadConfig().minPortfolioValueBrl})`);
   }

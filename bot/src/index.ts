@@ -30,18 +30,21 @@ async function main(): Promise<void> {
   const config = loadConfig(configPath);
   logger.level = config.logLevel;
 
+  const baseAsset = config.symbol.split('-')[0]!;
+
   // ── Build adapter ──────────────────────────────────────────────────────────
   const adapter: ExchangeAdapter = new MercadoBitcoinAdapter(
     config.mercadobitcoin,
     config.dryRun,
     config.maxSlippageBps,
+    config.symbol,
   );
-  logger.info('Using Mercado Bitcoin adapter (SOL-BRL, Lei 9.250/1995)');
+  logger.info(`Using Mercado Bitcoin adapter (${config.symbol}, Lei 9.250/1995)`);
 
   // ── Build services ─────────────────────────────────────────────────────────
   const history = new TradeHistoryService(config.dbPath);
   const pnl = new PnlService(history);
-  const costBasis = new CostBasisService(config.dbPath);
+  const costBasis = new CostBasisService(config.dbPath, baseAsset);
   const tax = new TaxService(config.dbPath);
   const volatility = new VolatilityService(adapter, config.volatilityWindowDays);
   const metrics = new MetricsService(history);

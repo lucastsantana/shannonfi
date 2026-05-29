@@ -25,9 +25,10 @@ export interface ExchangeAdapter {
 
   /**
    * Executes a market order denominated in BRL.
+   * Direction is relative to the base asset (the non-BRL side of the pair).
    */
   executeTrade(
-    direction: 'BUY_SOL' | 'SELL_SOL',
+    direction: 'BUY_BASE' | 'SELL_BASE',
     brlAmount: number,
     portfolioBefore: Portfolio,
   ): Promise<TradeRecord>;
@@ -43,13 +44,13 @@ export interface ExchangeAdapter {
 
 /** BRL-native portfolio snapshot. */
 export interface Portfolio {
-  solBalance: number;
+  baseBalance: number;    // balance of the base asset (non-BRL side)
   brlBalance: number;     // cash balance in BRL
-  solPrice: number;       // BRL/SOL at time of snapshot
-  solValueBrl: number;
+  basePrice: number;      // BRL/BASE at time of snapshot
+  baseValueBrl: number;
   totalValueBrl: number;
-  solRatioBps: number;    // sol% * 10_000
-  deviationBps: number;   // |solRatioBps - 5000|
+  baseRatioBps: number;   // base asset % * 10_000
+  deviationBps: number;   // |baseRatioBps - 5000|
   timestamp: string;      // ISO 8601
 }
 
@@ -62,9 +63,9 @@ export interface TradeRecord {
   exchangeOrderId: string | null;
   exchange: 'mercadobitcoin';
   timestamp: string;
-  direction: 'BUY_SOL' | 'SELL_SOL';
+  direction: 'BUY_BASE' | 'SELL_BASE';
   brlAmountTarget: number;
-  solAmountFilled: number | null;
+  baseAmountFilled: number | null;
   brlAmountFilled: number | null;
   fillPrice: number | null;       // BRL/SOL
   feeBrl: number | null;
@@ -81,10 +82,10 @@ export interface PortfolioSnapshot {
   dateBRT: string;
   timestamp: string;
   totalValueBrl: number;
-  solBalance: number;
+  baseBalance: number;
   brlBalance: number;
-  solPrice: number;               // BRL/SOL
-  solRatioBps: number;
+  basePrice: number;              // BRL/BASE
+  baseRatioBps: number;
   effectiveThresholdBps: number;
   rebalancedToday: boolean;
   exchange: 'mercadobitcoin';

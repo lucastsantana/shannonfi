@@ -24,16 +24,16 @@ interface DailyDigest {
   startValue: number;
   endValue: number;
   dailyReturn: number;
-  solStart: number;
-  solEnd: number;
-  solPriceStart: number;
-  solPriceEnd: number;
+  baseStart: number;
+  baseEnd: number;
+  basePriceStart: number;
+  basePriceEnd: number;
   rebalances: number;
   buyCount: number;
   sellCount: number;
   feesTotal: number;
-  solRatioStart: number;
-  solRatioEnd: number;
+  baseRatioStart: number;
+  baseRatioEnd: number;
   deviationStart: number;
   deviationEnd: number;
   brlStart: number;
@@ -91,8 +91,8 @@ async function compileDailyDigest(config: any): Promise<DailyDigest | null> {
     (t) => t.tradeDateBRT === yesterday && (t.status === 'FILLED' || t.status === 'DRY_RUN')
   );
   const rebalanceCount = yesterdayTrades.length;
-  const buyCount = yesterdayTrades.filter((t) => t.direction === 'BUY_SOL').length;
-  const sellCount = yesterdayTrades.filter((t) => t.direction === 'SELL_SOL').length;
+  const buyCount = yesterdayTrades.filter((t) => t.direction === 'BUY_BASE').length;
+  const sellCount = yesterdayTrades.filter((t) => t.direction === 'SELL_BASE').length;
   const feesTotal = yesterdayTrades.reduce((sum, t) => sum + (t.feeBrl ?? 0), 0);
 
   const startValue = first.totalValueBrl;
@@ -100,28 +100,28 @@ async function compileDailyDigest(config: any): Promise<DailyDigest | null> {
   const dailyReturn = startValue > 0 ? ((endValue - startValue) / startValue) * 100 : 0;
 
   // Compute deviation from 50% target
-  const deviationStart = (first.solRatioBps / 100) - 50;
-  const deviationEnd = (last.solRatioBps / 100) - 50;
+  const deviationStart = (first.baseRatioBps / 100) - 50;
+  const deviationEnd = (last.baseRatioBps / 100) - 50;
 
   // Compute BRL balances
-  const brlStart = first.totalValueBrl - (first.solBalance * first.solPrice);
-  const brlEnd = last.totalValueBrl - (last.solBalance * last.solPrice);
+  const brlStart = first.totalValueBrl - (first.baseBalance * first.basePrice);
+  const brlEnd = last.totalValueBrl - (last.baseBalance * last.basePrice);
 
   return {
     dateBRT: yesterday,
     startValue,
     endValue,
     dailyReturn,
-    solStart: first.solBalance,
-    solEnd: last.solBalance,
-    solPriceStart: first.solPrice,
-    solPriceEnd: last.solPrice,
+    baseStart: first.baseBalance,
+    baseEnd: last.baseBalance,
+    basePriceStart: first.basePrice,
+    basePriceEnd: last.basePrice,
     rebalances: rebalanceCount,
     buyCount,
     sellCount,
     feesTotal,
-    solRatioStart: first.solRatioBps / 100,
-    solRatioEnd: last.solRatioBps / 100,
+    baseRatioStart: first.baseRatioBps / 100,
+    baseRatioEnd: last.baseRatioBps / 100,
     deviationStart,
     deviationEnd,
     brlStart,
@@ -210,8 +210,8 @@ function renderEmailHtml(digest: DailyDigest): string {
       <div class="grid">
         <div class="box">
           <div class="box-label">SOL Balance</div>
-          <div class="box-value">${digest.solEnd.toFixed(6)}</div>
-          <div class="box-subvalue">${fmtBrl(digest.solEnd * digest.solPriceEnd)}</div>
+          <div class="box-value">${digest.baseEnd.toFixed(6)}</div>
+          <div class="box-subvalue">${fmtBrl(digest.baseEnd * digest.basePriceEnd)}</div>
         </div>
         <div class="box">
           <div class="box-label">BRL Balance</div>
@@ -220,7 +220,7 @@ function renderEmailHtml(digest: DailyDigest): string {
       </div>
       <div class="metric">
         <span class="metric-label">SOL Allocation</span>
-        <span class="metric-value">${digest.solRatioEnd.toFixed(2)}%</span>
+        <span class="metric-value">${digest.baseRatioEnd.toFixed(2)}%</span>
       </div>
       <div class="metric">
         <span class="metric-label">Drift from 50% Target</span>
@@ -258,16 +258,16 @@ function renderEmailHtml(digest: DailyDigest): string {
       <h2>Price Movement</h2>
       <div class="metric">
         <span class="metric-label">SOL Start</span>
-        <span class="metric-value">${fmtBrl(digest.solPriceStart)}</span>
+        <span class="metric-value">${fmtBrl(digest.basePriceStart)}</span>
       </div>
       <div class="metric">
         <span class="metric-label">SOL End</span>
-        <span class="metric-value">${fmtBrl(digest.solPriceEnd)}</span>
+        <span class="metric-value">${fmtBrl(digest.basePriceEnd)}</span>
       </div>
       <div class="metric">
         <span class="metric-label">SOL Change</span>
-        <span class="metric-value" style="color: ${digest.solPriceEnd - digest.solPriceStart >= 0 ? '#10b981' : '#ef4444'}">
-          ${digest.solPriceEnd - digest.solPriceStart >= 0 ? '+' : ''}${fmtBrl(digest.solPriceEnd - digest.solPriceStart)}
+        <span class="metric-value" style="color: ${digest.basePriceEnd - digest.basePriceStart >= 0 ? '#10b981' : '#ef4444'}">
+          ${digest.basePriceEnd - digest.basePriceStart >= 0 ? '+' : ''}${fmtBrl(digest.basePriceEnd - digest.basePriceStart)}
         </span>
       </div>
     </div>

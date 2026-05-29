@@ -152,9 +152,13 @@ function runMigrations(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_snapshots_date ON portfolio_snapshots(date_brt);
   `);
 
-  // Ensure cost_basis has the SOL row
-  const insertStmt = db.prepare('INSERT OR IGNORE INTO cost_basis (asset) VALUES (?)');
-  insertStmt.run('SOL');
+  // Migrate direction strings from legacy 'BUY_SOL'/'SELL_SOL' to 'BUY_BASE'/'SELL_BASE'
+  db.exec(`
+    UPDATE trades     SET direction = 'BUY_BASE'  WHERE direction = 'BUY_SOL';
+    UPDATE trades     SET direction = 'SELL_BASE' WHERE direction = 'SELL_SOL';
+    UPDATE tax_events SET direction = 'BUY_BASE'  WHERE direction = 'BUY_SOL';
+    UPDATE tax_events SET direction = 'SELL_BASE' WHERE direction = 'SELL_SOL';
+  `);
 
   logger.info('Database schema initialized');
 }

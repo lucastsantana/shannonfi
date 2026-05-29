@@ -4,7 +4,6 @@ export const BPS_DENOMINATOR = 10_000;
 export const TARGET_ALLOCATION_BPS = 5_000;   // 50%
 
 // ─── Mercado Bitcoin ──────────────────────────────────────────────────────────
-export const MB_SYMBOL = 'SOL-BRL';
 export const MB_API_BASE = 'https://api.mercadobitcoin.net/api/v4';
 export const MB_TOKEN_REFRESH_BUFFER_MS = 60_000;
 

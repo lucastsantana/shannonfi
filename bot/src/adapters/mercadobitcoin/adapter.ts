@@ -2,10 +2,9 @@ import { v4 as uuidv4 } from 'uuid';
 import { MbClient } from './client';
 import { MbEndpoints } from './endpoints';
 import { ExchangeAdapter, CandleResolution, Portfolio, TradeRecord } from '../types';
-import { computeSolRatioBps, computeDeviationBps, brlToSol, isSlippageAcceptable } from '../../math';
+import { computeBaseRatioBps, computeDeviationBps, brlToBase, isSlippageAcceptable } from '../../math';
 import { logger } from '../../core/tracker/logger';
 import {
-  MB_SYMBOL,
   MB_FILL_POLL_INTERVAL_MS,
   MB_FILL_POLL_MAX_ATTEMPTS,
 } from '../../constants';
@@ -20,6 +19,7 @@ const MB_RESOLUTION_MAP: Record<CandleResolution, import('./raw-types').MbCandle
 
 export class MercadoBitcoinAdapter implements ExchangeAdapter {
   private endpoints: MbEndpoints;
+  private baseAsset: string;
   // Cached account ID — fetched once, stable for the lifetime of the process.
   private cachedAccountId: string | null = null;
 
@@ -27,9 +27,11 @@ export class MercadoBitcoinAdapter implements ExchangeAdapter {
     private mbConfig: MercadoBitcoinConfig,
     private dryRun: boolean,
     private maxSlippageBps: number,
+    private symbol: string = 'SOL-BRL',
   ) {
+    this.baseAsset = symbol.split('-')[0]!;
     const client = new MbClient(mbConfig.clientId, mbConfig.clientSecret, mbConfig.apiBaseUrl);
-    this.endpoints = new MbEndpoints(client);
+    this.endpoints = new MbEndpoints(client, symbol);
   }
 
   private async getAccountId(): Promise<string> {
@@ -62,32 +64,32 @@ export class MercadoBitcoinAdapter implements ExchangeAdapter {
   async getPortfolio(knownPrice?: number): Promise<Portfolio> {
     const accountId = await this.getAccountId();
 
-    const [balances, solPrice] = await Promise.all([
+    const [balances, basePrice] = await Promise.all([
       this.endpoints.getBalances(accountId),
       knownPrice !== undefined ? Promise.resolve(knownPrice) : this.getPrice(),
     ]);
 
-    const solBalance = parseFloat(balances.find((b) => b.symbol === 'SOL')?.available ?? '0');
+    const baseBalance = parseFloat(balances.find((b) => b.symbol === this.baseAsset)?.available ?? '0');
     const brlBalance = parseFloat(balances.find((b) => b.symbol === 'BRL')?.available ?? '0');
 
-    const solValueBrl = solBalance * solPrice;
-    const totalValueBrl = solValueBrl + brlBalance;
-    const solRatioBps = computeSolRatioBps(solValueBrl, totalValueBrl);
+    const baseValueBrl = baseBalance * basePrice;
+    const totalValueBrl = baseValueBrl + brlBalance;
+    const baseRatioBps = computeBaseRatioBps(baseValueBrl, totalValueBrl);
 
     return {
-      solBalance,
+      baseBalance,
       brlBalance,
-      solPrice,
-      solValueBrl,
+      basePrice,
+      baseValueBrl,
       totalValueBrl,
-      solRatioBps,
-      deviationBps: computeDeviationBps(solRatioBps),
+      baseRatioBps,
+      deviationBps: computeDeviationBps(baseRatioBps),
       timestamp: new Date().toISOString(),
     };
   }
 
   async executeTrade(
-    direction: 'BUY_SOL' | 'SELL_SOL',
+    direction: 'BUY_BASE' | 'SELL_BASE',
     brlAmount: number,
     portfolioBefore: Portfolio,
   ): Promise<TradeRecord> {
@@ -102,7 +104,7 @@ export class MercadoBitcoinAdapter implements ExchangeAdapter {
       timestamp: new Date().toISOString(),
       direction,
       brlAmountTarget: brlAmount,
-      solAmountFilled: null,
+      baseAmountFilled: null,
       brlAmountFilled: null,
       fillPrice: null,
       feeBrl: null,
@@ -118,14 +120,14 @@ export class MercadoBitcoinAdapter implements ExchangeAdapter {
       logger.info('[DRY RUN] Would execute Mercado Bitcoin trade', {
         direction,
         brlAmount: brlAmount.toFixed(2),
-        symbol: MB_SYMBOL,
+        symbol: this.symbol,
       });
       record.status = 'DRY_RUN';
       return record;
     }
 
     const orderRequest =
-      direction === 'BUY_SOL'
+      direction === 'BUY_BASE'
         ? {
             type: 'market' as const,
             side: 'buy' as const,
@@ -135,7 +137,7 @@ export class MercadoBitcoinAdapter implements ExchangeAdapter {
         : {
             type: 'market' as const,
             side: 'sell' as const,
-            qty: brlToSol(brlAmount, portfolioBefore.solPrice, 8).toFixed(8),
+            qty: brlToBase(brlAmount, portfolioBefore.basePrice, 8).toFixed(8),
             externalId: clientOrderId,
           };
 
@@ -167,15 +169,15 @@ export class MercadoBitcoinAdapter implements ExchangeAdapter {
     const brlFilled = filled.cost;
     const feeBrl = parseFloat(filled.fee);
 
-    if (!isSlippageAcceptable(portfolioBefore.solPrice, fillPriceBrl, this.maxSlippageBps)) {
+    if (!isSlippageAcceptable(portfolioBefore.basePrice, fillPriceBrl, this.maxSlippageBps)) {
       logger.warn('Slippage exceeded threshold', {
-        expectedBrl: portfolioBefore.solPrice,
+        expectedBrl: portfolioBefore.basePrice,
         fillBrl: fillPriceBrl,
         maxSlippageBps: this.maxSlippageBps,
       });
     }
 
-    record.solAmountFilled = filledQty;
+    record.baseAmountFilled = filledQty;
     record.brlAmountFilled = brlFilled;
     record.fillPrice = fillPriceBrl;
     record.feeBrl = feeBrl;

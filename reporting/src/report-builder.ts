@@ -230,7 +230,7 @@ export async function buildReportPayload(
   const startValueBrl = firstSnap.totalValueBrl;
   const endValueBrl = lastSnap.totalValueBrl;
   const monthlyReturnPct = startValueBrl > 0 ? ((endValueBrl - startValueBrl) / startValueBrl) * 100 : 0;
-  const solOnlyReturnPct = firstSnap.solPrice > 0 ? ((lastSnap.solPrice - firstSnap.solPrice) / firstSnap.solPrice) * 100 : 0;
+  const baseOnlyReturnPct = firstSnap.basePrice > 0 ? ((lastSnap.basePrice - firstSnap.basePrice) / firstSnap.basePrice) * 100 : 0;
   const monthDrawdown = computeMaxDrawdown(monthSnapshots.map(s => s.totalValueBrl));
 
   const monthTrades = allTrades.filter(t => {
@@ -246,13 +246,13 @@ export async function buildReportPayload(
     startValueBrl,
     endValueBrl,
     monthlyReturnPct,
-    solPriceStart: firstSnap.solPrice,
-    solPriceEnd: lastSnap.solPrice,
-    solOnlyReturnPct,
+    basePriceStart: firstSnap.basePrice,
+    basePriceEnd: lastSnap.basePrice,
+    baseOnlyReturnPct,
     rebalanceCount: monthTrades.length,
     totalFeesBrl: monthTrades.reduce((s, t) => s + (t.feeBrl ?? 0), 0),
-    buyCount: monthTrades.filter(t => t.direction === 'BUY_SOL').length,
-    sellCount: monthTrades.filter(t => t.direction === 'SELL_SOL').length,
+    buyCount: monthTrades.filter(t => t.direction === 'BUY_BASE').length,
+    sellCount: monthTrades.filter(t => t.direction === 'SELL_BASE').length,
     maxDrawdownPct: monthDrawdown,
   };
 
@@ -260,15 +260,15 @@ export async function buildReportPayload(
   const m = metrics.computeMetrics(allSnapshots);
   const inceptionSnap = allSnapshots[0]!;
   const currentSnap = allSnapshots[allSnapshots.length - 1]!;
-  const solOnlyCumulative = inceptionSnap.solPrice > 0
-    ? ((currentSnap.solPrice - inceptionSnap.solPrice) / inceptionSnap.solPrice) * 100
+  const baseOnlyCumulative = inceptionSnap.basePrice > 0
+    ? ((currentSnap.basePrice - inceptionSnap.basePrice) / inceptionSnap.basePrice) * 100
     : 0;
 
   const cumulative: CumulativeMetrics = {
     inceptionDate: inceptionSnap.dateBRT,
     totalDays: m.totalDays,
     totalReturnPct: m.totalReturnBrlPct,
-    solOnlyCumulativeReturnPct: solOnlyCumulative,
+    baseOnlyCumulativeReturnPct: baseOnlyCumulative,
     cagr: m.cagr,
     sharpeRatio: m.sharpeRatio,
     maxDrawdownPct: m.maxDrawdownPct,
@@ -279,7 +279,7 @@ export async function buildReportPayload(
   // ── Trade rows ─────────────────────────────────────────────────────────────
   const trades: TradeRow[] = monthTrades.map(t => ({
     date: t.tradeDateBRT ?? t.timestamp.slice(0, 10),
-    direction: t.direction === 'BUY_SOL' ? 'Buy (BRL→SOL)' : 'Sell (SOL→BRL)',
+    direction: t.direction === 'BUY_BASE' ? 'Buy (BRL→Base)' : 'Sell (Base→BRL)',
     brlAmount: t.brlAmountFilled ?? t.brlAmountTarget,
     fillPrice: t.fillPrice ?? 0,
     feeBrl: t.feeBrl ?? 0,
@@ -293,16 +293,16 @@ export async function buildReportPayload(
   // ── Portfolio / cost basis ─────────────────────────────────────────────────
   const ledger = costBasis.getLedger();
   const refSnap = allSnapshots[allSnapshots.length - 1]!;
-  const unrealizedGainBrl = (refSnap.solPrice - ledger.sol.averageCostBrl) * ledger.sol.totalSol;
-  const costTotal = ledger.sol.averageCostBrl * ledger.sol.totalSol;
+  const unrealizedGainBrl = (refSnap.basePrice - ledger.base.averageCostBrl) * ledger.base.totalBase;
+  const costTotal = ledger.base.averageCostBrl * ledger.base.totalBase;
   const unrealizedGainPct = costTotal > 0 ? (unrealizedGainBrl / costTotal) * 100 : 0;
 
   const portfolio = {
-    solBalance: refSnap.solBalance,
+    baseBalance: refSnap.baseBalance,
     brlBalance: refSnap.brlBalance,
-    solPrice: refSnap.solPrice,
+    basePrice: refSnap.basePrice,
     totalValueBrl: refSnap.totalValueBrl,
-    averageCostBrl: ledger.sol.averageCostBrl,
+    averageCostBrl: ledger.base.averageCostBrl,
     unrealizedGainBrl,
     unrealizedGainPct,
   };

@@ -1,6 +1,6 @@
 /**
  * Cost basis service — backed by SQLite.
- * Tracks AVCO (average cost) basis for the SOL position in BRL.
+ * Tracks AVCO (average cost) basis for the base asset position in BRL.
  * Also dual-writes to JSON files for 15-day rolling backup.
  */
 
@@ -14,9 +14,9 @@ import { loadConfig } from '../../config';
 const DATA_DIR = path.resolve(__dirname, '../../../data');
 
 export interface CostBasisLedger {
-  sol: {
+  base: {
     averageCostBrl: number;
-    totalSol: number;
+    totalBase: number;
   };
   lastUpdated: string;
 }
@@ -24,35 +24,39 @@ export interface CostBasisLedger {
 export class CostBasisService {
   private db: Database.Database;
   private retentionDays: number;
+  private asset: string;
 
-  constructor(dbPath?: string) {
+  constructor(dbPath?: string, asset: string = 'SOL') {
     this.db = getDb(dbPath);
+    this.asset = asset;
     try {
       const config = loadConfig();
       this.retentionDays = config.jsonRetentionDays ?? 15;
     } catch {
-      this.retentionDays = 15; // default
+      this.retentionDays = 15;
     }
+    // Ensure a row exists for this asset on first use
+    this.db.prepare('INSERT OR IGNORE INTO cost_basis (asset) VALUES (?)').run(this.asset);
   }
 
   getLedger(): CostBasisLedger {
     const stmt = this.db.prepare(
       'SELECT average_cost_brl, total_sol, last_updated FROM cost_basis WHERE asset = ?'
     );
-    const row = stmt.get('SOL') as {
+    const row = stmt.get(this.asset) as {
       average_cost_brl: number;
       total_sol: number;
       last_updated: string;
     } | undefined;
 
     if (!row) {
-      return { sol: { averageCostBrl: 0, totalSol: 0 }, lastUpdated: '' };
+      return { base: { averageCostBrl: 0, totalBase: 0 }, lastUpdated: '' };
     }
 
     return {
-      sol: {
+      base: {
         averageCostBrl: row.average_cost_brl,
-        totalSol: row.total_sol,
+        totalBase: row.total_sol,
       },
       lastUpdated: row.last_updated,
     };
@@ -63,9 +67,9 @@ export class CostBasisService {
     const stmt = this.db.prepare(`
       UPDATE cost_basis
       SET average_cost_brl = ?, total_sol = ?, last_updated = ?
-      WHERE asset = 'SOL'
+      WHERE asset = ?
     `);
-    stmt.run(ledger.sol.averageCostBrl, ledger.sol.totalSol, lastUpdated);
+    stmt.run(ledger.base.averageCostBrl, ledger.base.totalBase, lastUpdated, this.asset);
     this.writeCostBasisToJson(ledger);
   }
 
@@ -79,46 +83,46 @@ export class CostBasisService {
     }
   }
 
-  /** Weighted average update after buying solAcquired SOL for brlSpent BRL. */
-  updateAfterBuy(solAcquired: number, brlSpent: number): void {
+  /** Weighted average update after buying baseAcquired units for brlSpent BRL. */
+  updateAfterBuy(baseAcquired: number, brlSpent: number): void {
     const ledger = this.getLedger();
-    const { averageCostBrl, totalSol } = ledger.sol;
-    const newTotal = totalSol + solAcquired;
+    const { averageCostBrl, totalBase } = ledger.base;
+    const newTotal = totalBase + baseAcquired;
 
-    ledger.sol = newTotal <= 0
-      ? { averageCostBrl: 0, totalSol: 0 }
+    ledger.base = newTotal <= 0
+      ? { averageCostBrl: 0, totalBase: 0 }
       : {
-          averageCostBrl: (averageCostBrl * totalSol + brlSpent) / newTotal,
-          totalSol: newTotal,
+          averageCostBrl: (averageCostBrl * totalBase + brlSpent) / newTotal,
+          totalBase: newTotal,
         };
 
     logger.debug('Cost basis updated (BUY)', {
-      solAcquired: solAcquired.toFixed(6),
+      baseAcquired: baseAcquired.toFixed(6),
       brlSpent: brlSpent.toFixed(2),
-      newAvgCostBrl: ledger.sol.averageCostBrl.toFixed(2),
+      newAvgCostBrl: ledger.base.averageCostBrl.toFixed(2),
     });
 
     this.save(ledger);
   }
 
   /**
-   * Updates SOL position after selling solSold SOL for brlReceived BRL.
+   * Updates position after selling baseSold units for brlReceived BRL.
    * Returns realized gain in BRL (can be negative for a loss).
    */
-  updateAfterSell(solSold: number, brlReceived: number): number {
+  updateAfterSell(baseSold: number, brlReceived: number): number {
     const ledger = this.getLedger();
-    const { averageCostBrl, totalSol } = ledger.sol;
-    const realizedGainBrl = brlReceived - averageCostBrl * solSold;
-    const newTotal = Math.max(0, totalSol - solSold);
+    const { averageCostBrl, totalBase } = ledger.base;
+    const realizedGainBrl = brlReceived - averageCostBrl * baseSold;
+    const newTotal = Math.max(0, totalBase - baseSold);
 
     // AVCO property: average cost is unchanged for remaining position
-    ledger.sol = {
+    ledger.base = {
       averageCostBrl: newTotal > 0 ? averageCostBrl : 0,
-      totalSol: newTotal,
+      totalBase: newTotal,
     };
 
     logger.debug('Cost basis updated (SELL)', {
-      solSold: solSold.toFixed(6),
+      baseSold: baseSold.toFixed(6),
       brlReceived: brlReceived.toFixed(2),
       realizedGainBrl: realizedGainBrl.toFixed(2),
     });
@@ -128,7 +132,7 @@ export class CostBasisService {
   }
 
   /** Pure preview — computes realized gain without persisting. */
-  computeRealizedGainBrl(solSold: number, brlReceived: number): number {
-    return brlReceived - this.getLedger().sol.averageCostBrl * solSold;
+  computeRealizedGainBrl(baseSold: number, brlReceived: number): number {
+    return brlReceived - this.getLedger().base.averageCostBrl * baseSold;
   }
 }
