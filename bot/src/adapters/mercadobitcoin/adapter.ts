@@ -166,7 +166,8 @@ export class MercadoBitcoinAdapter implements ExchangeAdapter {
 
     const filledQty = parseFloat(filled.filledQty);
     const fillPriceBrl = filled.avgPrice;
-    const brlFilled = filled.cost;
+    // cost is set for BUY (BRL spent); for SELL it is absent — derive from qty × price
+    const brlFilled = filled.cost ?? filledQty * fillPriceBrl;
     const feeBrl = parseFloat(filled.fee);
 
     if (!isSlippageAcceptable(portfolioBefore.basePrice, fillPriceBrl, this.maxSlippageBps)) {
