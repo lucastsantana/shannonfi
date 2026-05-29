@@ -402,7 +402,7 @@ over-trading in calm markets while remaining responsive in volatile ones.}
   \\text{MAD} &= \\frac{1}{n{-}1}\\sum_{i=1}^{n-1} r_i
     \\quad (n{=}31\\text{ days}) \\\\[0.3em]
   \\tau_{\\text{bps}} &= \\text{clamp}\\bigl(
-    \\text{MAD}{\\times}10{,}000{\\times}1.5,\\;50,\\;500\\bigr)
+    \\text{MAD}{\\times}10{,}000{\\times}2.0,\\;50,\\;500\\bigr)
 \\end{align*}
 \\vspace{0.2em}
 {\\scriptsize\\color{MutedText}
@@ -420,17 +420,17 @@ ceiling at 500~bps prevents indefinite non-action in extreme regimes.}
   \\textcolor{white}{\\textbf{bps}} \\\\
 \\midrule
 Very calm      & 0.3\\% & 50  (floor) \\\\
-Typical crypto & 1.5\\% & 225 \\\\
-Volatile       & 2.0\\% & 300 \\\\
-Extreme        & $\\geq$3.3\\% & 500 (ceiling) \\\\
+Typical crypto & 1.5\\% & 300 \\\\
+Volatile       & 2.0\\% & 400 \\\\
+Extreme        & $\\geq$2.5\\% & 500 (ceiling) \\\\
 \\bottomrule
 \\end{tabular}
 \\vspace{0.2em}
 
 {\\scriptsize\\color{MutedText}
 \\textbf{Why proportional to MAD?}\\\\
-At mult~1.5, trigger fires after\\\\
-$\\approx$3 typical daily moves\\\\
+At mult~2.0, trigger fires after\\\\
+$\\approx$4 typical daily moves\\\\
 accumulate as drift.}
 \\end{column}
 \\end{columns}
@@ -724,7 +724,7 @@ function buildSlide11_Implementation(): string {
 \\textbf{Execution pipeline}
 \\begin{itemize}
   \\setlength\\itemsep{0.12em}
-  \\item Poll every 15 min (GitHub Actions)
+  \\item Poll every 5 min (GitHub Actions)
   \\item Fetch SOL/BRL spot price
   \\item Compute weight \\& deviation
   \\item Skip if below adaptive threshold
@@ -739,11 +739,11 @@ function buildSlide11_Implementation(): string {
 \\begin{itemize}
   \\setlength\\itemsep{0.12em}
   \\item Slippage guard: reject if fill deviates $>$1\\% from expected
-  \\item 2-hour cooldown between rebalances
+  \\item 5-minute cooldown between rebalances
   \\item Dry-run mode (no live orders)
-  \\item Tax cap: skip SELL if monthly SELL proceeds would exceed R\\$35{,}000
-  \\item Min portfolio size: skip if total $<$R\\$200
-  \\item Min trade size: skip if rebalance $<$R\\$20
+  \\item Tax cap: skip SELL if monthly proceeds would exceed R\\$34{,}650 (active)
+  \\item Min portfolio size: skip if total $<$R\\$10
+  \\item Min trade size: skip if rebalance $<$R\\$1
 \\end{itemize}
 \\end{column}
 \\end{columns}
