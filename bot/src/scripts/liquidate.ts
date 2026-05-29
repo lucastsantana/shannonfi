@@ -88,6 +88,10 @@ async function main(): Promise<void> {
     const realizedGainBrl = costBasis.updateAfterSell(baseSold, brlReceived);
     tradeRecord.realizedGainBrl = realizedGainBrl;
 
+    // Trade must be inserted before tax event (FK: tax_events.trade_id → trades.id)
+    await history.appendTrade(tradeRecord);
+    await pnl.logRebalance(tradeRecord);
+
     const taxEvent = tax.buildTaxEvent({
       tradeId: tradeRecord.id,
       tradeDateBRT: todayBRT,
@@ -105,10 +109,10 @@ async function main(): Promise<void> {
       console.log(`Payment deadline: ${taxEvent.paymentDeadline}`);
     }
     console.log(`Realized gain/loss: R$ ${realizedGainBrl.toFixed(2)}`);
+  } else {
+    await history.appendTrade(tradeRecord);
+    await pnl.logRebalance(tradeRecord);
   }
-
-  await history.appendTrade(tradeRecord);
-  await pnl.logRebalance(tradeRecord);
 
   console.log(`\nStatus: ${tradeRecord.status}`);
 
