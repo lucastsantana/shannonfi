@@ -29,4 +29,4 @@ sed \
   -e "s|clientSecret: \"PLACEHOLDER\"|clientSecret: \"$MB_CLIENT_SECRET\"|" \
   "$SCRIPT_DIR/shannonfi.config.yaml" > "$TMPCONFIG"
 
-exec node "$SCRIPT_DIR/dist/scripts/liquidate.js" --config "$TMPCONFIG" "$@"
+exec npx ts-node "$SCRIPT_DIR/src/scripts/liquidate.ts" --config "$TMPCONFIG" "$@"
