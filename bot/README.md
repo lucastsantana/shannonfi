@@ -1,8 +1,8 @@
 # Shannon's Demon — Mercado Bitcoin Bot
 
-A fully autonomous rebalancer implementing the Shannon's Demon volatility-harvesting strategy on [Mercado Bitcoin](https://www.mercadobitcoin.com.br) (SOL/BRL).
+A fully autonomous rebalancer implementing the Shannon's Demon volatility-harvesting strategy on [Mercado Bitcoin](https://www.mercadobitcoin.com.br) (HYPE/BRL).
 
-**What it does:** Holds SOL and BRL in a 50/50 ratio by value and rebalances every 15 minutes when the ratio drifts beyond a dynamic threshold, selling the outperformer and buying the underperformer.
+**What it does:** Holds HYPE and BRL in a 50/50 ratio by value and rebalances every 15 minutes when the ratio drifts beyond a dynamic threshold, selling the outperformer and buying the underperformer.
 
 **Why:** Volatility-harvesting captures excess return from price oscillation — systematic mean-reversion trading. Over time, rebalancing a volatile asset pair beats buy-and-hold.
 
@@ -11,7 +11,7 @@ A fully autonomous rebalancer implementing the Shannon's Demon volatility-harves
 ## Prerequisites
 
 - Node 18+ (`node --version`)
-- A [Mercado Bitcoin](https://www.mercadobitcoin.com.br) account with SOL and BRL balances
+- A [Mercado Bitcoin](https://www.mercadobitcoin.com.br) account with HYPE and BRL balances
 - API credentials from MB Account → Settings → API
 - Linux/macOS with GNOME Keyring (for credential storage), or Windows/WSL2 with setup
 
@@ -147,8 +147,8 @@ volatilityWindowDays: 30
 
 ```yaml
 # Lei 9.250/1995 Art. 21: Monthly SELL proceeds ≤ R$35,000 are exempt from capital gains tax.
-# When true, the bot caps SELL_SOL trades so monthly gross proceeds stay ≤ R$34,650 
-# (with 1% safety buffer). BUY_SOL trades are never capped.
+# When true, the bot caps SELL_HYPE trades so monthly gross proceeds stay ≤ R$34,650 
+# (with 1% safety buffer). BUY_HYPE trades are never capped.
 # If remaining allowance < minTradeSizeBrl, the SELL is skipped.
 # Default: false (tracking only; no capping)
 #
@@ -352,10 +352,10 @@ If deployed on GitHub, the daily digest runs automatically via `.github/workflow
 
 Each digest includes:
 - **Daily return (%)** and absolute P&L (BRL)
-- **Portfolio composition**: SOL balance, BRL balance, allocation %
-- **SOL allocation drift** from 50% target
+- **Portfolio composition**: HYPE balance, BRL balance, allocation %
+- **HYPE allocation drift** from 50% target
 - **Trading activity**: Count of rebalances, buys, sells, and fees paid
-- **SOL price movement**: Start, end, and change
+- **HYPE price movement**: Start, end, and change
 
 If there are no snapshots for yesterday (e.g., bot wasn't running), the script exits silently.
 
@@ -421,7 +421,7 @@ npm run report -- --month 2026-05
 
 **Monthly report** generates a Markdown file with:
 - Executive summary with rule-based commentary
-- Monthly performance vs SOL-only, CDI, and IBOV benchmarks
+- Monthly performance vs HYPE-only, CDI, and IBOV benchmarks
 - Rebalance history table
 - Tax compliance summary (Lei 9.250/1995 Art. 21)
 - Current portfolio and unrealized P&L
@@ -432,9 +432,9 @@ Reports are written to `data/reports/YYYY-MM.md` and are auto-generated monthly 
 ### Interpret the Logs
 
 Each cycle logs:
-- **Price check**: Current SOL/BRL price
+- **Price check**: Current HYPE/BRL price
 - **Computed adaptive threshold**: Volatility-based threshold for this cycle (if `useAdaptiveThreshold: true`)
-- **Portfolio snapshot**: Current balances, SOL ratio, deviation from 50/50
+- **Portfolio snapshot**: Current balances, HYPE ratio, deviation from 50/50
 - **Rebalance triggered** or **No rebalance needed**: Decision and why
 - **Order placed**: Order ID and direction (if trade executed)
 - **Error in rebalance cycle**: Network/API issues (will retry next cycle)
@@ -465,7 +465,7 @@ Each cycle logs:
 
 ### What's Tracked Automatically
 
-Every SELL_SOL trade is logged with:
+Every SELL_HYPE trade is logged with:
 - Gross proceeds (BRL)
 - Cost basis (BRL, via AVCO)
 - Realized gain (BRL)
@@ -514,7 +514,7 @@ Reports are saved to `data/reports/YYYY-MM.md` and include:
 
 **Performance Tables:**
 - Month and cumulative return metrics
-- Comparison vs SOL-only (buy-and-hold), CDI (risk-free rate), IBOV (equity benchmark)
+- Comparison vs HYPE-only (buy-and-hold), CDI (risk-free rate), IBOV (equity benchmark)
 - Rebalance history with prices, fees, and realized gains
 
 **Tax Summary:**
@@ -522,7 +522,7 @@ Reports are saved to `data/reports/YYYY-MM.md` and include:
 - Realized gains per trade; cumulative monthly sales
 
 **Portfolio State:**
-- Current SOL/BRL holdings, AVCO cost basis, unrealized P&L
+- Current HYPE/BRL holdings, AVCO cost basis, unrealized P&L
 - All-time metrics: CAGR, Sharpe ratio, max drawdown, total fees
 
 ### Automated Monthly Reports (Scheduled)
@@ -553,7 +553,7 @@ If deployed on GitHub, the monthly report runs automatically via `.github/workfl
 
 The report's executive summary uses deterministic rule-based logic (no API key required) that adapts to the month's metrics:
 
-- **Performance vs benchmarks**: Explains whether the strategy outperformed/underperformed vs CDI, IBOV, and SOL-only
+- **Performance vs benchmarks**: Explains whether the strategy outperformed/underperformed vs CDI, IBOV, and HYPE-only
 - **Rebalancing context**: Interprets 0, 1, few, or many rebalances in terms of market conditions and fee efficiency
 - **Risk perspective**: Notes significant drawdowns and the BRL cushion's role in recovery
 - **Tax flags**: Highlights DARF payment obligations or unrealized position impacts
@@ -577,7 +577,7 @@ If `neverExceedExemptionLimit: true`, SELL trades are capped. If remaining allow
 
 ### "Portfolio below minimum size"
 
-Set `minPortfolioValueBrl` lower, or deposit more BRL/SOL.
+Set `minPortfolioValueBrl` lower, or deposit more BRL/HYPE.
 
 ### Keyring errors (WSL2)
 

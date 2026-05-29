@@ -46,6 +46,7 @@ export interface TradeRow {
 
 export interface ReportPayload {
   monthBRT: string;
+  baseAsset: string;            // e.g. "HYPE", "SOL" — derived from config symbol
   monthly: MonthlyMetrics;
   cumulative: CumulativeMetrics;
   benchmarks: {

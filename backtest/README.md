@@ -1,10 +1,10 @@
 # Shannon's Demon Backtest Suite
 
-This directory contains historical backtests and analysis of the Shannon's Demon volatility-harvesting strategy on SOL/BRL.
+This directory contains historical backtests and analysis of the Shannon's Demon volatility-harvesting strategy on HYPE/BRL.
 
 ## Overview
 
-**Shannon's Demon** is a market-neutral 50/50 rebalancing strategy: hold SOL and BRL in equal proportion by value, rebalance whenever the allocation drifts, and profit from volatility via systematic mean reversion. This suite runs the strategy against historical price data to measure past performance and validate the approach.
+**Shannon's Demon** is a market-neutral 50/50 rebalancing strategy: hold HYPE and BRL in equal proportion by value, rebalance whenever the allocation drifts, and profit from volatility via systematic mean reversion. This suite runs the strategy against historical price data to measure past performance and validate the approach.
 
 ## Files
 
@@ -40,7 +40,7 @@ cd backtest
 python shannon_backtest_real.py
 ```
 
-This fetches real SOL/BRL candle data from Mercado Bitcoin, runs the strategy with default config (50/50 target, 1% rebalance threshold, 30-day minimum interval), and outputs a trade log and performance report.
+This fetches real HYPE/BRL candle data from Mercado Bitcoin, runs the strategy with default config (50/50 target, 1% rebalance threshold, 30-day minimum interval), and outputs a trade log and performance report.
 
 ### Custom Configuration
 
@@ -68,7 +68,7 @@ This fetches and caches price history to `historical_results.json` for offline a
 
 From the 2026 backtest (Jan-May, bear market):
 
-- **Returns:** +1.2% (buy-hold SOL: -22%)
+- **Returns:** +1.2% (buy-hold HYPE: -22%)
 - **Rebalances:** 5 trades total
 - **Cost:** ~0.3% per trade (Mercado Bitcoin taker fee)
 - **Sharpe Ratio:** Positive; strong downside protection

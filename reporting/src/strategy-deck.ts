@@ -74,7 +74,7 @@ function ensureCharts(): void {
 }
 
 // ── Main ──────────────────────────────────────────────────────────────────────
-function main(): void {
+async function main(): Promise<void> {
   fs.mkdirSync(REPORTS_DIR, { recursive: true });
   fs.mkdirSync(CHARTS_DIR,  { recursive: true });
 
@@ -83,7 +83,13 @@ function main(): void {
 
   // Step 2 — build LaTeX source
   console.log('Building LaTeX source...');
-  const tex = buildStrategyDeck();
+  let symbol = 'SOL-BRL';
+  try {
+    const { loadConfig } = await import('../../bot/src/config');
+    const cfg = loadConfig();
+    symbol = cfg.symbol ?? 'SOL-BRL';
+  } catch { /* config may not exist in all environments */ }
+  const tex = buildStrategyDeck(symbol);
   fs.writeFileSync(TEX_PATH, tex, 'utf-8');
   console.log(`  Written: ${path.relative(REPO_ROOT, TEX_PATH)}`);
 
@@ -136,4 +142,7 @@ function main(): void {
   console.log(`\n  PDF: ${path.relative(REPO_ROOT, PDF_PATH)}  (${(size / 1024).toFixed(0)} KB)`);
 }
 
-main();
+main().catch(err => {
+  console.error('Strategy deck generation failed:', (err as Error).message);
+  process.exit(1);
+});

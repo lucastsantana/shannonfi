@@ -27,7 +27,7 @@ function pos(val: number, decimals = 2): string {
 }
 
 // ── Preamble ───────────────────────────────────────────────────────────────────
-function buildPreamble(): string {
+function buildPreamble(pair: string): string {
   return `\\documentclass[aspectratio=169,10pt]{beamer}
 
 % ── Packages ──────────────────────────────────────────────────────────────────
@@ -100,7 +100,7 @@ function buildPreamble(): string {
 
 % ── Metadata ──────────────────────────────────────────────────────────────────
 \\title{Shannon's Demon}
-\\subtitle{Strategy Overview --- SOL/BRL Volatility Harvesting}
+\\subtitle{Strategy Overview --- ${e(pair)} Volatility Harvesting}
 \\author{Shannon Capital}
 \\date{Backtest Period: Apr 2020 -- May 2026}
 \\institute{}`;
@@ -135,7 +135,7 @@ on simulated portfolio starting at R\\$100. Fees of~0.30\\% per rebalance applie
 Shannon Capital is not a registered investment adviser. Not financial advice.}`;
 
 // ── Slide 1: Title ────────────────────────────────────────────────────────────
-function slide1_Title(): string {
+function slide1_Title(pair: string): string {
   return `\\setbeamercolor{background canvas}{bg=Navy}
 \\begin{frame}[plain]
 \\begin{tikzpicture}[remember picture,overlay]
@@ -147,7 +147,7 @@ function slide1_Title(): string {
   {\\color{white}\\fontsize{26}{32}\\selectfont\\bfseries Shannon's Demon}\\\\[0.4cm]
   {\\color{Gold}\\rule{7cm}{0.6pt}}\\\\[0.35cm]
   {\\color{white!70!black}\\normalsize\\mdseries Strategy Overview}\\\\[0.15cm]
-  {\\color{Gold}\\large\\bfseries SOL/BRL Volatility Harvesting}\\\\[0.8cm]
+  {\\color{Gold}\\large\\bfseries ${e(pair)} Volatility Harvesting}\\\\[0.8cm]
   {\\color{white!50!black}\\small Shannon Capital}\\\\[0.15cm]
   {\\color{white!35!black}\\footnotesize Backtest: Apr~2020 -- May~2026 \\quad\\textbullet\\quad 2{,}239 trading days}\\\\[0.15cm]
   {\\color{white!35!black}\\scriptsize Starting capital: R\\$100 \\quad Final value: R\\$2{,}933}
@@ -157,7 +157,7 @@ function slide1_Title(): string {
 }
 
 // ── Slide 3: The Problem ───────────────────────────────────────────────────────
-function slide3_Problem(): string {
+function slide3_Problem(pair: string): string {
   return `\\begin{frame}{The Problem: Volatility as Risk \\textit{and} Return}
 \\vspace{0.4em}
 {\\small\\color{BodyText}
@@ -175,7 +175,7 @@ can outperform \\textbf{both} assets held separately in choppy, mean-reverting m
 \\end{block}
 
 \\vspace{0.3em}
-SOL/BRL is one of the most volatile major crypto pairs.
+${e(pair)} is one of the most volatile major crypto pairs.
 With daily absolute returns averaging \\textbf{1--3\\%}, the rebalancing premium is substantial.
 }
 \\end{frame}`;
@@ -210,12 +210,13 @@ and the discipline to rebalance when drift exceeds a threshold.
 }
 
 // ── Slide 5: The Intuition ────────────────────────────────────────────────────
-function slide5_Intuition(): string {
+function slide5_Intuition(base: string): string {
+  const b = e(base);
   return `\\begin{frame}{The Intuition: A Round-Trip Thought Experiment}
 \\vspace{0.2em}
 {\\small\\color{BodyText}
-Start with \\textbf{R\\$10{,}000}: R\\$5{,}000 SOL + R\\$5{,}000 BRL.
-SOL \\textbf{doubles}, then returns to its original price.}
+Start with \\textbf{R\\$10{,}000}: R\\$5{,}000 ${b} + R\\$5{,}000 BRL.
+${b} \\textbf{doubles}, then returns to its original price.}
 
 \\vspace{0.3em}
 \\arrayrulecolor{RuleColor}
@@ -223,15 +224,15 @@ SOL \\textbf{doubles}, then returns to its original price.}
 \\begin{tabular}{@{\\hspace{0.4em}}l r r r r@{\\hspace{0.4em}}}
 \\toprule
 \\rowcolor{Navy}\\textcolor{white}{\\textbf{Step}} &
-  \\textcolor{white}{\\textbf{SOL value}} &
+  \\textcolor{white}{\\textbf{${b} value}} &
   \\textcolor{white}{\\textbf{BRL value}} &
   \\textcolor{white}{\\textbf{Total}} &
   \\textcolor{white}{\\textbf{Action}} \\\\
 \\midrule
-Start (SOL @ P)         & R\\$5{,}000 & R\\$5{,}000 & R\\$10{,}000 & --- \\\\
-SOL doubles (@ 2P)      & R\\$10{,}000 & R\\$5{,}000 & R\\$15{,}000 & Sell SOL \\\\
+Start (${b} @ P)         & R\\$5{,}000 & R\\$5{,}000 & R\\$10{,}000 & --- \\\\
+${b} doubles (@ 2P)      & R\\$10{,}000 & R\\$5{,}000 & R\\$15{,}000 & Sell ${b} \\\\
 After rebalance         & R\\$7{,}500 & R\\$7{,}500 & R\\$15{,}000 & 50/50 restored \\\\
-SOL halves (back to P)  & R\\$3{,}750 & R\\$7{,}500 & \\textcolor{Success}{\\textbf{R\\$11{,}250}} & --- \\\\
+${b} halves (back to P)  & R\\$3{,}750 & R\\$7{,}500 & \\textcolor{Success}{\\textbf{R\\$11{,}250}} & --- \\\\
 \\midrule
 \\textbf{Without rebalancing} & R\\$5{,}000 & R\\$5{,}000 & \\textbf{R\\$10{,}000} & 0\\% net \\\\
 \\bottomrule
@@ -246,7 +247,8 @@ The gain scales as $\\approx Vr^2/4$ where $r$ is the price swing --- larger swi
 }
 
 // ── Slide 7: Weight Mechanics ─────────────────────────────────────────────────
-function slide7_WeightMechanics(): string {
+function slide7_WeightMechanics(base: string): string {
+  const b = e(base);
   return `\\begin{frame}{Weight Mechanics \\& Trigger Condition}
 \\vspace{0.2em}
 {\\small\\color{BodyText}Define portfolio variables at time $t$:}
@@ -256,10 +258,10 @@ function slide7_WeightMechanics(): string {
 \\begin{columns}[T]
 \\begin{column}{0.50\\textwidth}
 \\begin{align*}
-  V_s &= \\text{SOL balance} \\times \\text{SOL price} \\\\
+  V_s &= \\text{${b} balance} \\times \\text{${b} price} \\\\
   V_b &= \\text{BRL cash balance} \\\\
   V   &= V_s + V_b \\quad\\text{(total)} \\\\[0.4em]
-  w   &= \\frac{V_s}{V} \\quad\\text{(SOL weight)} \\\\[0.4em]
+  w   &= \\frac{V_s}{V} \\quad\\text{(${b} weight)} \\\\[0.4em]
   \\delta &= |\\,w - 0.5\\,| \\quad\\text{(deviation)} \\\\[0.4em]
   \\tau &= \\frac{\\text{bps}}{10{,}000} \\quad\\text{(threshold)}
 \\end{align*}
@@ -273,12 +275,12 @@ $\\delta > \\tau$
 \\vspace{0.4em}
 {\\small\\color{BodyText}
 \\textbf{Direction:}\\\\
-$w > 0.5$: \\textcolor{Danger}{SELL SOL}\\\\
-$w < 0.5$: \\textcolor{Success}{BUY SOL}
+$w > 0.5$: \\textcolor{Danger}{SELL ${b}}\\\\
+$w < 0.5$: \\textcolor{Success}{BUY ${b}}
 
 \\vspace{0.3em}
 \\textbf{Example:} threshold~100~bps\\\\
-SOL at 55\\% $\\Rightarrow$ $\\delta = 500$~bps $> \\tau$\\\\
+${b} at 55\\% $\\Rightarrow$ $\\delta = 500$~bps $> \\tau$\\\\
 Trade fires.
 }
 \\end{column}
@@ -287,12 +289,13 @@ Trade fires.
 }
 
 // ── Slide 8: Critical Price Move ──────────────────────────────────────────────
-function slide8_CriticalPrice(): string {
+function slide8_CriticalPrice(base: string): string {
+  const b = e(base);
   return `\\begin{frame}{Critical Price Move to Trigger}
 \\vspace{0.1em}
 {\\small\\color{BodyText}
-From a 50/50 start, let SOL price change by factor $f$.
-The new SOL weight and the triggering price factor are:}
+From a 50/50 start, let ${b} price change by factor $f$.
+The new ${b} weight and the triggering price factor are:}
 
 \\vspace{0.2em}
 \\small
@@ -314,8 +317,8 @@ The new SOL weight and the triggering price factor are:}
 \\toprule
 \\rowcolor{Navy}
   \\textcolor{white}{\\textbf{bps}} &
-  \\textcolor{white}{\\textbf{SOL up}} &
-  \\textcolor{white}{\\textbf{SOL down}} \\\\
+  \\textcolor{white}{\\textbf{${b} up}} &
+  \\textcolor{white}{\\textbf{${b} down}} \\\\
 \\midrule
  50 &  +2.0\\% &  $-$2.0\\% \\\\
 100 &  +4.1\\% &  $-$3.9\\% \\\\
@@ -328,14 +331,15 @@ The new SOL weight and the triggering price factor are:}
 
 {\\scriptsize\\color{MutedText}
 For small $\\tau$: trigger $\\approx 4\\tau$.\\\\
-At 100~bps, a $\\pm$4\\% SOL move fires.}
+At 100~bps, a $\\pm$4\\% ${b} move fires.}
 \\end{column}
 \\end{columns}
 \\end{frame}`;
 }
 
 // ── Slide 9: Trade Size & Volatility Premium ──────────────────────────────────
-function slide9_VolPremium(): string {
+function slide9_VolPremium(base: string): string {
+  const b = e(base);
   return `\\begin{frame}{Trade Size \\& the Volatility Premium}
 \\vspace{0.2em}
 {\\small\\color{BodyText}
@@ -352,7 +356,7 @@ function slide9_VolPremium(): string {
 \\vspace{0.2em}
 {\\small\\color{BodyText}
 \\textbf{Volatility premium per complete price cycle}
-(SOL up by $r$, then back to start):}
+(${b} up by $r$, then back to start):}
 \\begin{align*}
   \\Delta V &\\approx \\frac{V\\,r^2}{4} \\quad\\text{(leading order, small }r\\text{)}
 \\end{align*}
@@ -460,7 +464,7 @@ ${PERF_DISCLAIMER}
 }
 
 // ── Slide 14: Risk Metrics Table ───────────────────────────────────────────────
-function slide14_RiskMetrics(): string {
+function slide14_RiskMetrics(base: string): string {
   return `\\begin{frame}{Overall Risk Metrics --- Apr 2020 to May 2026}
 \\vspace{0.2em}
 \\begin{center}
@@ -472,7 +476,7 @@ function slide14_RiskMetrics(): string {
   \\textcolor{white}{\\textbf{Metric}} &
   \\textcolor{white}{\\textbf{Shannon}} &
   \\textcolor{white}{\\textbf{50/50 B\\&H}} &
-  \\textcolor{white}{\\textbf{100\\% SOL}} &
+  \\textcolor{white}{\\textbf{100\\% ${e(base)}}} &
   \\textcolor{white}{\\textbf{CDI}} &
   \\textcolor{white}{\\textbf{IBOV}} \\\\
 \\midrule
@@ -493,7 +497,7 @@ ${PERF_DISCLAIMER}
 }
 
 // ── Slide 15: Yearly Returns ──────────────────────────────────────────────────
-function slide15_YearlyReturns(): string {
+function slide15_YearlyReturns(base: string): string {
   const rows = [
     ['2020', 60.16,   30.76,   61.51,    1.63,   51.33],
     ['2021', 1281.82, 6511.96, 9818.15,  4.42,  -12.14],
@@ -524,7 +528,7 @@ function slide15_YearlyReturns(): string {
   \\textcolor{white}{\\textbf{Year}} &
   \\textcolor{white}{\\textbf{Shannon}} &
   \\textcolor{white}{\\textbf{50/50 B\\&H}} &
-  \\textcolor{white}{\\textbf{100\\% SOL}} &
+  \\textcolor{white}{\\textbf{100\\% ${e(base)}}} &
   \\textcolor{white}{\\textbf{CDI}} &
   \\textcolor{white}{\\textbf{IBOV}} \\\\
 \\midrule
@@ -588,7 +592,8 @@ ${PERF_DISCLAIMER}
 }
 
 // ── Slide 19: Risk Factors ─────────────────────────────────────────────────────
-function slide19_Risks(): string {
+function slide19_Risks(base: string): string {
+  const b = e(base);
   return `\\begin{frame}{Risk Factors \\& Operational Notes}
 \\vspace{0.3em}
 {\\small\\color{BodyText}
@@ -599,7 +604,7 @@ function slide19_Risks(): string {
         rather than extracting a premium. Shannon underperforms B\\&H during strong bull runs.
   \\item \\textbf{Volatility drought:} low-volatility regimes produce few rebalances
         and the CDI risk premium can turn negative over short windows.
-  \\item \\textbf{Total loss:} SOL could go to zero. The BRL side would remain,
+  \\item \\textbf{Total loss:} ${b} could go to zero. The BRL side would remain,
         but the strategy provides no guarantee against full loss of the crypto leg.
 \\end{itemize}
 
@@ -673,38 +678,43 @@ redistribution is strictly prohibited.}
 }
 
 // ── Main builder ───────────────────────────────────────────────────────────────
-export function buildStrategyDeck(): string {
+// symbol: trading pair in BASE-BRL form (e.g. 'HYPE-BRL', 'SOL-BRL').
+// All asset-specific strings in the deck are derived from it.
+export function buildStrategyDeck(symbol: string = 'SOL-BRL'): string {
+  const base = symbol.split('-')[0] ?? 'BASE';
+  const pair = `${base}/BRL`;
+
   const slides = [
-    buildPreamble(),
+    buildPreamble(pair),
     '\\begin{document}',
 
-    slide1_Title(),
+    slide1_Title(pair),
 
     sectionDivider('I', 'The Insight', 'Why does rebalancing generate returns?'),
-    slide3_Problem(),
+    slide3_Problem(pair),
     slide4_Origin(),
-    slide5_Intuition(),
+    slide5_Intuition(base),
 
     sectionDivider('II', 'Mathematical Framework', 'Deriving the volatility premium'),
-    slide7_WeightMechanics(),
-    slide8_CriticalPrice(),
-    slide9_VolPremium(),
+    slide7_WeightMechanics(base),
+    slide8_CriticalPrice(base),
+    slide9_VolPremium(base),
     slide10_Adaptive(),
 
-    sectionDivider('III', 'Live Implementation', 'SOL/BRL on Mercado Bitcoin'),
-    buildSlide11_Implementation(),
+    sectionDivider('III', 'Live Implementation', `${pair} on Mercado Bitcoin`),
+    buildSlide11_Implementation(base, pair),
 
     sectionDivider('IV', 'Backtest: Apr 2020 \\textendash{} May 2026',
                    '2{,}239 trading days \\textbullet{} R\\$100 starting capital'),
     slide12_PerfChart(),
     slide13_DDChart(),
-    slide14_RiskMetrics(),
-    slide15_YearlyReturns(),
+    slide14_RiskMetrics(base),
+    slide15_YearlyReturns(base),
     slide16_MonthlyHeatmap(),
     slide17_MarketRegimes(),
 
     sectionDivider('V', 'Risk Considerations', ''),
-    slide19_Risks(),
+    slide19_Risks(base),
     slide20_Disclosures(),
 
     '\\end{document}',
@@ -714,8 +724,10 @@ export function buildStrategyDeck(): string {
 }
 
 // ── Implementation details slide (referenced in main builder) ──────────────────
-function buildSlide11_Implementation(): string {
-  return `\\begin{frame}{Live Implementation --- Mercado Bitcoin (SOL/BRL)}
+function buildSlide11_Implementation(base: string, pair: string): string {
+  const b = e(base);
+  const p = e(pair);
+  return `\\begin{frame}{Live Implementation --- Mercado Bitcoin (${p})}
 \\vspace{0.2em}
 \\arrayrulecolor{RuleColor}
 \\small
@@ -725,7 +737,7 @@ function buildSlide11_Implementation(): string {
 \\begin{itemize}
   \\setlength\\itemsep{0.12em}
   \\item Poll every 5 min (GitHub Actions)
-  \\item Fetch SOL/BRL spot price
+  \\item Fetch ${b}/BRL spot price
   \\item Compute weight \\& deviation
   \\item Skip if below adaptive threshold
   \\item Fetch balances (authenticated)

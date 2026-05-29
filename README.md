@@ -2,17 +2,17 @@
 
 [Shannon's Demon](https://en.wikipedia.org/wiki/Entropy_and_second_law_of_thermodynamics) is a volatility-harvesting strategy: hold two assets in a fixed 50/50 ratio by value and rebalance whenever the ratio drifts. Each rebalance systematically sells the outperformer and buys the underperformer, generating excess return from volatility over time.
 
-This repository provides a production-ready implementation running on **Mercado Bitcoin (SOL/BRL)**.
+This repository provides a production-ready implementation running on **Mercado Bitcoin (HYPE/BRL)**.
 
 ---
 
 ## Getting Started
 
-A fully operational rebalancer for your Mercado Bitcoin account running the Shannon's Demon strategy on SOL/BRL — no smart contract deployment, no Solana toolchain, no blockchain fees.
+A fully operational rebalancer for your Mercado Bitcoin account running the Shannon's Demon strategy on HYPE/BRL — no smart contract deployment, no Solana toolchain, no blockchain fees.
 
 **Key facts:**
 - Funds stay in your Mercado Bitcoin account (no on-chain custody)
-- Trades SOL/BRL natively via Mercado Bitcoin REST API (market orders)
+- Trades HYPE/BRL natively via Mercado Bitcoin REST API (market orders)
 - Automatic Brazilian tax compliance tracking (Lei 9.250/1995 Art. 21)
 - SQLite persistence with 15-day JSON rolling backup for audit trails
 - Automatic monthly performance reports with rule-based commentary (no API key needed)
@@ -46,7 +46,7 @@ npm run report                        # previous month
 
 Each report includes:
 - **Executive summary** with rule-based commentary (no API key required)
-- **Performance metrics** vs SOL-only, CDI (risk-free), and IBOV (equity) benchmarks
+- **Performance metrics** vs HYPE-only, CDI (risk-free), and IBOV (equity) benchmarks
 - **Rebalance history** with prices and fees
 - **Tax summary** per Lei 9.250/1995 Art. 21 (exemption status, DARF deadlines)
 - **Portfolio state** with AVCO cost basis and unrealized P&L
@@ -71,9 +71,9 @@ This interactive script securely stores your Yahoo email and app password in GNO
 
 **What's included:**
 - Daily return (%) and P&L (BRL)
-- Portfolio composition (SOL balance, BRL balance, allocation %)
+- Portfolio composition (HYPE balance, BRL balance, allocation %)
 - Trading activity (rebalances, buys, sells, fees)
-- SOL price movement
+- HYPE price movement
 
 Emails are sent locally via systemd timer (PM2 mode) or GitHub Actions (cloud). See **[bot/README.md § Daily Digest Email](./bot/README.md#daily-digest-email)** for full setup and troubleshooting.
 
@@ -142,7 +142,7 @@ Node.js 20
 │   ├── @types/node, typescript — Build tools
 │   └── vitest — Unit test framework
 ├── Mercado Bitcoin API v4
-│   └── OAuth2 (client credentials) → SOL/BRL market orders, price candles
+│   └── OAuth2 (client credentials) → HYPE/BRL market orders, price candles
 └── GNOME Keyring (local only)
     └── secret-tool lookup → store/retrieve credentials
 ```

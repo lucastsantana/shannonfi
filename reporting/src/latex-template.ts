@@ -215,7 +215,7 @@ function buildSlide3_MonthPerformance(p: ReportPayload, monthLabel: string): str
 \\rowcolor{Navy}\\textcolor{white}{\\textbf{Metric}} & \\textcolor{white}{\\textbf{Value}} \\\\
 \\midrule
 Portfolio Return       & ${monthReturnStr} \\\\
-SOL/BRL Price Change   & ${solReturnStr} \\\\
+${escLtx(p.baseAsset)}/BRL Price Change   & ${solReturnStr} \\\\
 CDI (month)            & ${cdiMonthly} \\\\
 IBOV (month)           & ${ibovMonthly} \\\\
 Days with Data         & ${p.monthly.daysWithData} \\\\
@@ -248,7 +248,7 @@ function buildSlide4_RebalanceHistory(p: ReportPayload): string {
       ? coloredReturn(t.realizedGainBrl, escBrl(t.realizedGainBrl))
       : '{\\color{MutedText}---}';
     const driftColor = t.driftBeforePct > 5 ? 'Danger' : 'BodyText';
-    return `${t.date} & \\textcolor{${dirColor}}{${dirStr}} & ${escBrl(t.brlAmount)} & ${escBrl(t.fillPrice)}/SOL & ${escBrl(t.feeBrl)} & ${realizedStr} & {\\color{${driftColor}}${t.driftBeforePct.toFixed(2)}\\%} \\\\`;
+    return `${t.date} & \\textcolor{${dirColor}}{${dirStr}} & ${escBrl(t.brlAmount)} & ${escBrl(t.fillPrice)}/${escLtx(p.baseAsset)} & ${escBrl(t.feeBrl)} & ${realizedStr} & {\\color{${driftColor}}${t.driftBeforePct.toFixed(2)}\\%} \\\\`;
   }).join('\n');
 
   return `\\begin{frame}{Rebalance History}
@@ -294,8 +294,8 @@ function buildSlide5_BenchmarkComparison(p: ReportPayload): string {
 \\toprule
 \\rowcolor{Navy}\\textcolor{white}{\\textbf{Benchmark}} & \\textcolor{white}{\\textbf{This Month}} & \\textcolor{white}{\\textbf{Since Inception}} \\\\
 \\midrule
-Shannon's Demon  & ${sdMonthly}   & ${sdCumul}   \\\\
-SOL Buy-and-Hold & ${solMonthly}  & ${solCumul}  \\\\
+Shannon's Demon                   & ${sdMonthly}   & ${sdCumul}   \\\\
+${escLtx(p.baseAsset)} Buy-and-Hold & ${solMonthly}  & ${solCumul}  \\\\
 CDI              & ${cdiMonthly}  & ${cdiCumul}  \\\\
 IBOV             & ${ibovMonthly} & ${ibovCumul} \\\\
 \\bottomrule

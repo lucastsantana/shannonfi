@@ -36,7 +36,7 @@ function renderReport(p: ReportPayload, commentary: string): string {
         '| Date | Direction | Amount (BRL) | Fill Price | Fee (BRL) | Realized Gain (BRL) | Drift Before |',
         '|------|-----------|-------------|------------|-----------|---------------------|-------------|',
         ...p.trades.map(t =>
-          `| ${t.date} | ${t.direction} | ${fmtBrl(t.brlAmount)} | ${fmtBrl(t.fillPrice)}/SOL | ${fmtBrl(t.feeBrl)} | ${t.realizedGainBrl != null ? fmtBrl(t.realizedGainBrl) : '—'} | ${fmtPct(t.driftBeforePct)} |`
+          `| ${t.date} | ${t.direction} | ${fmtBrl(t.brlAmount)} | ${fmtBrl(t.fillPrice)}/${p.baseAsset} | ${fmtBrl(t.feeBrl)} | ${t.realizedGainBrl != null ? fmtBrl(t.realizedGainBrl) : '—'} | ${fmtPct(t.driftBeforePct)} |`
         ),
       ].join('\n');
 
@@ -136,7 +136,7 @@ ${tradesTable}
 
 ---
 
-_Strategy: Shannon's Demon (50/50 SOL/BRL). Exchange: Mercado Bitcoin._
+_Strategy: Shannon's Demon (50/50 ${p.baseAsset}/BRL). Exchange: Mercado Bitcoin._
 _Data source: local SQLite database. CDI: ${p.benchmarks.cdi.source}. IBOV: ${p.benchmarks.ibov.source}._
 `;
 }

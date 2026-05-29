@@ -19,9 +19,9 @@
 #   - Above threshold: DARF payment by last business day of the following month
 exchange: mercadobitcoin
 
-# Trading pair symbol. The base asset is the non-BRL side (e.g. SOL, HYPE, BTC).
+# Trading pair symbol. The base asset is the non-BRL side (e.g. HYPE, HYPE, BTC).
 # Change to switch the bot to a different asset (e.g. HYPE-BRL).
-symbol: SOL-BRL
+symbol: HYPE-BRL
 
 mercadobitcoin:
   clientId: "your-client-id-here"
@@ -77,7 +77,7 @@ volatilityWindowDays: 30
 # ── Tax compliance ─────────────────────────────────────────────────────────────
 
 # Lei 9.250/1995 Art. 21 (domestic exchange):
-#   When true, SELL_SOL trades are capped so monthly gross SELL proceeds stay
+#   When true, SELL_HYPE trades are capped so monthly gross SELL proceeds stay
 #   ≤ R$34,650 (R$35,000 minus a 1% safety buffer). BUY trades are never capped.
 #   If the remaining allowance is below minTradeSizeBrl, the SELL trade is skipped.
 #

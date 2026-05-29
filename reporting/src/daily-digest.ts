@@ -132,7 +132,7 @@ async function compileDailyDigest(config: any): Promise<DailyDigest | null> {
 /**
  * Render HTML email body
  */
-function renderEmailHtml(digest: DailyDigest): string {
+function renderEmailHtml(digest: DailyDigest, baseAsset: string): string {
   const monthNames = [
     'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
     'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
@@ -209,7 +209,7 @@ function renderEmailHtml(digest: DailyDigest): string {
       <h2>Portfolio Composition</h2>
       <div class="grid">
         <div class="box">
-          <div class="box-label">SOL Balance</div>
+          <div class="box-label">${baseAsset} Balance</div>
           <div class="box-value">${digest.baseEnd.toFixed(6)}</div>
           <div class="box-subvalue">${fmtBrl(digest.baseEnd * digest.basePriceEnd)}</div>
         </div>
@@ -219,7 +219,7 @@ function renderEmailHtml(digest: DailyDigest): string {
         </div>
       </div>
       <div class="metric">
-        <span class="metric-label">SOL Allocation</span>
+        <span class="metric-label">${baseAsset} Allocation</span>
         <span class="metric-value">${digest.baseRatioEnd.toFixed(2)}%</span>
       </div>
       <div class="metric">
@@ -257,15 +257,15 @@ function renderEmailHtml(digest: DailyDigest): string {
     <div class="card">
       <h2>Price Movement</h2>
       <div class="metric">
-        <span class="metric-label">SOL Start</span>
+        <span class="metric-label">${baseAsset} Start</span>
         <span class="metric-value">${fmtBrl(digest.basePriceStart)}</span>
       </div>
       <div class="metric">
-        <span class="metric-label">SOL End</span>
+        <span class="metric-label">${baseAsset} End</span>
         <span class="metric-value">${fmtBrl(digest.basePriceEnd)}</span>
       </div>
       <div class="metric">
-        <span class="metric-label">SOL Change</span>
+        <span class="metric-label">${baseAsset} Change</span>
         <span class="metric-value" style="color: ${digest.basePriceEnd - digest.basePriceStart >= 0 ? '#10b981' : '#ef4444'}">
           ${digest.basePriceEnd - digest.basePriceStart >= 0 ? '+' : ''}${fmtBrl(digest.basePriceEnd - digest.basePriceStart)}
         </span>
@@ -273,7 +273,7 @@ function renderEmailHtml(digest: DailyDigest): string {
     </div>
 
     <div class="footer">
-      <p>This is an automated digest from Shannon's Demon (SOL/BRL volatility harvesting bot).</p>
+      <p>This is an automated digest from Shannon's Demon (${baseAsset}/BRL volatility harvesting bot).</p>
       <p>For support, check the logs or review your trade history in <code>data/trade_history.json</code>.</p>
     </div>
   </div>
@@ -350,6 +350,7 @@ async function main(): Promise<void> {
 
   const config = loadConfig(configPath);
   logger.level = config.logLevel;
+  const baseAsset = config.symbol.split('-')[0] ?? 'BASE';
 
   // Try to get SMTP credentials from keyring first, then fall back to config
   let smtpUsername: string | undefined;
@@ -382,7 +383,7 @@ async function main(): Promise<void> {
 
   // Render email
   const subject = `Shannon's Demon Digest — ${digest.dateBRT}`;
-  const html = renderEmailHtml(digest);
+  const html = renderEmailHtml(digest, baseAsset);
 
   // Send email
   try {

@@ -61,30 +61,32 @@ export function computeMaxDrawdown(values: number[]): number {
 
 export function generateCommentary(p: ReportPayload): string {
   const { monthly, cumulative, benchmarks, taxSummary, portfolio } = p;
+  const base = p.baseAsset;
+  const pair = `${base}/BRL`;
   const paragraphs: string[] = [];
 
   // ── Paragraph 1: Overall performance this month ───────────────────────────
-  const portfolioVsSol = monthly.monthlyReturnPct - monthly.solOnlyReturnPct;
+  const portfolioVsBase = monthly.monthlyReturnPct - monthly.baseOnlyReturnPct;
   let p1: string;
   if (monthly.isSparse) {
     p1 = `This report covers a partial month with only ${monthly.daysWithData} days of portfolio data, ` +
       `so figures should be interpreted with caution. ` +
       `The strategy recorded a return of ${fmtPct(monthly.monthlyReturnPct)} over the available period, ` +
-      `while SOL/BRL moved ${fmtPct(monthly.solOnlyReturnPct)} over the same window.`;
-  } else if (Math.abs(portfolioVsSol) < 0.5) {
-    p1 = `Shannon's Demon tracked closely with SOL's raw price move this month, ` +
-      `with the portfolio returning ${fmtPct(monthly.monthlyReturnPct)} against a ${fmtPct(monthly.solOnlyReturnPct)} ` +
-      `move in SOL/BRL. When the two figures are this close it typically indicates a directional ` +
+      `while ${pair} moved ${fmtPct(monthly.baseOnlyReturnPct)} over the same window.`;
+  } else if (Math.abs(portfolioVsBase) < 0.5) {
+    p1 = `Shannon's Demon tracked closely with ${base}'s raw price move this month, ` +
+      `with the portfolio returning ${fmtPct(monthly.monthlyReturnPct)} against a ${fmtPct(monthly.baseOnlyReturnPct)} ` +
+      `move in ${pair}. When the two figures are this close it typically indicates a directional ` +
       `market where mean-reversion opportunities were limited — the strategy's edge comes from ` +
       `harvesting volatility around a mean, not from trending periods.`;
-  } else if (portfolioVsSol > 0) {
-    p1 = `The strategy outperformed a passive SOL position this month, returning ` +
-      `${fmtPct(monthly.monthlyReturnPct)} against a ${fmtPct(monthly.solOnlyReturnPct)} move in SOL/BRL. ` +
-      `This is the core Shannon's Demon effect: rebalancing captured the spread between SOL price ` +
+  } else if (portfolioVsBase > 0) {
+    p1 = `The strategy outperformed a passive ${base} position this month, returning ` +
+      `${fmtPct(monthly.monthlyReturnPct)} against a ${fmtPct(monthly.baseOnlyReturnPct)} move in ${pair}. ` +
+      `This is the core Shannon's Demon effect: rebalancing captured the spread between ${base} price ` +
       `oscillations and the stable BRL leg, converting volatility into portfolio gains above what ` +
       `either asset delivered on its own.`;
   } else {
-    p1 = `SOL outpaced the balanced portfolio this month — SOL/BRL moved ${fmtPct(monthly.solOnlyReturnPct)} ` +
+    p1 = `${base} outpaced the balanced portfolio this month — ${pair} moved ${fmtPct(monthly.baseOnlyReturnPct)} ` +
       `while the strategy returned ${fmtPct(monthly.monthlyReturnPct)}. This is expected during strongly ` +
       `trending periods: the 50/50 rebalancing discipline trims the winning asset as it rises, ` +
       `reducing upside participation in exchange for lower drawdown. The cost of that protection ` +
@@ -105,7 +107,7 @@ export function generateCommentary(p: ReportPayload): string {
           `meaning the strategy delivered a positive real spread over simply holding cash in a fixed-income fund this month.`);
       } else if (vsRiskFree < -0.5) {
         parts.push(`The portfolio returned ${fmtPct(Math.abs(vsRiskFree))} less than CDI this month. ` +
-          `In periods of low SOL volatility or directional moves, the strategy's risk premium over ` +
+          `In periods of low ${base} volatility or directional moves, the strategy's risk premium over ` +
           `the risk-free rate can turn negative — this is a normal occurrence and expected to ` +
           `reverse over the full cycle.`);
       } else {
@@ -117,11 +119,11 @@ export function generateCommentary(p: ReportPayload): string {
       const ibovPct = benchmarks.ibov.monthlyReturn * 100;
       const vsIbov = monthly.monthlyReturnPct - ibovPct;
       if (ibovPct < -3) {
-        parts.push(`IBOV fell sharply this month, providing useful context: the SOL/BRL balanced portfolio ` +
+        parts.push(`IBOV fell sharply this month, providing useful context: the ${pair} balanced portfolio ` +
           `behaved as an uncorrelated asset class relative to Brazilian equities${vsIbov > 0 ? ', and outperformed IBOV' : ''}.`);
       } else if (vsIbov > 2) {
         parts.push(`The strategy also outperformed IBOV by ${fmtPct(vsIbov)}, underscoring the benefit of ` +
-          `holding a volatile, globally-priced asset like SOL alongside local currency.`);
+          `holding a volatile asset like ${base} alongside local currency.`);
       } else if (vsIbov < -2) {
         parts.push(`IBOV outperformed the portfolio by ${fmtPct(Math.abs(vsIbov))} this month, ` +
           `reflecting a period of relative strength in Brazilian equities.`);
@@ -139,17 +141,17 @@ export function generateCommentary(p: ReportPayload): string {
       `the trigger. Zero-rebalance months minimise fees and preserve the position without sacrificing allocation discipline.`;
   } else if (monthly.rebalanceCount === 1) {
     const dir = p.trades[0]?.direction ?? '';
-    const dirStr = dir.startsWith('Buy') ? 'buying SOL on a dip' : 'selling SOL into strength';
+    const dirStr = dir.startsWith('Buy') ? `buying ${base} on a dip` : `selling ${base} into strength`;
     p3 = `One rebalance was executed this month — ${dirStr} — bringing the portfolio back to its ` +
       `50/50 target. A single rebalance is a healthy signal: enough volatility to generate an ` +
       `opportunity, but not so much churn that fees erode the gains.`;
   } else if (monthly.rebalanceCount <= 4) {
     p3 = `${monthly.rebalanceCount} rebalances were executed across ${monthly.buyCount} buys and ` +
-      `${monthly.sellCount} sells, reflecting moderate volatility in the SOL/BRL price. Each ` +
+      `${monthly.sellCount} sells, reflecting moderate volatility in the ${pair} price. Each ` +
       `rebalance represents the strategy mechanically buying low and selling high relative to ` +
       `the portfolio's own target allocation — the source of Shannon's Demon's long-run edge.`;
   } else {
-    p3 = `${monthly.rebalanceCount} rebalances this month indicate elevated volatility in SOL/BRL, ` +
+    p3 = `${monthly.rebalanceCount} rebalances this month indicate elevated volatility in ${pair}, ` +
       `giving the strategy multiple opportunities to harvest the spread. High rebalance frequency ` +
       `is exactly when the strategy's compounding edge is strongest, though it also means higher ` +
       `cumulative fees (${fmtBrl(monthly.totalFeesBrl)} this month). Net of fees, frequent ` +
@@ -167,9 +169,9 @@ export function generateCommentary(p: ReportPayload): string {
       p4 += `The all-time maximum drawdown now stands at ${fmtPct(cumulative.maxDrawdownPct)}, ` +
         `which is worth monitoring as the strategy matures. `;
     }
-    p4 += `The BRL leg provides a natural cushion during SOL downturns — when SOL falls sharply, ` +
+    p4 += `The BRL leg provides a natural cushion during ${base} downturns — when ${base} falls sharply, ` +
       `the rebalancer buys more at lower prices, which is the mechanism that tends to recover ` +
-      `drawdowns faster than a fully concentrated SOL position would.`;
+      `drawdowns faster than a fully concentrated ${base} position would.`;
     paragraphs.push(p4);
   }
 
@@ -182,10 +184,10 @@ export function generateCommentary(p: ReportPayload): string {
   }
   if (Math.abs(portfolio.unrealizedGainPct) > 5) {
     const direction = portfolio.unrealizedGainBrl >= 0 ? 'gain' : 'loss';
-    lines.push(`The current SOL position carries an unrealized ${direction} of ` +
+    lines.push(`The current ${base} position carries an unrealized ${direction} of ` +
       `${fmtBrl(Math.abs(portfolio.unrealizedGainBrl))} (${fmtPct(Math.abs(portfolio.unrealizedGainPct))}) ` +
-      `against the AVCO cost basis of ${fmtBrl(portfolio.averageCostBrl)}/SOL. ` +
-      `This unrealized ${direction} will only crystalise as a tax event if and when SOL is sold.`);
+      `against the AVCO cost basis of ${fmtBrl(portfolio.averageCostBrl)}/${base}. ` +
+      `This unrealized ${direction} will only crystalise as a tax event if and when ${base} is sold.`);
   }
   if (lines.length > 0) paragraphs.push(lines.join(' '));
 
@@ -204,6 +206,14 @@ export async function buildReportPayload(
   const costBasis = new CostBasisService(dbPath);
   const metrics = new MetricsService(history);
   const benchmarks = new BenchmarksService();
+
+  // Derive base asset from config symbol (e.g. "HYPE-BRL" → "HYPE")
+  let baseAsset = 'BASE';
+  try {
+    const { loadConfig } = await import('../../bot/src/config');
+    const cfg = loadConfig();
+    baseAsset = cfg.symbol.split('-')[0] ?? 'BASE';
+  } catch { /* config may not be present in all environments */ }
 
   const allSnapshots = history.readSnapshots();
   const allTrades = history.readTrades();
@@ -344,6 +354,7 @@ export async function buildReportPayload(
   // ── Build payload ──────────────────────────────────────────────────────────
   const payload: ReportPayload = {
     monthBRT,
+    baseAsset,
     monthly,
     cumulative,
     benchmarks: benchmarkData,
