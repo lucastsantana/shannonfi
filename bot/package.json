@@ -22,6 +22,8 @@
     "strategy-deck": "ts-node ../reporting/src/strategy-deck.ts",
     "strategy-deck:built": "node ../reporting/dist/strategy-deck.js",
     "setup-check": "ts-node src/scripts/setup-check.ts",
+    "liquidate": "ts-node src/scripts/liquidate.ts",
+    "liquidate:built": "node dist/scripts/liquidate.js",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
