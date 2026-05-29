@@ -139,18 +139,17 @@ export class RebalancerBot {
         // Estimate current base value using price drift; cash is unchanged
         const priceRatio = basePrice / prevPrice;
         const estBaseValueBrl = prev.baseValueBrl * priceRatio;
-        const estTotal = estBaseValueBrl + prev.brlBalance;
-        const estRatioBps = estTotal > 0 ? Math.round((estBaseValueBrl / estTotal) * 10_000) : 5000;
 
-        if (!shouldRebalance(estRatioBps, effectiveThresholdBps)) {
+        if (!shouldRebalance(estBaseValueBrl, prev.brlBalance, effectiveThresholdBps)) {
           logger.info('No rebalance needed (price-only estimate)', {
-            estBaseRatioBps: estRatioBps,
+            estBaseValueBrl: estBaseValueBrl.toFixed(2),
+            brlBalance: prev.brlBalance.toFixed(2),
             effectiveThresholdBps,
           });
           return;
         }
         logger.debug('Price estimate suggests rebalance — fetching balances', {
-          estBaseRatioBps: estRatioBps,
+          estBaseValueBrl: estBaseValueBrl.toFixed(2),
         });
       }
     }
@@ -205,7 +204,7 @@ export class RebalancerBot {
     }
 
     // ── Guard: drift threshold (precise, with actual balances) ─────────────────
-    if (!shouldRebalance(portfolio.baseRatioBps, effectiveThresholdBps)) {
+    if (!shouldRebalance(portfolio.baseValueBrl, portfolio.brlBalance, effectiveThresholdBps)) {
       logger.info('No rebalance needed', {
         deviationBps: portfolio.deviationBps,
         effectiveThresholdBps,

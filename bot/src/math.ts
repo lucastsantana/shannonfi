@@ -17,14 +17,20 @@ export function computeBaseRatioBps(baseValueBrl: number, totalValueBrl: number)
   return Math.round((baseValueBrl / totalValueBrl) * BPS_DENOMINATOR);
 }
 
-/** Absolute deviation from 50/50 target in basis points. */
-export function computeDeviationBps(baseRatioBps: number): number {
-  return Math.abs(baseRatioBps - TARGET_ALLOCATION_BPS);
+/**
+ * Deviation as |base - brl| / min(base, brl) in basis points.
+ * This scales 1:1 with the actual price move, so the threshold multiplier
+ * applies directly to MAD without the 2× amplification from weight-based math.
+ */
+export function computeDeviationBps(baseValueBrl: number, brlBalance: number): number {
+  const smaller = Math.min(baseValueBrl, brlBalance);
+  if (smaller <= 0) return 0;
+  return Math.round((Math.abs(baseValueBrl - brlBalance) / smaller) * BPS_DENOMINATOR);
 }
 
 /** Returns true if drift strictly exceeds threshold. */
-export function shouldRebalance(baseRatioBps: number, thresholdBps: number): boolean {
-  return computeDeviationBps(baseRatioBps) > thresholdBps;
+export function shouldRebalance(baseValueBrl: number, brlBalance: number, thresholdBps: number): boolean {
+  return computeDeviationBps(baseValueBrl, brlBalance) > thresholdBps;
 }
 
 /** BRL amount and direction needed to restore 50/50. */
