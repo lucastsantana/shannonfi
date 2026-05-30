@@ -49,6 +49,6 @@ jsonRetentionDays: 15
 # ─── Telegram notifications (optional) ──────────────────────────────────────────
 # Send real-time trade notifications to Telegram.
 # Bot token is loaded from GNOME Keyring at runtime (see docs for setup).
-#
-# telegram:
-#   chatId: "123456789"
+
+telegram:
+  chatId: "1684226180"
