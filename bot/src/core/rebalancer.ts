@@ -93,17 +93,16 @@ export class RebalancerBot {
     this.isRunning = true;
     const neverExceed = this.config.exchange === 'mercadobitcoin' ? this.config.neverExceedExemptionLimit : false;
     const baseAsset = this.config.symbol.split('-')[0]!;
+
+    // Build execution mode string with config variable names
+    const executionMode = `${this.config.exchange} | neverExceedExemptionLimit=${neverExceed} | enableDayTradeSafeguard=${this.config.enableDayTradeSafeguard}`;
+
     logger.info("Shannon's Demon bot starting", {
-      exchange: this.config.exchange,
+      mode: executionMode,
       symbol: this.config.symbol,
       dryRun: this.config.dryRun,
       useAdaptiveThreshold: this.config.useAdaptiveThreshold,
-      effectiveThresholdBps: this.config.rebalanceThresholdBps,
       pollIntervalSeconds: this.config.pollIntervalSeconds,
-      safeguards: {
-        enableDayTradeSafeguard: this.config.enableDayTradeSafeguard ? 'ON (no same-day opposite trades)' : 'OFF (any rebalance allowed)',
-        neverExceedExemptionLimit: neverExceed ? `ON (cap SELL to stay ≤ R$34,650/month under Lei 9.250/1995)` : 'OFF',
-      },
     });
 
     process.on('SIGINT', () => this.shutdown());
