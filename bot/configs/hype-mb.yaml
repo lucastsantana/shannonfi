@@ -1,0 +1,43 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# HYPE-BRL on Mercado Bitcoin — Shannon's Demon
+# ─────────────────────────────────────────────────────────────────────────────
+
+exchange: mercadobitcoin
+symbol: HYPE-BRL
+
+# Mercado Bitcoin API credentials
+# Actual values are loaded from GNOME Keyring at runtime via start-instance.sh
+mercadobitcoin:
+  clientId: "PLACEHOLDER"
+  clientSecret: "PLACEHOLDER"
+
+# ─── Strategy parameters ──────────────────────────────────────────────────────
+
+rebalanceThresholdBps: 100        # 1.0% static threshold
+maxSlippageBps: 100               # 1.0% max slippage
+minPortfolioValueBrl: 10          # Skip if portfolio < R$10
+minTradeSizeBrl: 1                # Skip trades < R$1
+pollIntervalSeconds: 300          # Check every 5 minutes
+minRebalanceIntervalSeconds: 300  # Min 5 min between rebalances
+
+# ─── Adaptive threshold ────────────────────────────────────────────────────────
+
+useAdaptiveThreshold: true
+thresholdVolatilityMultiplier: 1.25
+volatilityWindowDays: 30
+
+# ─── Tax compliance (MB only) ──────────────────────────────────────────────────
+# Lei 9.250/1995 Art. 21: Cap SELL trades to stay ≤ R$34,650/month
+
+neverExceedExemptionLimit: true
+
+# ─── Runtime ──────────────────────────────────────────────────────────────────
+
+dryRun: false
+logLevel: info
+
+# ─── Data persistence (SEPARATE FROM OTHER INSTANCES) ──────────────────────────
+# Each instance has its own database and JSON backups to prevent data mixing
+
+dbPath: ./data/hype-mb/shannonfi.db
+jsonRetentionDays: 15
