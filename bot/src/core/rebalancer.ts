@@ -107,13 +107,27 @@ export class RebalancerBot {
     process.on('SIGINT', () => this.shutdown());
     process.on('SIGTERM', () => this.shutdown());
 
+    // Align polling to system clock boundaries (e.g., 9:30, 9:35, 9:40 for 5-min interval)
+    const pollIntervalMs = this.config.pollIntervalSeconds * 1_000;
+    const now = Date.now();
+    const msIntoBoundary = now % pollIntervalMs;
+    const msUntilNextBoundary = msIntoBoundary === 0 ? 0 : pollIntervalMs - msIntoBoundary;
+
+    if (msUntilNextBoundary > 0) {
+      logger.info('Waiting for next clock-aligned poll boundary', {
+        waitMs: msUntilNextBoundary,
+        nextPollInSeconds: Math.ceil(msUntilNextBoundary / 1_000),
+      });
+      await new Promise((r) => setTimeout(r, msUntilNextBoundary));
+    }
+
     while (this.isRunning) {
       try {
         await this.checkAndRebalance();
       } catch (err) {
         logger.error('Error in rebalance cycle', { error: (err as Error).message });
       }
-      await new Promise((r) => setTimeout(r, this.config.pollIntervalSeconds * 1_000));
+      await new Promise((r) => setTimeout(r, pollIntervalMs));
     }
   }
 
