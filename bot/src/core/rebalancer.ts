@@ -94,11 +94,12 @@ export class RebalancerBot {
     const neverExceed = this.config.exchange === 'mercadobitcoin' ? this.config.neverExceedExemptionLimit : false;
     const baseAsset = this.config.symbol.split('-')[0]!;
 
-    // Build execution mode string with config variable names
-    const executionMode = `${this.config.exchange} | neverExceedExemptionLimit=${neverExceed} | enableDayTradeSafeguard=${this.config.enableDayTradeSafeguard}`;
-
     logger.info("Shannon's Demon bot starting", {
-      mode: executionMode,
+      mode: {
+        exchange: this.config.exchange,
+        neverExceedExemptionLimit: neverExceed,
+        enableDayTradeSafeguard: this.config.enableDayTradeSafeguard,
+      },
       symbol: this.config.symbol,
       dryRun: this.config.dryRun,
       useAdaptiveThreshold: this.config.useAdaptiveThreshold,
