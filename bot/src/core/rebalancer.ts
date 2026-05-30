@@ -92,14 +92,18 @@ export class RebalancerBot {
   async start(): Promise<void> {
     this.isRunning = true;
     const neverExceed = this.config.exchange === 'mercadobitcoin' ? this.config.neverExceedExemptionLimit : false;
+    const baseAsset = this.config.symbol.split('-')[0]!;
     logger.info("Shannon's Demon bot starting", {
       exchange: this.config.exchange,
+      symbol: this.config.symbol,
       dryRun: this.config.dryRun,
       useAdaptiveThreshold: this.config.useAdaptiveThreshold,
-      enableDayTradeSafeguard: this.config.enableDayTradeSafeguard,
-      thresholdBps: this.config.rebalanceThresholdBps,
+      effectiveThresholdBps: this.config.rebalanceThresholdBps,
       pollIntervalSeconds: this.config.pollIntervalSeconds,
-      neverExceedExemptionLimit: neverExceed,
+      safeguards: {
+        enableDayTradeSafeguard: this.config.enableDayTradeSafeguard ? 'ON (no same-day opposite trades)' : 'OFF (any rebalance allowed)',
+        neverExceedExemptionLimit: neverExceed ? `ON (cap SELL to stay ≤ R$34,650/month under Lei 9.250/1995)` : 'OFF',
+      },
     });
 
     process.on('SIGINT', () => this.shutdown());
@@ -163,12 +167,17 @@ export class RebalancerBot {
         const estBaseRatioBps = computeBaseRatioBps(estBaseValueBrl, estTotalBrl);
         const estDeviationBps = Math.abs(estBaseRatioBps - 5000);
 
-        // Calculate prices needed to trigger rebalance (both directions)
+        // Calculate trigger prices based on latest acquisition cost (cost basis),
+        // not current market price. These stay constant unless cost basis changes.
+        const costBasisLedger = this.costBasis.getLedger();
+        const acquisitionPrice = costBasisLedger.base.averageCostBrl > 0 ? costBasisLedger.base.averageCostBrl : prevPrice;
+        const costBasisValueBrl = prev.baseBalance * acquisitionPrice;
+        const costBasisTotalBrl = costBasisValueBrl + prev.brlBalance;
         const thresholdRatio = effectiveThresholdBps / 10000;
-        const triggerRatioUp = 0.5 + thresholdRatio;    // Price up to this allocation
-        const triggerRatioDown = 0.5 - thresholdRatio;  // Price down to this allocation
-        const triggerPriceUp = (triggerRatioUp * estTotalBrl) / prev.baseBalance;
-        const triggerPriceDown = (triggerRatioDown * estTotalBrl) / prev.baseBalance;
+        const triggerRatioUp = 0.5 + thresholdRatio;
+        const triggerRatioDown = 0.5 - thresholdRatio;
+        const triggerPriceUp = (triggerRatioUp * costBasisTotalBrl) / prev.baseBalance;
+        const triggerPriceDown = (triggerRatioDown * costBasisTotalBrl) / prev.baseBalance;
 
         logMetadata.baseAsset = this.config.symbol.split('-')[0];
         logMetadata.baseBalance = prev.baseBalance.toFixed(6);
@@ -178,6 +187,7 @@ export class RebalancerBot {
         logMetadata.deviationBps = estDeviationBps;
         logMetadata.portfolioValueBrl = estTotalBrl.toFixed(2);
         logMetadata.thresholdBps = effectiveThresholdBps;
+        logMetadata.acquisitionPrice = acquisitionPrice.toFixed(2);
         logMetadata.triggerPriceUpBrl = triggerPriceUp.toFixed(2);
         logMetadata.triggerPriceDownBrl = triggerPriceDown.toFixed(2);
       }
