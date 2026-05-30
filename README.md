@@ -58,24 +58,23 @@ See **[bot/README.md § Monthly Reporting](./bot/README.md#monthly-reporting)** 
 
 ---
 
-## Daily Digest Email
+## Trade Notifications
 
-The bot sends an email summary of yesterday's trading activity every morning at **00:30 AM BRT**.
+Real-time Telegram notifications when rebalance trades are executed. Each message includes fill price, fee, portfolio state before/after, and allocation drift.
 
 **Setup:**
 ```bash
-npm run setup-smtp
+# Create a Telegram bot via @BotFather, get your chat ID
+secret-tool store service telegram key botToken <your-bot-token>
 ```
 
-This interactive script securely stores your Yahoo email and app password in GNOME Keyring (same as MB credentials), tests the connection, and enables daily emails.
+Add to `bot/shannonfi.config.yaml`:
+```yaml
+telegram:
+  chatId: "123456789"    # Your personal Telegram chat ID
+```
 
-**What's included:**
-- Daily return (%) and P&L (BRL)
-- Portfolio composition (HYPE balance, BRL balance, allocation %)
-- Trading activity (rebalances, buys, sells, fees)
-- HYPE price movement
-
-Emails are sent locally via systemd timer (PM2 mode) or GitHub Actions (cloud). See **[bot/README.md § Daily Digest Email](./bot/README.md#daily-digest-email)** for full setup and troubleshooting.
+See **[bot/README.md § Trade Notifications](./bot/README.md#trade-notifications)** for setup details and message format.
 
 ---
 

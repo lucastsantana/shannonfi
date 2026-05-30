@@ -263,140 +263,68 @@ PM2 will keep the bot alive if it crashes and auto-restart on system reboot.
 
 ---
 
-## Daily Digest Email
+## Trade Notifications
 
-The bot sends a formatted email summary every morning at **00:30 AM BRT** with yesterday's trading activity. This is useful for staying informed without opening the dashboard.
+Receive real-time Telegram messages when trades are executed, showing fill price, fee, portfolio state before/after, and allocation drift.
 
-### Setup (Recommended: GNOME Keyring)
+### Setup
 
-Store your SMTP credentials securely in GNOME Keyring:
+**1. Create a Telegram bot** via [@BotFather](https://t.me/BotFather):
+   - Send `/start` and `/newbot` to BotFather
+   - Follow the prompts to create a bot
+   - Copy the bot token (format: `123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11`)
 
+**2. Store the bot token** in GNOME Keyring:
 ```bash
-npm run setup-smtp
+secret-tool store --label="Telegram Bot Token" service telegram key botToken <YOUR_BOT_TOKEN>
 ```
 
-This interactive script will:
-1. Prompt for your Yahoo email and app password
-2. Store them encrypted in GNOME Keyring (like MB credentials)
-3. Test the SMTP connection to verify settings
-4. Exit on success
+**3. Get your Telegram chat ID**:
+   - Start a chat with your bot by visiting `https://t.me/<your_bot_username>`
+   - Send `/start` to the bot
+   - Run: `curl "https://api.telegram.org/bot<YOUR_BOT_TOKEN>/getUpdates" | jq '.result[0].message.chat.id'`
+   - Copy the numeric chat ID
 
-**Yahoo Mail Setup:**
-1. Go to [Account Security](https://login.yahoo.com/account/security)
-2. Click **"Generate app password"**
-3. Select app: **Other App**, enter: **Shannon's Demon**
-4. Copy the generated 16-character password and use it when running `npm run setup-smtp`
-
-### Setup (Fallback: Config File)
-
-If you prefer not to use GNOME Keyring, add SMTP configuration to `shannonfi.config.yaml`:
-
+**4. Add to config file** (`hype-mb.yaml` or `btc-binance.yaml`):
 ```yaml
-smtp:
-  host: smtp.mail.yahoo.com
-  port: 587
-  secure: false                    # TLS (port 587)
-  username: your-email@yahoo.com.br
-  password: your-app-password      # Yahoo: use app-specific password from Account Security
-  recipientEmail: your-email@yahoo.com.br
+telegram:
+  chatId: "123456789"    # Your chat ID from step 3
 ```
 
-**Note:** This is less secure; storing credentials in the keyring is recommended.
+### Message Format
 
-### Testing the Setup
+Each trade notification includes:
 
-Before enabling automation, test that everything works:
-
-```bash
-npm run setup-smtp
 ```
+🟢 BUY ✅
+━━━━━━━━━━━━━━━━━━━━━━
+Direction: BUY HYPE
+Amount: R$ 500.00 → 1.495 HYPE
+Fill Price: R$ 334.45/HYPE
+Fee: R$ 0.84
+Status: FILLED
 
-This will interactively prompt for your Yahoo email, app password, and recipient email. It automatically verifies the SMTP connection. If it succeeds, credentials are stored in GNOME Keyring and ready to use.
+Portfolio (Before)
+├─ HYPE: R$ 5,100 (51.00%)
+└─ BRL: R$ 4,900 (49.00%)
 
-### Running Manually
+Portfolio (After)
+├─ HYPE: R$ 4,600 (50.00%)
+└─ BRL: R$ 5,400 (50.00%)
 
-```bash
-npm run daily-digest
+Drift: 1.00% → 0.00%
 ```
-
-This sends an email for yesterday's activity (or exits silently if no data found). Credentials are read from GNOME Keyring (preferred) or from config file (fallback).
-
-### Automated Scheduling
-
-**Local (systemd):**
-
-```bash
-# Enable and start the timer
-systemctl --user daemon-reload
-systemctl --user enable --now shannonfi-daily-digest.timer
-
-# Check next scheduled fire time
-systemctl --user list-timers shannonfi-daily-digest.timer
-
-# View recent runs
-journalctl --user -u shannonfi-daily-digest.service --no-pager
-```
-
-The timer runs at **00:30 AM BRT** every day (03:30 UTC).
-
-**GitHub Actions:**
-
-If deployed on GitHub, the daily digest runs automatically via `.github/workflows/daily-digest.yml` on the same schedule. Requires these secrets:
-- `MB_CLIENT_ID` (for SQLite cache)
-- `MB_CLIENT_SECRET` (for SQLite cache)
-- `SMTP_USERNAME` (Yahoo email)
-- `SMTP_PASSWORD` (app password)
-- `SMTP_RECIPIENT_EMAIL` (delivery email)
-
-### Email Contents
-
-Each digest includes:
-- **Daily return (%)** and absolute P&L (BRL)
-- **Portfolio composition**: HYPE balance, BRL balance, allocation %
-- **HYPE allocation drift** from 50% target
-- **Trading activity**: Count of rebalances, buys, sells, and fees paid
-- **HYPE price movement**: Start, end, and change
-
-If there are no snapshots for yesterday (e.g., bot wasn't running), the script exits silently.
 
 ### Troubleshooting
 
-**Keyring not found:**
-```bash
-# Check if GNOME Keyring is installed
-which secret-tool
+**"Telegram bot token not found in GNOME Keyring":**
+- Verify the token is stored: `secret-tool lookup service telegram key botToken`
+- Re-run the store command with the correct token
 
-# If missing, install it:
-sudo apt install gnome-keyring  # Debian/Ubuntu
-brew install gnome-keyring      # macOS
-```
-
-**SMTP authentication failed during setup:**
-- Verify Yahoo app password is correct (16 characters, from Account Security)
-- Confirm internet connection to `smtp.mail.yahoo.com:587`
-- Check firewall/VPN isn't blocking port 587
-- Try running `npm run setup-smtp` again to update credentials
-
-**Credentials lost after reboot (WSL2):**
-- Ensure GNOME Keyring daemon auto-starts. Add to `~/.bashrc`:
-  ```bash
-  if [ -z "${GNOME_KEYRING_CONTROL:-}" ] && command -v gnome-keyring-daemon &>/dev/null; then
-    eval $(gnome-keyring-daemon --start --components=secrets 2>/dev/null) 2>/dev/null || true
-    export GNOME_KEYRING_CONTROL
-  fi
-  ```
-- Then run: `source ~/.bashrc`
-
-**Email never arrives:**
-- Run manually: `npm run daily-digest` and check logs
-- Verify recipient email is spelled correctly in setup
-- Check Yahoo email spam folder
-- Run `npm run setup-smtp` again to re-test SMTP connection
-
-**No data for yesterday:**
-- Script only sends if snapshots exist for yesterday's date (BRT)
-- If bot wasn't running, no email is sent (this is normal)
-- Verify SQLite database has data: check `data/shannonfi.db` file size
+**Messages not arriving:**
+- Verify chat ID is correct: `curl "https://api.telegram.org/bot<TOKEN>/getUpdates"`
+- Check that Telegram config section is uncommented in YAML
+- Restart the bot: `pm2 restart hype-mb`
 
 ---
 

@@ -25,13 +25,9 @@ const BinanceSchema = z.object({
   apiBaseUrl: z.string().url().default('https://api.binance.com'),
 }).optional().default({});
 
-const SmtpSchema = z.object({
-  host: z.string().min(1),
-  port: z.number().int().min(1).max(65535),
-  secure: z.boolean().default(true),
-  username: z.string().min(1),
-  password: z.string().min(1),
-  recipientEmail: z.string().email(),
+const TelegramSchema = z.object({
+  // Telegram bot token is loaded from keyring; this is just the chat ID
+  chatId: z.string().min(1, 'Telegram chatId is required'),
 }).optional();
 
 // ─── Shared strategy fields (all exchanges) ───────────────────────────────────
@@ -64,8 +60,8 @@ const CommonConfigSchema = z.object({
   dbPath: z.string().default('./data/shannonfi.db'),
   jsonRetentionDays: z.number().int().min(0).max(365).default(15),
 
-  // ─── SMTP for daily digest email ─────────────────────────────────────────────
-  smtp: SmtpSchema,
+  // ─── Notifications ──────────────────────────────────────────────────────────
+  telegram: TelegramSchema,
 });
 
 // ─── Per-exchange config branches ─────────────────────────────────────────────
@@ -92,7 +88,7 @@ const ConfigSchema = z.discriminatedUnion('exchange', [MbConfigSchema, BinanceCo
 export type Config = z.infer<typeof ConfigSchema>;
 export type MercadoBitcoinConfig = z.infer<typeof MercadoBitcoinSchema>;
 export type BinanceConfig = z.infer<typeof BinanceSchema>;
-export type SmtpConfig = z.infer<typeof SmtpSchema>;
+export type TelegramConfig = z.infer<typeof TelegramSchema>;
 
 // ─── Loader ───────────────────────────────────────────────────────────────────
 

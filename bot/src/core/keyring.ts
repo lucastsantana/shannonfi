@@ -16,6 +16,9 @@ export interface KeyringCredentials {
     apiKey: string;
     apiSecret: string;
   };
+  telegram?: {
+    botToken: string;
+  };
 }
 
 /**
@@ -87,6 +90,31 @@ export function getBinanceCredentials(): { apiKey: string; apiSecret: string } {
 }
 
 /**
+ * Load Telegram bot token from GNOME Keyring (optional).
+ * Credentials must be stored with:
+ *   secret-tool store --label="..." service telegram key botToken
+ * Returns null if not configured.
+ */
+export function getTelegramCredentials(): { botToken: string } | null {
+  try {
+    const botToken = execSync('secret-tool lookup service telegram key botToken 2>/dev/null', {
+      encoding: 'utf-8',
+      stdio: ['pipe', 'pipe', 'ignore'],
+    }).trim();
+
+    if (!botToken) {
+      return null;
+    }
+
+    logger.debug('Loaded Telegram bot token from keyring');
+    return { botToken };
+  } catch (err) {
+    // Telegram not configured, which is optional
+    return null;
+  }
+}
+
+/**
  * Load all available credentials from keyring.
  * Returns only what's available; missing credentials are returned as undefined.
  */
@@ -103,6 +131,11 @@ export function getAvailableCredentials(): KeyringCredentials {
     credentials.binance = getBinanceCredentials();
   } catch (err) {
     // Binance credentials not available, skip
+  }
+
+  const telegramCreds = getTelegramCredentials();
+  if (telegramCreds) {
+    credentials.telegram = telegramCreds;
   }
 
   return credentials;

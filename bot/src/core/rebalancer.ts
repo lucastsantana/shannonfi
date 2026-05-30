@@ -9,6 +9,7 @@ import { logger } from './tracker/logger';
 import { shouldRebalance, computeRebalanceTrade } from '../math';
 import { Config } from '../config';
 import { BR_EFFECTIVE_LIMIT_BRL } from '../constants';
+import { TelegramService } from './notifier/telegram';
 
 // Small delay between sequential API calls during a rebalance execution,
 // to avoid hitting MB's 60 req/60s limit when multiple calls fire back-to-back.
@@ -45,6 +46,7 @@ export class RebalancerBot {
   private lastRebalanceDateBRT: string | null;
   private lastRebalanceDirection: 'BUY_BASE' | 'SELL_BASE' | null;
   private isRunning = false;
+  private telegram: TelegramService | null = null;
 
   constructor(
     private adapter: ExchangeAdapter,
@@ -60,6 +62,17 @@ export class RebalancerBot {
     const { dateBRT, direction } = history.getLastRebalanceInfo();
     this.lastRebalanceDateBRT = dateBRT;
     this.lastRebalanceDirection = direction;
+
+    if (this.config.telegram) {
+      try {
+        this.telegram = new TelegramService(this.config.telegram);
+        logger.info('Telegram notifications enabled');
+      } catch (err) {
+        logger.warn('Telegram notifications disabled', {
+          error: (err as Error).message,
+        });
+      }
+    }
 
     if (this.lastRebalanceTime > 0) {
       logger.info('Restored rebalance state from history', {
@@ -344,6 +357,30 @@ export class RebalancerBot {
 
     // Persist trade first so tax_events FK constraint is satisfied
     await this.history.appendTrade(tradeRecord);
+
+    // Send Telegram notification if configured
+    if (this.telegram && (tradeRecord.status === 'FILLED' || tradeRecord.status === 'DRY_RUN')) {
+      const baseAsset = this.config.symbol.split('-')[0]!;
+      const before: { baseBalance: number; brlBalance: number; basePrice: number; baseValueBrl: number; baseRatioBps: number; deviationBps: number } = {
+        baseBalance: portfolio.baseBalance,
+        brlBalance: portfolio.brlBalance,
+        basePrice: portfolio.basePrice,
+        baseValueBrl: portfolio.baseValueBrl,
+        baseRatioBps: portfolio.baseRatioBps,
+        deviationBps: portfolio.deviationBps,
+      };
+
+      const after: { baseBalance: number; brlBalance: number; basePrice: number; baseValueBrl: number; baseRatioBps: number; deviationBps: number } = {
+        baseBalance: tradeRecord.portfolioAfter?.baseBalance ?? portfolio.baseBalance,
+        brlBalance: tradeRecord.portfolioAfter?.brlBalance ?? portfolio.brlBalance,
+        basePrice: tradeRecord.portfolioAfter?.basePrice ?? portfolio.basePrice,
+        baseValueBrl: tradeRecord.portfolioAfter?.baseValueBrl ?? portfolio.baseValueBrl,
+        baseRatioBps: tradeRecord.portfolioAfter?.baseRatioBps ?? portfolio.baseRatioBps,
+        deviationBps: tradeRecord.portfolioAfter?.deviationBps ?? portfolio.deviationBps,
+      };
+
+      await this.telegram.sendTradeNotification(tradeRecord, baseAsset, before, after);
+    }
 
     if (pendingTaxEvent) {
       this.tax.appendTaxEvent(pendingTaxEvent);
