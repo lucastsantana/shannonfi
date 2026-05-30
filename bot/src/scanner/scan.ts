@@ -151,7 +151,7 @@ async function main(): Promise<void> {
 
     try {
     // Set up reporter
-    const reporter = new ScanReporter(telegram, activeSymbol!, db);
+    const reporter = new ScanReporter(telegram, activeSymbol!, db, config.exchange);
 
     if (cliArgs.reloadScan !== undefined) {
       // Replay a cached scan

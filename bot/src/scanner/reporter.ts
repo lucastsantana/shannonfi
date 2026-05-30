@@ -8,6 +8,7 @@ export class ScanReporter {
     private telegram: TelegramService | null,
     private currentSymbol: string,
     private db: Database.Database,
+    private exchange: string = 'Unknown',
   ) {}
 
   async report(scanResult: ScanResult, dryRun: boolean = false): Promise<void> {
@@ -66,7 +67,7 @@ export class ScanReporter {
 
     // Format the message
     const lines: string[] = [];
-    lines.push('🔍 <b>Asset Scanner</b>');
+    lines.push(`🔍 <b>Asset Scanner — ${this.exchange}</b>`);
     lines.push('━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     lines.push(`Window: ${windowDays} days | Scanned: ${totalScanned}`);
     lines.push('');

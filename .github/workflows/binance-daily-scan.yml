@@ -1,0 +1,108 @@
+name: Daily Binance Asset Scanner
+
+on:
+  schedule:
+    # 09:00 AM BRT = 12:00 PM UTC
+    - cron: '0 12 * * *'
+  workflow_dispatch:
+
+jobs:
+  binance-scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Restore SQLite cache (Binance)
+        uses: actions/cache@v4
+        with:
+          path: bot/data/btc-binance/shannonfi.db
+          key: bot-sqlite-binance-${{ github.repository }}
+          restore-keys: |
+            bot-sqlite-binance-
+
+      - name: Install dependencies
+        working-directory: bot
+        run: npm ci
+
+      - name: Build
+        working-directory: bot
+        run: npm run build
+
+      - name: Create Binance config from secrets
+        working-directory: bot
+        run: |
+          cat > configs/btc-binance-gh.yaml <<'EOF'
+          exchange: binance
+          symbol: BTC-BRL
+
+          binance:
+            apiBaseUrl: "https://api.binance.com"
+
+          rebalanceThresholdBps: 100
+          maxSlippageBps: 100
+          minPortfolioValueBrl: 10
+          minTradeSizeBrl: 1
+          pollIntervalSeconds: 300
+          minRebalanceIntervalSeconds: 300
+
+          useAdaptiveThreshold: true
+          thresholdVolatilityMultiplier: 1.25
+          volatilityWindowDays: 30
+
+          enableDayTradeSafeguard: true
+
+          dryRun: false
+          logLevel: info
+
+          dbPath: ./data/btc-binance/shannonfi.db
+          jsonRetentionDays: 15
+
+          telegram:
+            chatId: "${{ secrets.TELEGRAM_CHAT_ID }}"
+          EOF
+
+      - name: Run Binance asset scanner
+        working-directory: bot
+        run: |
+          npm run scan -- \
+            --config ./configs/btc-binance-gh.yaml \
+            --window 30 \
+            --min-volume 5000 \
+            --top 15
+        continue-on-error: true
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+
+      - name: Save SQLite cache (Binance)
+        uses: actions/cache@v4
+        if: always()
+        with:
+          path: bot/data/btc-binance/shannonfi.db
+          key: bot-sqlite-binance-${{ github.repository }}-${{ github.run_number }}
+
+      - name: Notify Slack on failure
+        if: failure() && vars.SLACK_WEBHOOK_URL != ''
+        uses: slackapi/slack-github-action@v1
+        with:
+          webhook-url: ${{ secrets.SLACK_WEBHOOK_URL }}
+          payload: |
+            {
+              "text": "❌ Binance Asset Scanner Failed",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*Binance Asset Scanner Failed*\n<${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View logs>"
+                  }
+                }
+              ]
+            }
