@@ -23,7 +23,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "scan": "ts-node -r tsconfig-paths/register src/scanner/scan.ts"
   },
   "dependencies": {
     "axios": "^1.16.1",
@@ -41,6 +42,7 @@
     "@types/uuid": "9.0.8",
     "@vitest/coverage-v8": "^1.6.1",
     "ts-node": "10.9.2",
+    "tsconfig-paths": "^4.2.0",
     "typescript": "5.4.5",
     "vitest": "^1.6.1"
   },

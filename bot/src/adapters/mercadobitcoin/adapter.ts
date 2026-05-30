@@ -206,6 +206,42 @@ export class MercadoBitcoinAdapter implements ExchangeAdapter {
     return pairs.map((p) => p.close);
   }
 
+  /**
+   * Fetch candles with volume data for a specific symbol (scanner use only).
+   * NOT on the ExchangeAdapter interface — scanner-specific.
+   * Returns close prices along with volume in base asset units.
+   */
+  async getCandlesWithVolume(
+    symbol: string,
+    countback: number,
+  ): Promise<Array<{ close: number; volume: number; timestamp: number }>> {
+    const resp = await this.endpoints.getCandles(countback, '1d', symbol);
+    const data = resp.t.map((ts, i) => ({
+      timestamp: ts,
+      close: parseFloat(resp.c[i] ?? '0'),
+      volume: parseFloat(resp.v[i] ?? '0'),
+    }));
+    data.sort((a, b) => a.timestamp - b.timestamp);
+    return data;
+  }
+
+  /**
+   * Get ticker data (24h stats) for specific symbols.
+   * NOT on the ExchangeAdapter interface — scanner-specific.
+   * Note: /tickers returns an array of tickers for the requested symbols.
+   */
+  async getTickersForSymbols(
+    symbols: string[],
+  ): Promise<Array<{ pair: string; vol: string; last: string }>> {
+    const tickers = await this.endpoints.getTickersForSymbols(symbols);
+    // Return only essential fields for scanner
+    return tickers.map((ticker) => ({
+      pair: ticker.pair,
+      vol: ticker.vol,
+      last: ticker.last,
+    }));
+  }
+
   private async pollOrderFill(accountId: string, orderId: string) {
     const terminal = ['filled', 'cancelled', 'partially_filled'];
 

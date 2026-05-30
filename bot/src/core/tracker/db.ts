@@ -66,6 +66,24 @@ export function resetDb(): void {
 }
 
 /**
+ * Get a config value by key, with optional default.
+ */
+export function getDbConfig(key: string, defaultValue?: string): string | null {
+  const db = getDb();
+  const row = db.prepare('SELECT value FROM config WHERE key = ?').get(key) as { value: string } | undefined;
+  return row?.value ?? defaultValue ?? null;
+}
+
+/**
+ * Set a config value by key.
+ */
+export function setDbConfig(key: string, value: string): void {
+  const db = getDb();
+  const now = new Date().toISOString();
+  db.prepare('INSERT OR REPLACE INTO config (key, value, set_at) VALUES (?, ?, ?)').run(key, value, now);
+}
+
+/**
  * Initialize database schema if tables don't exist.
  */
 function runMigrations(db: Database.Database): void {
@@ -145,11 +163,41 @@ function runMigrations(db: Database.Database): void {
       last_updated          TEXT NOT NULL DEFAULT ''
     );
 
+    CREATE TABLE IF NOT EXISTS config (
+      key                   TEXT PRIMARY KEY,
+      value                 TEXT NOT NULL,
+      set_at                TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS scans (
+      id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+      timestamp             TEXT NOT NULL,
+      window_days           INTEGER NOT NULL,
+      total_scanned         INTEGER NOT NULL,
+      status                TEXT NOT NULL DEFAULT 'COMPLETED',
+      executed_at           TEXT,
+      scan_data             TEXT NOT NULL,
+      telegram_message_id   INTEGER
+    );
+
+    CREATE TABLE IF NOT EXISTS pending_rotation (
+      id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+      from_symbol           TEXT NOT NULL,
+      to_symbol             TEXT NOT NULL,
+      approved_at           TEXT NOT NULL,
+      executed_at           TEXT,
+      status                TEXT NOT NULL DEFAULT 'APPROVED',
+      execution_error       TEXT
+    );
+
     -- Create indexes for common query patterns
     CREATE INDEX IF NOT EXISTS idx_trades_date ON trades(trade_date_brt);
     CREATE INDEX IF NOT EXISTS idx_trades_status ON trades(status);
     CREATE INDEX IF NOT EXISTS idx_tax_month ON tax_events(month_brt);
     CREATE INDEX IF NOT EXISTS idx_snapshots_date ON portfolio_snapshots(date_brt);
+    CREATE INDEX IF NOT EXISTS idx_scans_timestamp ON scans(timestamp);
+    CREATE INDEX IF NOT EXISTS idx_scans_status ON scans(status);
+    CREATE INDEX IF NOT EXISTS idx_pending_rotation_status ON pending_rotation(status);
   `);
 
   // Migrate direction strings from legacy 'BUY_SOL'/'SELL_SOL' to 'BUY_BASE'/'SELL_BASE'

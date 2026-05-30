@@ -7,6 +7,7 @@ import {
   MbOrder,
   MbCandlesResponse,
   MbCandleResolution,
+  MbTickersResponse,
 } from './raw-types';
 export class MbEndpoints {
   constructor(private client: MbClient, private symbol: string) {}
@@ -46,5 +47,10 @@ export class MbEndpoints {
     return this.client.getPublic<MbCandlesResponse>('/candles', {
       symbol: symbolOverride ?? this.symbol, resolution, to, countback,
     });
+  }
+
+  async getTickersForSymbols(symbols: string[]): Promise<MbTickersResponse> {
+    const symbolsParam = symbols.join(',');
+    return this.client.getPublic<MbTickersResponse>('/tickers', { symbols: symbolsParam });
   }
 }

@@ -1,4 +1,4 @@
-import axios from 'axios';
+import { execSync } from 'child_process';
 import { logger } from '../tracker/logger';
 import { TradeRecord } from '../../adapters/types';
 import { TelegramConfig } from '../../config';
@@ -110,13 +110,168 @@ export class TelegramService {
   }
 
   async sendMessage(text: string): Promise<void> {
-    await axios.post(`${this.apiUrl}/sendMessage`, {
+    const payload = {
       chat_id: this.chatId,
       text,
       parse_mode: 'HTML',
       disable_web_page_preview: true,
-    });
+    };
 
-    logger.debug('Telegram message sent');
+    const jsonPayload = JSON.stringify(payload).replace(/"/g, '\\"');
+    const cmd = `curl -s -X POST "${this.apiUrl}/sendMessage" -H "Content-Type: application/json" -d '${JSON.stringify(payload)}'`;
+
+    try {
+      execSync(cmd, { stdio: 'ignore' });
+      logger.debug('Telegram message sent');
+    } catch (err) {
+      logger.warn('Failed to send Telegram message', { error: (err as Error).message });
+      throw err;
+    }
+  }
+
+  async sendMessageWithButtons(
+    text: string,
+    buttons: Array<Array<{ text: string; callbackData: string }>>,
+  ): Promise<number> {
+    // Convert callbackData to callback_data for Telegram API
+    const telegramButtons = buttons.map((row) =>
+      row.map((btn) => ({
+        text: btn.text,
+        callback_data: btn.callbackData,
+      }))
+    );
+
+    const payload = {
+      chat_id: this.chatId,
+      text,
+      parse_mode: 'HTML',
+      disable_web_page_preview: true,
+      reply_markup: {
+        inline_keyboard: telegramButtons,
+      },
+    };
+
+    try {
+      const result = execSync(
+        `curl -s -X POST "${this.apiUrl}/sendMessage" -H "Content-Type: application/json" -d '${JSON.stringify(payload)}'`,
+        { encoding: 'utf-8' }
+      );
+      const response = JSON.parse(result);
+      const messageId = response.result?.message_id || 0;
+      logger.debug('Telegram message with buttons sent', { messageId });
+      return messageId;
+    } catch (err) {
+      logger.warn('Failed to send Telegram message with buttons', { error: (err as Error).message });
+      throw err;
+    }
+  }
+
+  async editMessageWithButtons(
+    messageId: number,
+    text: string,
+    buttons: Array<Array<{ text: string; callbackData: string }>>,
+  ): Promise<void> {
+    // Convert callbackData to callback_data for Telegram API
+    const telegramButtons = buttons.map((row) =>
+      row.map((btn) => ({
+        text: btn.text,
+        callback_data: btn.callbackData,
+      }))
+    );
+
+    const payload = {
+      chat_id: this.chatId,
+      message_id: messageId,
+      text,
+      parse_mode: 'HTML',
+      disable_web_page_preview: true,
+      reply_markup: {
+        inline_keyboard: telegramButtons,
+      },
+    };
+
+    try {
+      execSync(
+        `curl -s -X POST "${this.apiUrl}/editMessageText" -H "Content-Type: application/json" -d '${JSON.stringify(payload)}'`,
+        { stdio: 'ignore' }
+      );
+      logger.debug('Telegram message edited', { messageId });
+    } catch (err) {
+      logger.warn('Failed to edit Telegram message', { error: (err as Error).message });
+      throw err;
+    }
+  }
+
+  async editMessageText(messageId: number, text: string): Promise<void> {
+    const payload = {
+      chat_id: this.chatId,
+      message_id: messageId,
+      text,
+      parse_mode: 'HTML',
+    };
+
+    try {
+      execSync(
+        `curl -s -X POST "${this.apiUrl}/editMessageText" -H "Content-Type: application/json" -d '${JSON.stringify(payload)}'`,
+        { stdio: 'ignore' }
+      );
+      logger.debug('Telegram message text updated', { messageId });
+    } catch (err) {
+      logger.warn('Failed to update Telegram message text', { error: (err as Error).message });
+      throw err;
+    }
+  }
+
+  async answerCallbackQuery(callbackQueryId: string, text?: string): Promise<void> {
+    const payload = {
+      callback_query_id: callbackQueryId,
+      text: text || undefined,
+    };
+
+    try {
+      execSync(
+        `curl -s -X POST "${this.apiUrl}/answerCallbackQuery" -H "Content-Type: application/json" -d '${JSON.stringify(payload)}'`,
+        { stdio: 'ignore' }
+      );
+      logger.debug('Callback query answered', { callbackQueryId });
+    } catch (err) {
+      logger.warn('Failed to answer callback query', { error: (err as Error).message });
+      throw err;
+    }
+  }
+
+  /**
+   * Set up a handler for incoming callback queries (button clicks).
+   * Polls for updates using long-polling.
+   * This is a blocking call — should be run in a separate thread/task.
+   */
+  async setupCallbackHandler(handler: (query: any) => Promise<void>, timeoutSeconds: number = 60): Promise<void> {
+    let lastUpdateId = 0;
+    const startTime = Date.now();
+    const timeoutMs = timeoutSeconds * 1000;
+
+    while (Date.now() - startTime < timeoutMs) {
+      try {
+        const url = `${this.apiUrl}/getUpdates?offset=${lastUpdateId + 1}&timeout=30&allowed_updates=callback_query`;
+        const result = execSync(`curl -s "${url}"`, { encoding: 'utf-8' });
+        const response = JSON.parse(result);
+
+        const updates = response.result || [];
+        for (const update of updates) {
+          lastUpdateId = Math.max(lastUpdateId, update.update_id);
+          if (update.callback_query) {
+            await handler(update.callback_query);
+          }
+        }
+      } catch (err) {
+        logger.warn('Error polling Telegram updates', {
+          error: (err as Error).message,
+        });
+      }
+
+      await new Promise((r) => setTimeout(r, 1000));
+    }
+
+    logger.info('Telegram callback handler timed out');
   }
 }

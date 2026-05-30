@@ -91,4 +91,21 @@ export interface MbCandlesResponse {
 
 export type MbCandleResolution = '1m' | '15m' | '1h' | '3h' | '1d' | '1w' | '1M';
 
+// ─── GET /api/v4/tickers ─────────────────────────────────────────────────────
+
+export interface MbTicker {
+  pair: string;     // e.g. "HYPE-BRL"
+  high: string;     // highest price in 24h
+  low: string;      // lowest price in 24h
+  vol: string;      // volume in base asset (e.g. HYPE) over 24h
+  last: string;     // last price
+  buy: string;      // current buy price
+  sell: string;     // current sell price
+  open: string;     // opening price in 24h
+  date: number;     // unix timestamp
+}
+
+// Note: /tickers endpoint returns an array, not an object
+export type MbTickersResponse = MbTicker[];
+
 // Portfolio, TradeRecord, and PortfolioSnapshot are defined in ../types.ts
