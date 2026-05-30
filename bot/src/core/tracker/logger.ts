@@ -140,15 +140,14 @@ function formatConsoleOutput({ timestamp, level, message, ...meta }: any): strin
   }
 
   if (message.includes('Shannon\'s Demon bot starting')) {
-    const { mode, symbol, dryRun, useAdaptiveThreshold, pollIntervalSeconds } = meta;
+    const { exchange, symbol, dryRun, useAdaptiveThreshold, neverExceedExemptionLimit, enableDayTradeSafeguard, pollIntervalSeconds } = meta;
     let output = `${colors.cyan}${time}${colors.reset} ${colors.green}${colors.bold}🚀 SHANNON'S DEMON BOT STARTING${colors.reset}\n`;
-    output += `   Mode:\n`;
-    output += `     exchange: ${mode?.exchange}\n`;
-    output += `     neverExceedExemptionLimit: ${mode?.neverExceedExemptionLimit}\n`;
-    output += `     enableDayTradeSafeguard: ${mode?.enableDayTradeSafeguard}\n`;
+    output += `   Exchange: ${exchange}\n`;
     output += `   Symbol: ${symbol}\n`;
-    output += `   Dry Run: ${dryRun ? 'YES' : 'NO'}\n`;
-    output += `   Adaptive Threshold: ${useAdaptiveThreshold ? 'YES' : 'NO'}\n`;
+    output += `   Dry Run: ${dryRun ? 'ON' : 'OFF'}\n`;
+    output += `   Adaptive Threshold: ${useAdaptiveThreshold ? 'ON' : 'OFF'}\n`;
+    output += `   Exemption Limit Safeguard: ${neverExceedExemptionLimit ? 'ON' : 'OFF'}\n`;
+    output += `   Day Trade: ${enableDayTradeSafeguard ? 'ON' : 'OFF'}\n`;
     output += `   Poll Interval: ${pollIntervalSeconds}s`;
     return output;
   }

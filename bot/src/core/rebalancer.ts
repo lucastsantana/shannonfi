@@ -95,14 +95,12 @@ export class RebalancerBot {
     const baseAsset = this.config.symbol.split('-')[0]!;
 
     logger.info("Shannon's Demon bot starting", {
-      mode: {
-        exchange: this.config.exchange,
-        neverExceedExemptionLimit: neverExceed,
-        enableDayTradeSafeguard: this.config.enableDayTradeSafeguard,
-      },
+      exchange: this.config.exchange,
       symbol: this.config.symbol,
       dryRun: this.config.dryRun,
       useAdaptiveThreshold: this.config.useAdaptiveThreshold,
+      neverExceedExemptionLimit: neverExceed,
+      enableDayTradeSafeguard: this.config.enableDayTradeSafeguard,
       pollIntervalSeconds: this.config.pollIntervalSeconds,
     });
 
