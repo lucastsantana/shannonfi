@@ -43,29 +43,24 @@ module.exports = {
       },
     },
 
-    // ─── Future instance: SOL-BRL on Binance ──────────────────────────────────
-    // Uncomment when ready. Requires:
-    //   1. cp bot/configs/sol-binance.yaml.template bot/configs/sol-binance.yaml
-    //   2. Binance credentials stored in keyring:
-    //      secret-tool store service binance key apiKey
-    //      secret-tool store service binance key apiSecret
-    //
-    // {
-    //   name: 'sol-binance',
-    //   script: './start-instance.sh',
-    //   cwd: './bot',
-    //   args: 'sol-binance',
-    //   watch: false,
-    //   autorestart: true,
-    //   max_memory_restart: '500M',
-    //   out_file: 'logs/sol-binance.log',
-    //   error_file: 'logs/sol-binance-error.log',
-    //   log_date_format: 'YYYY-MM-DD HH:mm:ss Z',
-    //   merge_logs: true,
-    //   env: {
-    //     NODE_ENV: 'production',
-    //   },
-    // },
+    // ─── New instance: BTC-BRL on Binance ──────────────────────────────────────
+    // Data stored in: bot/data/btc-binance/
+    {
+      name: 'btc-binance',
+      script: './start-instance.sh',
+      cwd: './bot',
+      args: 'btc-binance',
+      watch: false,
+      autorestart: true,
+      max_memory_restart: '500M',
+      out_file: 'logs/btc-binance.log',
+      error_file: 'logs/btc-binance-error.log',
+      log_date_format: 'YYYY-MM-DD HH:mm:ss Z',
+      merge_logs: true,
+      env: {
+        NODE_ENV: 'production',
+      },
+    },
   ],
 
   // ─── Global settings ──────────────────────────────────────────────────────

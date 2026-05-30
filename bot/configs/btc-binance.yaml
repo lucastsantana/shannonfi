@@ -1,0 +1,40 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# BTC-BRL on Binance — Shannon's Demon
+# ─────────────────────────────────────────────────────────────────────────────
+
+exchange: binance
+symbol: BTC-BRL
+
+# Binance API credentials
+# Actual values are loaded from GNOME Keyring at runtime via start-instance.sh
+binance:
+  apiKey: "PLACEHOLDER"
+  apiSecret: "PLACEHOLDER"
+
+# ─── Strategy parameters ──────────────────────────────────────────────────────
+# Aligned with HYPE-BRL instance for consistent rebalancing behavior
+
+rebalanceThresholdBps: 100        # 1.0% static threshold
+maxSlippageBps: 100               # 1.0% max slippage
+minPortfolioValueBrl: 10          # Skip if portfolio < R$10
+minTradeSizeBrl: 1                # Skip trades < R$1
+pollIntervalSeconds: 300          # Check every 5 minutes
+minRebalanceIntervalSeconds: 300  # Min 5 min between rebalances
+
+# ─── Adaptive threshold ────────────────────────────────────────────────────────
+# Volatility-responsive thresholds for dynamic markets
+
+useAdaptiveThreshold: true
+thresholdVolatilityMultiplier: 1.25
+volatilityWindowDays: 30
+
+# ─── Runtime ──────────────────────────────────────────────────────────────────
+
+dryRun: false
+logLevel: info
+
+# ─── Data persistence (SEPARATE FROM OTHER INSTANCES) ──────────────────────────
+# Each instance has its own database and JSON backups to prevent data mixing
+
+dbPath: ./data/btc-binance/shannonfi.db
+jsonRetentionDays: 15

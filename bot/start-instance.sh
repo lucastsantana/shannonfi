@@ -50,7 +50,7 @@ if [ "$EXCHANGE" = "mercadobitcoin" ]; then
     exit 1
   fi
 
-  sed "s|clientId: \"\"|clientId: \"${MB_CLIENT_ID}\"|; s|clientSecret: \"\"|clientSecret: \"${MB_CLIENT_SECRET}\"|" \
+  sed "s|clientId: \"PLACEHOLDER\"|clientId: \"${MB_CLIENT_ID}\"|; s|clientSecret: \"PLACEHOLDER\"|clientSecret: \"${MB_CLIENT_SECRET}\"|" \
     "$CONFIG_FILE" > "$TMPCONFIG"
 
 elif [ "$EXCHANGE" = "binance" ]; then
@@ -65,7 +65,7 @@ elif [ "$EXCHANGE" = "binance" ]; then
     exit 1
   fi
 
-  sed "s|apiKey: \"\"|apiKey: \"${BINANCE_API_KEY}\"|; s|apiSecret: \"\"|apiSecret: \"${BINANCE_API_SECRET}\"|" \
+  sed "s|apiKey: \"PLACEHOLDER\"|apiKey: \"${BINANCE_API_KEY}\"|; s|apiSecret: \"PLACEHOLDER\"|apiSecret: \"${BINANCE_API_SECRET}\"|" \
     "$CONFIG_FILE" > "$TMPCONFIG"
 
 else
