@@ -5,6 +5,136 @@ import * as fs from 'fs';
 const logsDir = path.resolve(__dirname, '../../logs');
 fs.mkdirSync(logsDir, { recursive: true });
 
+// ANSI color codes
+const colors = {
+  reset: '\x1b[0m',
+  bold: '\x1b[1m',
+  dim: '\x1b[2m',
+
+  red: '\x1b[31m',
+  green: '\x1b[32m',
+  yellow: '\x1b[33m',
+  blue: '\x1b[34m',
+  cyan: '\x1b[36m',
+  white: '\x1b[37m',
+
+  bgRed: '\x1b[41m',
+  bgGreen: '\x1b[42m',
+  bgYellow: '\x1b[43m',
+  bgBlue: '\x1b[44m',
+};
+
+function formatConsoleOutput({ timestamp, level, message, ...meta }: any): string {
+  const time = new Date(timestamp).toLocaleString('en-US', {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  });
+
+  let levelColor = colors.white;
+  let levelBg = '';
+  if (level === 'error') {
+    levelColor = colors.red;
+    levelBg = colors.bgRed;
+  } else if (level === 'warn') {
+    levelColor = colors.yellow;
+  } else if (level === 'info') {
+    levelColor = colors.green;
+  } else if (level === 'debug') {
+    levelColor = colors.dim;
+  }
+
+  const hasMetadata = Object.keys(meta).length > 0;
+
+  // Format specific event types
+  if (message === 'Price check' && hasMetadata) {
+    const { exchange, basePriceBrl } = meta;
+    return `${colors.cyan}${time}${colors.reset} ${colors.green}✓${colors.reset} ${colors.bold}Price Check${colors.reset}\n` +
+           `   Exchange: ${exchange}\n` +
+           `   Price: ${colors.bold}R$ ${basePriceBrl}${colors.reset}/HYPE`;
+  }
+
+  if (message === 'No rebalance needed (price-only estimate)' && hasMetadata) {
+    const { effectiveThresholdBps, estBaseValueBrl, brlBalance } = meta;
+    return `${colors.cyan}${time}${colors.reset} ${colors.dim}○${colors.reset} ${colors.dim}No Rebalance${colors.reset} (price estimate)\n` +
+           `   Threshold: ${effectiveThresholdBps} BPS\n` +
+           `   Est. Portfolio: R$ ${(parseFloat(estBaseValueBrl) + parseFloat(brlBalance)).toFixed(2)}`;
+  }
+
+  if (message === 'No rebalance needed' && hasMetadata) {
+    const { deviationBps, effectiveThresholdBps } = meta;
+    return `${colors.cyan}${time}${colors.reset} ${colors.dim}○${colors.reset} ${colors.dim}No Rebalance Needed${colors.reset}\n` +
+           `   Deviation: ${deviationBps} BPS | Threshold: ${effectiveThresholdBps} BPS`;
+  }
+
+  if (message === 'Portfolio snapshot' && hasMetadata) {
+    const { exchange, baseBalance, brlBalance, basePriceBrl, totalValueBrl, baseRatio, deviationBps } = meta;
+    return `${colors.cyan}${time}${colors.reset} ${colors.blue}📊${colors.reset} ${colors.bold}Portfolio Snapshot${colors.reset}\n` +
+           `   Exchange: ${exchange}\n` +
+           `   HYPE: ${baseBalance} (R$ ${(parseFloat(baseBalance) * parseFloat(basePriceBrl)).toFixed(2)})\n` +
+           `   BRL: R$ ${brlBalance}\n` +
+           `   Total: ${colors.bold}R$ ${totalValueBrl}${colors.reset} | Ratio: ${baseRatio} | Drift: ${deviationBps} BPS`;
+  }
+
+  if (message === 'Rebalance triggered' && hasMetadata) {
+    const { direction, brlAmount, baseRatioBps, effectiveThresholdBps } = meta;
+    const directionEmoji = direction === 'BUY_BASE' ? '🟢' : '🔴';
+    const directionText = direction === 'BUY_BASE' ? 'BUY' : 'SELL';
+    return `${colors.cyan}${time}${colors.reset} ${directionEmoji} ${colors.bold}${colors.green}REBALANCE TRIGGERED${colors.reset}\n` +
+           `   Direction: ${directionText} HYPE\n` +
+           `   Amount: R$ ${parseFloat(brlAmount).toFixed(2)}\n` +
+           `   Current Ratio: ${(parseFloat(baseRatioBps) / 100).toFixed(2)}% | Threshold: ${effectiveThresholdBps} BPS`;
+  }
+
+  if (message === 'Tax event recorded (SELL_BASE)' && hasMetadata) {
+    const { tradedVolumeBrl, realizedGainBrl, cumMonthlySalesBrl, exempt, paymentDeadline } = meta;
+    const exemptText = exempt ? `${colors.green}✓ EXEMPT${colors.reset}` : `${colors.yellow}TAXABLE${colors.reset} (Due: ${paymentDeadline})`;
+    return `${colors.cyan}${time}${colors.reset} ${colors.yellow}📋${colors.reset} ${colors.bold}Tax Event${colors.reset}\n` +
+           `   Volume: R$ ${parseFloat(tradedVolumeBrl).toFixed(2)}\n` +
+           `   Realized Gain: R$ ${parseFloat(realizedGainBrl).toFixed(2)}\n` +
+           `   Monthly Sales: R$ ${parseFloat(cumMonthlySalesBrl).toFixed(2)}\n` +
+           `   Status: ${exemptText}`;
+  }
+
+  if (message === 'Cost basis updated (BUY_BASE)' && hasMetadata) {
+    const { baseAcquired, brlSpent } = meta;
+    return `${colors.cyan}${time}${colors.reset} ${colors.green}✓${colors.reset} ${colors.bold}Cost Basis Updated${colors.reset}\n` +
+           `   Acquired: ${baseAcquired} HYPE\n` +
+           `   Spent: R$ ${parseFloat(brlSpent).toFixed(2)}`;
+  }
+
+  if (message === 'Daily digest sent' && hasMetadata) {
+    const { date } = meta;
+    return `${colors.cyan}${time}${colors.reset} ${colors.green}✓${colors.reset} ${colors.bold}Daily Digest Sent${colors.reset}\n` +
+           `   Date: ${date}`;
+  }
+
+  if (message === 'Telegram notifications enabled') {
+    return `${colors.cyan}${time}${colors.reset} ${colors.green}✓${colors.reset} ${colors.bold}Telegram Notifications${colors.reset} enabled`;
+  }
+
+  if (message === 'Daily digest enabled') {
+    return `${colors.cyan}${time}${colors.reset} ${colors.green}✓${colors.reset} ${colors.bold}Daily Digest${colors.reset} enabled`;
+  }
+
+  if (message.includes('Shannon\'s Demon bot starting')) {
+    const { exchange, dryRun, useAdaptiveThreshold, thresholdBps, pollIntervalSeconds } = meta;
+    return `${colors.cyan}${time}${colors.reset} ${colors.green}${colors.bold}🚀 SHANNON'S DEMON BOT STARTING${colors.reset}\n` +
+           `   Exchange: ${exchange}\n` +
+           `   Dry Run: ${dryRun ? 'YES' : 'NO'}\n` +
+           `   Adaptive Threshold: ${useAdaptiveThreshold ? 'YES' : 'NO'}\n` +
+           `   Threshold: ${thresholdBps} BPS\n` +
+           `   Poll Interval: ${pollIntervalSeconds}s`;
+  }
+
+  // Default format for other messages
+  const metaStr = hasMetadata ? '\n   ' + JSON.stringify(meta, null, 2).split('\n').join('\n   ') : '';
+  return `${colors.cyan}${time}${colors.reset} ${colors.bold}[${level.toUpperCase()}]${colors.reset} ${message}${metaStr}`;
+}
+
 export const logger = winston.createLogger({
   level: process.env['LOG_LEVEL'] ?? 'info',
   format: winston.format.combine(
@@ -14,13 +144,7 @@ export const logger = winston.createLogger({
   ),
   transports: [
     new winston.transports.Console({
-      format: winston.format.combine(
-        winston.format.colorize(),
-        winston.format.printf(({ timestamp, level, message, ...meta }) => {
-          const metaStr = Object.keys(meta).length ? ' ' + JSON.stringify(meta) : '';
-          return `${timestamp} [${level}] ${message}${metaStr}`;
-        }),
-      ),
+      format: winston.format.printf(formatConsoleOutput),
     }),
     new winston.transports.File({
       filename: path.join(logsDir, 'error.log'),
