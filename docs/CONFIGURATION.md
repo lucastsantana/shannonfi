@@ -18,16 +18,13 @@ bot/configs/
 exchange: mercadobitcoin    # or: binance
 symbol: HYPE-BRL            # or: BTC-BRL, SOL-BRL, etc.
 
-# Exchange credentials (loaded from GNOME Keyring)
-mercadobitcoin:            # if exchange: mercadobitcoin
-  clientId: "PLACEHOLDER"
-  clientSecret: "PLACEHOLDER"
-  apiBaseUrl: "https://api.mercadobitcoin.net/api/v4"
-
-binance:                   # if exchange: binance
-  apiKey: "PLACEHOLDER"
-  apiSecret: "PLACEHOLDER"
-  apiBaseUrl: "https://api.binance.com"
+# Exchange API configuration (credentials loaded from GNOME Keyring)
+# Optional: uncomment only if overriding default API endpoints
+# mercadobitcoin:
+#   apiBaseUrl: "https://api.mercadobitcoin.net/api/v4"
+#
+# binance:
+#   apiBaseUrl: "https://api.binance.com"
 
 # Strategy Parameters
 rebalanceThresholdBps: 100
@@ -65,20 +62,27 @@ jsonRetentionDays: 15
 
 ### Exchange Credentials
 
+**Credentials are loaded directly from GNOME Keyring** — they are NOT loaded from config files. This keeps secrets off disk and your config files safe to commit to version control.
+
 **Mercado Bitcoin:**
-- `clientId`: API client ID from MB dashboard
-- `clientSecret`: API client secret (keep secret!)
-- `apiBaseUrl`: Default `https://api.mercadobitcoin.net/api/v4` (rarely change)
+```bash
+secret-tool store --label="Mercado Bitcoin Client ID" service mercadobitcoin key clientId <YOUR_ID>
+secret-tool store --label="Mercado Bitcoin Client Secret" service mercadobitcoin key clientSecret <YOUR_SECRET>
+```
 
 **Binance:**
-- `apiKey`: API key from Binance API Management
-- `apiSecret`: API secret (keep secret!)
-- `apiBaseUrl`: Default `https://api.binance.com` (or `https://api.binance.us` for US)
-
-**Security note**: Set to `"PLACEHOLDER"`. Real values loaded from GNOME Keyring at runtime:
 ```bash
-secret-tool store service mercadobitcoin key clientId
-secret-tool store service binance key apiKey
+secret-tool store --label="Binance API Key" service binance key apiKey <YOUR_KEY>
+secret-tool store --label="Binance API Secret" service binance key apiSecret <YOUR_SECRET>
+```
+
+**Optional API endpoint override:**
+Only add the `mercadobitcoin` or `binance` section if you need to override the default API endpoint:
+
+```yaml
+# Example: override Binance endpoint
+binance:
+  apiBaseUrl: "https://api.binance.us"   # For US region
 ```
 
 ### Strategy Parameters
