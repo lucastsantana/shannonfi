@@ -6,7 +6,7 @@ import { TaxService } from './tracker/tax';
 import { VolatilityService } from './tracker/volatility';
 import { MetricsService } from './tracker/metrics';
 import { logger } from './tracker/logger';
-import { shouldRebalance, computeRebalanceTrade } from '../math';
+import { shouldRebalance, computeRebalanceTrade, computeBaseRatioBps } from '../math';
 import { Config } from '../config';
 import { BR_EFFECTIVE_LIMIT_BRL } from '../constants';
 import { TelegramService } from './notifier/telegram';
@@ -160,16 +160,8 @@ export class RebalancerBot {
         const priceRatio = basePrice / prevPrice;
         const estBaseValueBrl = prev.baseValueBrl * priceRatio;
         const estTotalBrl = estBaseValueBrl + prev.brlBalance;
-
-        // Calculate deviation using the same formula as shouldRebalance()
-        // |base - brl| / min(base, brl) * 10000
-        const smaller = Math.min(estBaseValueBrl, prev.brlBalance);
-        const estDeviationBps = smaller > 0
-          ? Math.round((Math.abs(estBaseValueBrl - prev.brlBalance) / smaller) * 10000)
-          : 0;
-
-        // Calculate allocation percentages for display
-        const estBaseRatioBps = Math.round((estBaseValueBrl / estTotalBrl) * 10000);
+        const estBaseRatioBps = computeBaseRatioBps(estBaseValueBrl, estTotalBrl);
+        const estDeviationBps = Math.abs(estBaseRatioBps - 5000);
 
         // Calculate prices needed to trigger rebalance (both directions)
         const thresholdRatio = effectiveThresholdBps / 10000;
@@ -207,8 +199,10 @@ export class RebalancerBot {
         // Estimate current base value using price drift; cash is unchanged
         const priceRatio = basePrice / prevPrice;
         const estBaseValueBrl = prev.baseValueBrl * priceRatio;
+        const estTotalBrl = estBaseValueBrl + prev.brlBalance;
+        const estBaseRatioBps = computeBaseRatioBps(estBaseValueBrl, estTotalBrl);
 
-        if (!shouldRebalance(estBaseValueBrl, prev.brlBalance, effectiveThresholdBps)) {
+        if (!shouldRebalance(estBaseRatioBps, effectiveThresholdBps)) {
           logger.info('No rebalance needed (price-only estimate)', {
             estBaseValueBrl: estBaseValueBrl.toFixed(2),
             brlBalance: prev.brlBalance.toFixed(2),
@@ -272,7 +266,7 @@ export class RebalancerBot {
     }
 
     // ── Guard: drift threshold (precise, with actual balances) ─────────────────
-    if (!shouldRebalance(portfolio.baseValueBrl, portfolio.brlBalance, effectiveThresholdBps)) {
+    if (!shouldRebalance(portfolio.baseRatioBps, effectiveThresholdBps)) {
       logger.info('No rebalance needed', {
         deviationBps: portfolio.deviationBps,
         effectiveThresholdBps,

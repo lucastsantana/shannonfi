@@ -94,7 +94,7 @@ export class BinanceAdapter implements ExchangeAdapter {
       baseValueBrl,
       totalValueBrl,
       baseRatioBps,
-      deviationBps: computeDeviationBps(baseValueBrl, brlBalance),
+      deviationBps: computeDeviationBps(baseRatioBps),
       timestamp: new Date().toISOString(),
     };
   }
