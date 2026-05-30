@@ -167,17 +167,16 @@ export class RebalancerBot {
         const estBaseRatioBps = computeBaseRatioBps(estBaseValueBrl, estTotalBrl);
         const estDeviationBps = Math.abs(estBaseRatioBps - 5000);
 
-        // Calculate trigger prices based on latest acquisition cost (cost basis),
-        // not current market price. These stay constant unless cost basis changes.
+        // Get acquisition price for reference (cost basis)
         const costBasisLedger = this.costBasis.getLedger();
         const acquisitionPrice = costBasisLedger.base.averageCostBrl > 0 ? costBasisLedger.base.averageCostBrl : prevPrice;
-        const costBasisValueBrl = prev.baseBalance * acquisitionPrice;
-        const costBasisTotalBrl = costBasisValueBrl + prev.brlBalance;
+
+        // Calculate trigger prices based on comparison between base price and BRL allocation
         const thresholdRatio = effectiveThresholdBps / 10000;
         const triggerRatioUp = 0.5 + thresholdRatio;
         const triggerRatioDown = 0.5 - thresholdRatio;
-        const triggerPriceUp = (triggerRatioUp * costBasisTotalBrl) / prev.baseBalance;
-        const triggerPriceDown = (triggerRatioDown * costBasisTotalBrl) / prev.baseBalance;
+        const triggerPriceUp = (triggerRatioUp * estTotalBrl) / prev.baseBalance;
+        const triggerPriceDown = (triggerRatioDown * estTotalBrl) / prev.baseBalance;
 
         logMetadata.baseAsset = this.config.symbol.split('-')[0];
         logMetadata.baseBalance = prev.baseBalance.toFixed(6);
