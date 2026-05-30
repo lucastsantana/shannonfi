@@ -11,6 +11,7 @@ import { Config } from '../../src/config';
 
 const testConfig: Config = {
   exchange: 'mercadobitcoin',
+  symbol: 'SOL-BRL',
   mercadobitcoin: {
     clientId: 'test-client',
     clientSecret: 'test-secret',
@@ -24,13 +25,12 @@ const testConfig: Config = {
   minRebalanceIntervalSeconds: 7200,
   dryRun: true,
   logLevel: 'error',
-  tradeHistoryPath: '/tmp/bot-rebalancer-test-history.json',
-  portfolioSnapshotsPath: '/tmp/bot-rebalancer-test-snapshots.json',
-  costBasisPath: '/tmp/bot-rebalancer-test-costbasis.json',
-  taxEventsPath: '/tmp/bot-rebalancer-test-tax.json',
+  dbPath: ':memory:',
+  jsonRetentionDays: 15,
   useAdaptiveThreshold: false,
   thresholdVolatilityMultiplier: 1.5,
   volatilityWindowDays: 30,
+  enableDayTradeSafeguard: true,
   neverExceedExemptionLimit: false,
 };
 
