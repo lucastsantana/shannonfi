@@ -96,6 +96,7 @@ export class RebalancerBot {
       exchange: this.config.exchange,
       dryRun: this.config.dryRun,
       useAdaptiveThreshold: this.config.useAdaptiveThreshold,
+      enableDayTradeSafeguard: this.config.enableDayTradeSafeguard,
       thresholdBps: this.config.rebalanceThresholdBps,
       pollIntervalSeconds: this.config.pollIntervalSeconds,
       neverExceedExemptionLimit: neverExceed,
@@ -287,16 +288,18 @@ export class RebalancerBot {
     );
 
     // ── Guard: day-trade guard ─────────────────────────────────────────────────
-    const isOpposite =
-      this.lastRebalanceDirection !== null && this.lastRebalanceDirection !== direction;
-    if (this.lastRebalanceDateBRT === todayBRT && isOpposite) {
-      logger.info('Day-trade guard: opposite-direction trade blocked (BRT)', {
-        date: todayBRT,
-        proposedDirection: direction,
-        priorDirection: this.lastRebalanceDirection,
-      });
-      await this.persistSnapshot(portfolio, false, effectiveThresholdBps);
-      return;
+    if (this.config.enableDayTradeSafeguard) {
+      const isOpposite =
+        this.lastRebalanceDirection !== null && this.lastRebalanceDirection !== direction;
+      if (this.lastRebalanceDateBRT === todayBRT && isOpposite) {
+        logger.info('Day-trade guard: opposite-direction trade blocked (BRT)', {
+          date: todayBRT,
+          proposedDirection: direction,
+          priorDirection: this.lastRebalanceDirection,
+        });
+        await this.persistSnapshot(portfolio, false, effectiveThresholdBps);
+        return;
+      }
     }
 
     // ── Guard: exemption / volume cap ─────────────────────────────────────────

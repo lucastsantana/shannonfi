@@ -28,10 +28,10 @@ echo "Window: ${WINDOW_DAYS} days"
 echo "Log: ${LOG_FILE}"
 echo ""
 
-# Run the scan with Telegram notifications
+# Run the scan with Telegram notifications (unified scanner supports both MB and Binance)
 {
   cd "${SCRIPT_DIR}"
-  npm run scan:binance -- \
+  npm run scan -- \
     --config "${CONFIG_FILE}" \
     --window "${WINDOW_DAYS}" \
     --min-volume 5000 \

@@ -1,16 +1,23 @@
 #!/usr/bin/env node
 /**
- * Asset scanner CLI for Shannon's Demon bot.
+ * Unified asset scanner CLI for Shannon's Demon bot.
+ * Works with Mercado Bitcoin and Binance exchanges.
+ *
  * Usage:
+ *   # Mercado Bitcoin
  *   npm run scan -- --config configs/hype-mb.yaml
  *   npm run scan -- --config configs/hype-mb.yaml --window 30 --min-volume 5000
- *   npm run scan -- --config configs/hype-mb.yaml --reload-scan 5
+ *
+ *   # Binance
+ *   npm run scan -- --config configs/btc-binance.yaml
+ *   npm run scan -- --config configs/btc-binance.yaml --window 60 --top 20
  */
 
 import path from 'path';
 import { loadConfig } from '../config';
 import { getDb, getDbConfig, setDbConfig } from '../core/tracker/db';
 import { MercadoBitcoinAdapter } from '../adapters/mercadobitcoin/adapter';
+import { BinanceAdapter } from '../adapters/binance/adapter';
 import { TelegramService } from '../core/notifier/telegram';
 import { AssetScanner } from './scanner';
 import { ScanReporter } from './reporter';
@@ -95,20 +102,28 @@ async function main(): Promise<void> {
     logger.info('Initialized config with symbol', { symbol: config.symbol });
   }
 
-  // Set up MB adapter (assume Mercado Bitcoin for scanner)
-  if (config.exchange !== 'mercadobitcoin') {
-    logger.error('Scanner only supports Mercado Bitcoin currently');
-    process.exit(1);
-  }
-
-  let mbAdapter: MercadoBitcoinAdapter;
+  // Set up adapter based on exchange type
+  let adapter: any;
   try {
-    mbAdapter = new MercadoBitcoinAdapter(
-      config.mercadobitcoin || {},
-      config.dryRun || false,
-      config.maxSlippageBps || 100,
-      config.symbol || 'SOL-BRL',
-    );
+    if (config.exchange === 'mercadobitcoin') {
+      adapter = new MercadoBitcoinAdapter(
+        config.mercadobitcoin || {},
+        config.dryRun || false,
+        config.maxSlippageBps || 100,
+        config.symbol || 'SOL-BRL',
+      );
+      logger.info('Initialized Mercado Bitcoin adapter');
+    } else if (config.exchange === 'binance') {
+      adapter = new BinanceAdapter(
+        config.binance || {},
+        config.dryRun || false,
+        config.maxSlippageBps || 100,
+        config.symbol || 'SOL-BRL',
+      );
+      logger.info('Initialized Binance adapter');
+    } else {
+      throw new Error(`Unsupported exchange: ${config.exchange}. Supported: mercadobitcoin, binance`);
+    }
   } catch (err) {
     logger.error('Failed to initialize adapter', { error: (err as Error).message });
     process.exit(1);
@@ -144,7 +159,7 @@ async function main(): Promise<void> {
       await reporter.reportCached(cliArgs.reloadScan, cliArgs.dryRun);
     } else {
       // Run a new scan
-      const scanner = new AssetScanner(mbAdapter, db, dbPath);
+      const scanner = new AssetScanner(adapter, db, dbPath);
       const options: ScanOptions = {
         windowDays: cliArgs.window,
         minVolumeBrl: cliArgs.minVolume,

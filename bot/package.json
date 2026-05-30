@@ -25,7 +25,7 @@
     "test:coverage": "vitest run --coverage",
     "typecheck": "tsc --noEmit",
     "scan": "ts-node -r tsconfig-paths/register src/scanner/scan.ts",
-    "scan:binance": "ts-node -r tsconfig-paths/register src/scanner/scan-binance.ts"
+    "scan:binance": "ts-node -r tsconfig-paths/register src/scanner/scan.ts"
   },
   "dependencies": {
     "axios": "^1.16.1",

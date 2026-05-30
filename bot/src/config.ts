@@ -50,6 +50,9 @@ const CommonConfigSchema = z.object({
   thresholdVolatilityMultiplier: z.number().min(0.5).max(5.0).default(DEFAULT_VOLATILITY_MULTIPLIER),
   volatilityWindowDays: z.number().int().min(7).max(90).default(DEFAULT_VOLATILITY_WINDOW_DAYS),
 
+  // ─── Safeguards ─────────────────────────────────────────────────────────────
+  enableDayTradeSafeguard: z.boolean().default(true),
+
   // ─── Runtime ────────────────────────────────────────────────────────────────
   dryRun: z.boolean().default(false),
   logLevel: z.enum(['error', 'warn', 'info', 'debug']).default('info'),

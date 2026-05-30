@@ -4,11 +4,14 @@ The Binance asset scanner analyzes all BRL-paired trading pairs on Binance, scor
 
 ## Quick Start
 
+Both Mercado Bitcoin and Binance scanners use the same unified CLI. The scanner automatically detects which exchange is configured and loads the appropriate adapter.
+
 ### One-time Scan
 
 ```bash
 cd bot
-npm run scan:binance -- --config configs/btc-binance.yaml --window 30 --dry-run
+# Unified scanner detects "binance" in config and uses Binance adapter
+npm run scan -- --config configs/btc-binance.yaml --window 30 --dry-run
 ```
 
 ### With Telegram Notifications
@@ -17,6 +20,9 @@ First, enable Telegram in your config:
 
 ```yaml
 # configs/btc-binance.yaml
+exchange: binance  # Scanner auto-detects exchange type
+symbol: BTC-BRL
+
 telegram:
   chatId: "1684226180"  # Your Telegram chat ID
 ```
@@ -24,7 +30,7 @@ telegram:
 Then run:
 
 ```bash
-npm run scan:binance -- --config configs/btc-binance.yaml --window 30
+npm run scan -- --config configs/btc-binance.yaml --window 30
 ```
 
 ## Daily Automated Scans
@@ -66,11 +72,13 @@ tail -f /home/user/repos/shannonfi/bot/logs/scanner/binance/cron.log
 
 ## CLI Options
 
+The unified scanner works for both exchanges:
+
 ```
-npm run scan:binance -- [options]
+npm run scan -- [options]
 
 Options:
-  --config <path>      Config file path (required)
+  --config <path>      Config file path (required) — auto-detects exchange
   --window <days>      Analysis window in days (default: 30)
   --min-volume <brl>   Minimum daily volume filter in BRL (default: 5000)
   --top <n>            Display top N candidates (default: 15)
@@ -79,28 +87,34 @@ Options:
 
 ### Examples
 
-**Quick scan with default settings:**
+**Quick Binance scan:**
 
 ```bash
-npm run scan:binance -- --config configs/btc-binance.yaml
+npm run scan -- --config configs/btc-binance.yaml
 ```
 
-**60-day analysis, minimum R$10k daily volume:**
+**Mercado Bitcoin scan:**
 
 ```bash
-npm run scan:binance -- --config configs/btc-binance.yaml --window 60 --min-volume 10000
+npm run scan -- --config configs/hype-mb.yaml
+```
+
+**60-day Binance analysis, minimum R$10k daily volume:**
+
+```bash
+npm run scan -- --config configs/btc-binance.yaml --window 60 --min-volume 10000
 ```
 
 **Show top 25 candidates:**
 
 ```bash
-npm run scan:binance -- --config configs/btc-binance.yaml --top 25
+npm run scan -- --config configs/btc-binance.yaml --top 25
 ```
 
 **Test without sending Telegram:**
 
 ```bash
-npm run scan:binance -- --config configs/btc-binance.yaml --dry-run
+npm run scan -- --config configs/btc-binance.yaml --dry-run
 ```
 
 ## Scoring Formula
@@ -219,7 +233,9 @@ All scan results are stored in SQLite for audit trail and replay:
 | **Fees** | Taker ~0.3% | Taker ~0.1% |
 | **API** | OAuth2 (REST) | HMAC-SHA256 (REST) |
 | **Orders** | Async polling | Mostly synchronous |
-| **Scanner** | `npm run scan` | `npm run scan:binance` |
+| **Scanner** | `npm run scan --config configs/hype-mb.yaml` | `npm run scan --config configs/btc-binance.yaml` |
+
+**Note:** Both use the same unified scanner script that auto-detects the exchange from the config file.
 
 ## Daily Reports
 

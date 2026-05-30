@@ -1,6 +1,6 @@
-# Daily Asset Scanner Setup
+# Daily Asset Scanner Setup (Mercado Bitcoin)
 
-The scanner can be automatically executed daily at 9 AM BRT using a system cron job.
+The Mercado Bitcoin asset scanner can be automatically executed daily at 9 AM BRT using a system cron job.
 
 ## Timezone Note
 
