@@ -51,10 +51,20 @@ function formatConsoleOutput({ timestamp, level, message, ...meta }: any): strin
 
   // Format specific event types
   if (message === 'Price check' && hasMetadata) {
-    const { exchange, basePriceBrl } = meta;
-    return `${colors.cyan}${time}${colors.reset} ${colors.green}✓${colors.reset} ${colors.bold}Price Check${colors.reset}\n` +
-           `   Exchange: ${exchange}\n` +
-           `   Price: ${colors.bold}R$ ${basePriceBrl}${colors.reset}/HYPE`;
+    const { exchange, basePriceBrl, baseAsset, baseBalance, baseAllocationPct, brlBalance, brlAllocationPct, deviationBps, portfolioValueBrl, thresholdBps, triggerPriceBrl } = meta;
+
+    let output = `${colors.cyan}${time}${colors.reset} ${colors.green}✓${colors.reset} ${colors.bold}Price Check${colors.reset}\n`;
+    output += `   Exchange: ${exchange}\n`;
+    output += `   Price: ${colors.bold}R$ ${basePriceBrl}${colors.reset}/${baseAsset || 'HYPE'}\n`;
+
+    if (baseAsset && baseAllocationPct && brlAllocationPct && portfolioValueBrl) {
+      output += `   ${baseAsset}: ${colors.bold}${baseBalance}${colors.reset} (${baseAllocationPct}%) | BRL: ${colors.bold}R$ ${brlBalance}${colors.reset} (${brlAllocationPct}%)\n`;
+      output += `   Portfolio Total: ${colors.bold}R$ ${portfolioValueBrl}${colors.reset}\n`;
+      output += `   Deviation: ${deviationBps} BPS | Threshold: ${thresholdBps} BPS\n`;
+      output += `   Price to trigger: ${colors.bold}R$ ${triggerPriceBrl}${colors.reset}/${baseAsset}`;
+    }
+
+    return output;
   }
 
   if (message === 'No rebalance needed (price-only estimate)' && hasMetadata) {

@@ -126,10 +126,48 @@ export class RebalancerBot {
 
     // ── Step 1: fetch price only — cheapest possible request ───────────────────
     const basePrice = await this.adapter.getPrice();
-    logger.info('Price check', {
+
+    // Estimate current portfolio state for logging
+    let logMetadata: any = {
       exchange: this.config.exchange,
       basePriceBrl: basePrice.toFixed(2),
-    });
+    };
+
+    const lastTrade = this.history.readTrades().filter(
+      (t) => t.status === 'FILLED' || t.status === 'DRY_RUN',
+    ).sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()).pop();
+
+    if (lastTrade?.portfolioAfter) {
+      const prev = lastTrade.portfolioAfter;
+      const prevPrice = prev.basePrice;
+      if (prevPrice > 0) {
+        const priceRatio = basePrice / prevPrice;
+        const estBaseValueBrl = prev.baseValueBrl * priceRatio;
+        const estTotalBrl = estBaseValueBrl + prev.brlBalance;
+        const estBaseRatioBps = Math.round((estBaseValueBrl / estTotalBrl) * 10000);
+        const estDeviationBps = Math.abs(estBaseRatioBps - 5000);
+
+        // Calculate price needed to trigger rebalance
+        const currentRatio = estBaseRatioBps / 10000;
+        const thresholdRatio = this.config.rebalanceThresholdBps / 10000;
+        const triggerRatio = currentRatio < 0.5
+          ? 0.5 + thresholdRatio  // Need to go up if under 50%
+          : 0.5 - thresholdRatio; // Need to go down if over 50%
+        const triggerPrice = (triggerRatio * estTotalBrl) / prev.baseBalance;
+
+        logMetadata.baseAsset = this.config.symbol.split('-')[0];
+        logMetadata.baseBalance = prev.baseBalance.toFixed(6);
+        logMetadata.baseAllocationPct = (estBaseRatioBps / 100).toFixed(2);
+        logMetadata.brlBalance = prev.brlBalance.toFixed(2);
+        logMetadata.brlAllocationPct = ((10000 - estBaseRatioBps) / 100).toFixed(2);
+        logMetadata.deviationBps = estDeviationBps;
+        logMetadata.portfolioValueBrl = estTotalBrl.toFixed(2);
+        logMetadata.thresholdBps = this.config.rebalanceThresholdBps;
+        logMetadata.triggerPriceBrl = triggerPrice.toFixed(2);
+      }
+    }
+
+    logger.info('Price check', logMetadata);
 
     // ── Step 2: get threshold (cached daily — zero cost after first call today) ─
     let effectiveThresholdBps = this.config.rebalanceThresholdBps;
@@ -153,10 +191,6 @@ export class RebalancerBot {
     //
     // This is intentionally an approximation: the true ratio requires balances.
     // Its only purpose is to save the balance fetch on most cycles.
-    const lastTrade = this.history.readTrades().filter(
-      (t) => t.status === 'FILLED' || t.status === 'DRY_RUN',
-    ).sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()).pop();
-
     if (lastTrade?.portfolioAfter) {
       const prev = lastTrade.portfolioAfter;
       const prevPrice = prev.basePrice;
