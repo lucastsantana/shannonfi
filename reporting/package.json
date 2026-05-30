@@ -17,18 +17,14 @@
   "scripts": {
     "build": "tsc",
     "report": "ts-node src/monthly-report.ts",
-    "report:pdf": "ts-node src/latex-report.ts",
-    "daily-digest": "ts-node src/daily-digest.ts",
-    "setup-smtp": "ts-node src/setup-smtp.ts"
+    "report:pdf": "ts-node src/latex-report.ts"
   },
   "dependencies": {
-    "nodemailer": "^6.10.1"
   },
   "devDependencies": {
     "typescript": "5.4.5",
     "ts-node": "10.9.2",
-    "@types/node": "20.14.2",
-    "@types/nodemailer": "^6.4.23"
+    "@types/node": "20.14.2"
   },
   "engines": {
     "node": ">=18.0.0"
