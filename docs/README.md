@@ -18,8 +18,9 @@ Welcome! This directory contains comprehensive documentation for running Shannon
 - **[PM2_GUIDE.md](./PM2_GUIDE.md)** — Using PM2 for process management
 
 ### Exchange Integrations
-- **[MERCADO_BITCOIN.md](./MERCADO_BITCOIN.md)** — Mercado Bitcoin adapter setup & tuning
-- **[BINANCE_ADAPTER.md](./BINANCE_ADAPTER.md)** — Binance adapter architecture
+- **[MERCADO_BITCOIN_ADAPTER.md](./MERCADO_BITCOIN_ADAPTER.md)** — MB adapter architecture & OAuth2 flow
+- **[BINANCE_ADAPTER.md](./BINANCE_ADAPTER.md)** — Binance adapter architecture & HMAC signing
+- **[MERCADO_BITCOIN.md](./MERCADO_BITCOIN.md)** — MB setup & tuning (planned)
 - **[BINANCE_SETUP.md](./BINANCE_SETUP.md)** — Binance setup from scratch
 
 ### Operations & Troubleshooting
