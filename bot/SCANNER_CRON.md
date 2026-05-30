@@ -12,7 +12,7 @@ If your system is in UTC (e.g., WSL2 on Windows), the cron job will run at 12:00
 
 ### Step 1: Verify the wrapper script
 
-The wrapper script is at `bot/scan-daily.sh`. It:
+The wrapper script is at `bot/scan-mb-daily.sh`. It:
 - Runs the scanner with 30-day window
 - Logs output to `bot/logs/scanner/daily-scan-YYYYMMDD-HHMMSS.log`
 - Sends results to Telegram (configured in `configs/hype-mb.yaml`)
@@ -20,7 +20,7 @@ The wrapper script is at `bot/scan-daily.sh`. It:
 Test it manually first:
 ```bash
 cd /home/user/repos/shannonfi/bot
-./scan-daily.sh
+./scan-mb-daily.sh
 ```
 
 ### Step 2: Add to cron
@@ -32,7 +32,7 @@ crontab -e
 
 Add this line to run daily at 9 AM BRT (12:00 PM UTC):
 ```cron
-0 12 * * * /home/user/repos/shannonfi/bot/scan-daily.sh >> /home/user/repos/shannonfi/bot/logs/scanner/cron.log 2>&1
+0 12 * * * /home/user/repos/shannonfi/bot/scan-mb-daily.sh >> /home/user/repos/shannonfi/bot/logs/scanner/cron.log 2>&1
 ```
 
 ### Step 3: Verify the cron job
@@ -65,7 +65,7 @@ Edit `scan-daily.sh` to change:
 
 **To use your local timezone instead of UTC**, prefix the cron line with `TZ=America/Sao_Paulo`:
 ```cron
-TZ=America/Sao_Paulo 0 9 * * * /home/user/repos/shannonfi/bot/scan-daily.sh >> /home/user/repos/shannonfi/bot/logs/scanner/cron.log 2>&1
+TZ=America/Sao_Paulo 0 9 * * * /home/user/repos/shannonfi/bot/scan-mb-daily.sh >> /home/user/repos/shannonfi/bot/logs/scanner/cron.log 2>&1
 ```
 
 ## What Happens Daily

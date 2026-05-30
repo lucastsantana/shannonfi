@@ -30,6 +30,11 @@ useAdaptiveThreshold: true
 thresholdVolatilityMultiplier: 1.25
 volatilityWindowDays: 30
 
+# ─── Safeguards ───────────────────────────────────────────────────────────────
+# enableDayTradeSafeguard: Prevent same-day opposite trades (BUY then SELL, or vice versa)
+# on the same BRT calendar day. Defaults to true for tax safety.
+enableDayTradeSafeguard: true
+
 # ─── Runtime ──────────────────────────────────────────────────────────────────
 
 dryRun: false
