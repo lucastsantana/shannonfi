@@ -10,18 +10,20 @@ import {
 } from './constants';
 
 // ─── Exchange sub-schemas ──────────────────────────────────────────────────────
+// NOTE: API credentials (clientId, clientSecret, apiKey, apiSecret) are
+// intentionally NOT loaded from config files. They are loaded directly from
+// GNOME Keyring at runtime. This prevents secrets from ever being written to disk.
+// See bot/src/core/keyring.ts for credential loading.
 
 const MercadoBitcoinSchema = z.object({
-  clientId: z.string().min(1),
-  clientSecret: z.string().min(1),
+  // apiBaseUrl is the only config field; credentials come from keyring
   apiBaseUrl: z.string().url().default('https://api.mercadobitcoin.net/api/v4'),
-});
+}).optional().default({});
 
 const BinanceSchema = z.object({
-  apiKey: z.string().min(1),
-  apiSecret: z.string().min(1),
+  // apiBaseUrl is the only config field; credentials come from keyring
   apiBaseUrl: z.string().url().default('https://api.binance.com'),
-});
+}).optional().default({});
 
 const SmtpSchema = z.object({
   host: z.string().min(1),

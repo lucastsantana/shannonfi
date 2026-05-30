@@ -5,11 +5,13 @@
 exchange: binance
 symbol: BTC-BRL
 
-# Binance API credentials
-# Actual values are loaded from GNOME Keyring at runtime via start-instance.sh
-binance:
-  apiKey: "PLACEHOLDER"
-  apiSecret: "PLACEHOLDER"
+# Binance API configuration
+# Credentials (apiKey, apiSecret) are loaded directly from GNOME Keyring at runtime.
+# See bot/src/core/keyring.ts for credential loading details.
+#
+# Optional: uncomment binance section to override API endpoint
+# binance:
+#   apiBaseUrl: "https://api.binance.com"
 
 # ─── Strategy parameters ──────────────────────────────────────────────────────
 # Aligned with HYPE-BRL instance for consistent rebalancing behavior

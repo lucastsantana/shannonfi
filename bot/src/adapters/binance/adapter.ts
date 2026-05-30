@@ -18,6 +18,7 @@ import { computeBaseRatioBps, computeDeviationBps, brlToBase, isSlippageAcceptab
 import { logger } from '../../core/tracker/logger';
 import { BINANCE_FILL_POLL_INTERVAL_MS, BINANCE_FILL_POLL_MAX_ATTEMPTS } from '../../constants';
 import { BinanceConfig } from '../../config';
+import { getBinanceCredentials } from '../../core/keyring';
 
 const BINANCE_RESOLUTION_MAP: Record<CandleResolution, string> = {
   '1m': '1m',
@@ -42,9 +43,11 @@ export class BinanceAdapter implements ExchangeAdapter {
     this.baseAsset = symbol.split('-')[0]!;      // SOL
     this.quoteAsset = symbol.split('-')[1]!;     // BRL
     this.binanceSymbol = symbol.replace('-', ''); // SOLBRL
+    // Load credentials directly from GNOME Keyring (never from config files)
+    const { apiKey, apiSecret } = getBinanceCredentials();
     const client = new BinanceClient(
-      binanceConfig.apiKey,
-      binanceConfig.apiSecret,
+      apiKey,
+      apiSecret,
       binanceConfig.apiBaseUrl,
     );
     this.endpoints = new BinanceEndpoints(client);

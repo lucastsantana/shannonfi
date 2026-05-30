@@ -9,6 +9,7 @@ import {
   MB_FILL_POLL_MAX_ATTEMPTS,
 } from '../../constants';
 import { MercadoBitcoinConfig } from '../../config';
+import { getMercadoBitcoinCredentials } from '../../core/keyring';
 
 const MB_RESOLUTION_MAP: Record<CandleResolution, import('./raw-types').MbCandleResolution> = {
   '1m': '1m',
@@ -30,7 +31,9 @@ export class MercadoBitcoinAdapter implements ExchangeAdapter {
     private symbol: string = 'SOL-BRL',
   ) {
     this.baseAsset = symbol.split('-')[0]!;
-    const client = new MbClient(mbConfig.clientId, mbConfig.clientSecret, mbConfig.apiBaseUrl);
+    // Load credentials directly from GNOME Keyring (never from config files)
+    const { clientId, clientSecret } = getMercadoBitcoinCredentials();
+    const client = new MbClient(clientId, clientSecret, mbConfig.apiBaseUrl);
     this.endpoints = new MbEndpoints(client, symbol);
   }
 

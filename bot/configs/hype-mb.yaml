@@ -5,11 +5,13 @@
 exchange: mercadobitcoin
 symbol: HYPE-BRL
 
-# Mercado Bitcoin API credentials
-# Actual values are loaded from GNOME Keyring at runtime via start-instance.sh
-mercadobitcoin:
-  clientId: "PLACEHOLDER"
-  clientSecret: "PLACEHOLDER"
+# Mercado Bitcoin API configuration
+# Credentials (clientId, clientSecret) are loaded directly from GNOME Keyring at runtime.
+# See bot/src/core/keyring.ts for credential loading details.
+#
+# Optional: uncomment mercadobitcoin section to override API endpoint
+# mercadobitcoin:
+#   apiBaseUrl: "https://api.mercadobitcoin.net/api/v4"
 
 # ─── Strategy parameters ──────────────────────────────────────────────────────
 
