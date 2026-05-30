@@ -34,9 +34,11 @@ export class DailyDigestService {
       return;
     }
 
+    // Get current time in BRT (UTC-3)
     const now = new Date();
-    const hour = now.getHours();
-    const minute = now.getMinutes();
+    const brtTime = new Date(now.toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
+    const hour = brtTime.getHours();
+    const minute = brtTime.getMinutes();
 
     // Check if it's 00:30 BRT (within a 5-minute window to handle clock variance)
     const isMidnightWindow = hour === 0 && minute >= 30 && minute < 35;
