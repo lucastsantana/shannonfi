@@ -11,22 +11,42 @@
 #           Keep it out of version control and CI logs.
 # ─────────────────────────────────────────────────────────────────────────────
 
+# ── Exchange Selection ────────────────────────────────────────────────────────
+# Options: mercadobitcoin | binance
+exchange: mercadobitcoin
+
+# Trading pair symbol. The base asset is the non-BRL side (e.g. SOL, HYPE, BTC).
+# Change to switch the bot to a different asset (e.g. HYPE-BRL).
+symbol: SOL-BRL
+
+
 # ── Mercado Bitcoin credentials ────────────────────────────────────────────────
+# (Required only if exchange: mercadobitcoin)
 # Obtain from: https://www.mercadobitcoin.com.br → Account → API → Create credential
 # Required scopes: read (balances, orders), write (place orders)
 # Tax law: Lei 9.250/1995 Art. 21 (domestic exchange)
 #   - Monthly SELL proceeds ≤ R$35,000: exempt from capital gains tax
 #   - Above threshold: DARF payment by last business day of the following month
-exchange: mercadobitcoin
-
-# Trading pair symbol. The base asset is the non-BRL side (e.g. HYPE, HYPE, BTC).
-# Change to switch the bot to a different asset (e.g. HYPE-BRL).
-symbol: HYPE-BRL
 
 mercadobitcoin:
   clientId: "your-client-id-here"
   clientSecret: "your-client-secret-here"
   # apiBaseUrl: https://api.mercadobitcoin.net/api/v4   # default — do not change
+
+
+# ── Binance credentials ────────────────────────────────────────────────────────
+# (Required only if exchange: binance)
+# Obtain from: https://www.binance.com/account/api-management
+# 1. Enable Spot & Margin Trading
+# 2. Restrict to your IP address (highly recommended)
+# 3. Do NOT enable withdrawals
+# Note: Binance.com supports SOLBRL natively. Gains are always taxable (not eligible
+#       for Lei 9.250 exemption).
+
+# binance:
+#   apiKey: "your-api-key-here"
+#   apiSecret: "your-api-secret-here"
+#   # apiBaseUrl: https://api.binance.com   # default — do not change
 
 
 # ── Strategy parameters ────────────────────────────────────────────────────────

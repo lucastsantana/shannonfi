@@ -72,13 +72,14 @@ export class RebalancerBot {
 
   async start(): Promise<void> {
     this.isRunning = true;
+    const neverExceed = this.config.exchange === 'mercadobitcoin' ? this.config.neverExceedExemptionLimit : false;
     logger.info("Shannon's Demon bot starting", {
       exchange: this.config.exchange,
       dryRun: this.config.dryRun,
       useAdaptiveThreshold: this.config.useAdaptiveThreshold,
       thresholdBps: this.config.rebalanceThresholdBps,
       pollIntervalSeconds: this.config.pollIntervalSeconds,
-      neverExceedExemptionLimit: this.config.neverExceedExemptionLimit,
+      neverExceedExemptionLimit: neverExceed,
     });
 
     process.on('SIGINT', () => this.shutdown());
@@ -234,7 +235,9 @@ export class RebalancerBot {
 
     // ── Guard: exemption / volume cap ─────────────────────────────────────────
     // Lei 9.250/1995 Art. 21: only SELL proceeds count toward the R$35k exemption limit
-    if (this.config.neverExceedExemptionLimit && direction === 'SELL_BASE') {
+    // This guard only applies to Mercado Bitcoin (domestic exchange); Binance trades are always taxable
+    const neverExceed = this.config.exchange === 'mercadobitcoin' ? this.config.neverExceedExemptionLimit : false;
+    if (neverExceed && direction === 'SELL_BASE') {
       const monthBRT = todayBRT.slice(0, 7);
       const volumeSoFar = this.tax.getMonthlySalesBrl(monthBRT);
 

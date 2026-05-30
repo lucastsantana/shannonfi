@@ -11,9 +11,11 @@
 import { loadConfig } from '../config';
 import { MbClient } from '../adapters/mercadobitcoin/client';
 import { MbEndpoints } from '../adapters/mercadobitcoin/endpoints';
+import { BinanceClient } from '../adapters/binance/client';
+import { BinanceEndpoints } from '../adapters/binance/endpoints';
 import { execSync } from 'child_process';
 
-function getCredentialsFromKeyring(): { clientId: string; clientSecret: string } {
+function getMbCredentialsFromKeyring(): { clientId: string; clientSecret: string } {
   try {
     const clientId = execSync('secret-tool lookup service mercadobitcoin key clientId 2>/dev/null', {
       encoding: 'utf-8',
@@ -39,9 +41,37 @@ function getCredentialsFromKeyring(): { clientId: string; clientSecret: string }
   }
 }
 
+function getBinanceCredentialsFromKeyring(): { apiKey: string; apiSecret: string } {
+  try {
+    const apiKey = execSync('secret-tool lookup service binance key apiKey 2>/dev/null', {
+      encoding: 'utf-8',
+      stdio: ['pipe', 'pipe', 'ignore'],
+    }).trim();
+    const apiSecret = execSync('secret-tool lookup service binance key apiSecret 2>/dev/null', {
+      encoding: 'utf-8',
+      stdio: ['pipe', 'pipe', 'ignore'],
+    }).trim();
+
+    if (!apiKey || !apiSecret) {
+      throw new Error('Credentials not found in keyring');
+    }
+
+    return { apiKey, apiSecret };
+  } catch {
+    throw new Error(
+      'Binance credentials not found in GNOME Keyring.\n' +
+      'Store them with:\n' +
+      '  secret-tool store service binance key apiKey\n' +
+      '  secret-tool store service binance key apiSecret',
+    );
+  }
+}
+
 async function checkMercadoBitcoin(): Promise<void> {
   const config = loadConfig();
-  const { clientId, clientSecret } = getCredentialsFromKeyring();
+  if (config.exchange !== 'mercadobitcoin') return;
+
+  const { clientId, clientSecret } = getMbCredentialsFromKeyring();
   const apiBaseUrl = config.mercadobitcoin.apiBaseUrl;
 
   const client = new MbClient(clientId, clientSecret, apiBaseUrl);
@@ -76,6 +106,45 @@ async function checkMercadoBitcoin(): Promise<void> {
   }
 }
 
+async function checkBinance(): Promise<void> {
+  const config = loadConfig();
+  if (config.exchange !== 'binance') return;
+
+  const { apiKey, apiSecret } = getBinanceCredentialsFromKeyring();
+  const apiBaseUrl = config.binance.apiBaseUrl;
+
+  const client = new BinanceClient(apiKey, apiSecret, apiBaseUrl);
+  const endpoints = new BinanceEndpoints(client);
+
+  console.log('\n2. Testing Binance API authentication...');
+  const account = await endpoints.getAccount();
+  console.log(`   OK — Authenticated. Account Type: ${account.accountType}`);
+
+  const baseAsset = config.symbol.split('-')[0]!;
+
+  console.log('\n3. Fetching balances...');
+  const baseBalance = parseFloat(account.balances.find((b) => b.asset === baseAsset)?.free ?? '0');
+  const brlBalance = parseFloat(account.balances.find((b) => b.asset === 'BRL')?.free ?? '0');
+  console.log(`   ${baseAsset} balance: ${baseBalance.toFixed(6)} ${baseAsset}`);
+  console.log(`   BRL balance: R$${brlBalance.toFixed(2)}`);
+
+  if (brlBalance + baseBalance === 0) {
+    console.warn('   WARN — All balances are zero');
+  }
+
+  console.log(`\n4. Checking ${config.symbol} market (recent candles)...`);
+  const binanceSymbol = config.symbol.replace('-', '');
+  const klines = await endpoints.getKlines(binanceSymbol, '1d', 7);
+  const lastClose = parseFloat(klines[klines.length - 1]?.[4] ?? '0');
+  if (lastClose === 0) { console.error('   FAIL — No candle data returned'); process.exit(1); }
+  console.log(`   OK — ${klines.length} daily candles. Latest close: R$${lastClose.toFixed(2)}/${baseAsset}`);
+
+  const totalBrl = brlBalance + baseBalance * lastClose;
+  if (totalBrl < loadConfig().minPortfolioValueBrl) {
+    console.warn(`   WARN — Total portfolio R$${totalBrl.toFixed(2)} is below minPortfolioValueBrl (R$${loadConfig().minPortfolioValueBrl})`);
+  }
+}
+
 async function runSetupCheck(): Promise<void> {
   console.log("=== Shannon's Demon — Setup Check ===\n");
 
@@ -88,7 +157,11 @@ async function runSetupCheck(): Promise<void> {
   console.log(`   Adaptive:   ${config.useAdaptiveThreshold}`);
   console.log(`   Log Level:  ${config.logLevel}`);
 
-  await checkMercadoBitcoin();
+  if (config.exchange === 'mercadobitcoin') {
+    await checkMercadoBitcoin();
+  } else {
+    await checkBinance();
+  }
 
   console.log('\n✓ All checks passed. The bot is ready to run.');
   console.log('\nDry-run single cycle:');

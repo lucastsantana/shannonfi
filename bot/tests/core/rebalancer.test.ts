@@ -77,7 +77,7 @@ function makeBot(historyOverrides = {}, configOverrides: Partial<Config> = {}) {
   const adapter = {
     getPrice: vi.fn().mockResolvedValue(portfolio.basePrice),
     getPortfolio: vi.fn().mockResolvedValue(portfolio),
-    executeTrade: vi.fn(),
+    executeTrade: vi.fn().mockResolvedValue(makeTradeRecord()),
     getCandles: vi.fn().mockResolvedValue([]),
   } as unknown as ExchangeAdapter;
 

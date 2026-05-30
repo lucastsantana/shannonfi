@@ -11,6 +11,8 @@
 
 import { loadConfig } from '../config';
 import { MercadoBitcoinAdapter } from '../adapters/mercadobitcoin/adapter';
+import { BinanceAdapter } from '../adapters/binance/adapter';
+import { ExchangeAdapter } from '../adapters/types';
 import { TradeHistoryService } from '../core/tracker/history';
 import { CostBasisService } from '../core/tracker/costbasis';
 import { TaxService } from '../core/tracker/tax';
@@ -30,12 +32,22 @@ async function main(): Promise<void> {
   const baseAsset = config.symbol.split('-')[0]!;
   const dryRun = dryRunFlag || config.dryRun;
 
-  const adapter = new MercadoBitcoinAdapter(
-    config.mercadobitcoin,
-    dryRun,
-    config.maxSlippageBps,
-    config.symbol,
-  );
+  let adapter: ExchangeAdapter;
+  if (config.exchange === 'mercadobitcoin') {
+    adapter = new MercadoBitcoinAdapter(
+      config.mercadobitcoin,
+      dryRun,
+      config.maxSlippageBps,
+      config.symbol,
+    );
+  } else {
+    adapter = new BinanceAdapter(
+      config.binance,
+      dryRun,
+      config.maxSlippageBps,
+      config.symbol,
+    );
+  }
 
   const portfolio = await adapter.getPortfolio();
 

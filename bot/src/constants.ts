@@ -15,6 +15,12 @@ export const MAX_SLIPPAGE_BPS = 100;
 export const MB_FILL_POLL_INTERVAL_MS = 3_000;
 export const MB_FILL_POLL_MAX_ATTEMPTS = 10;         // 30s total
 
+// ─── Binance ──────────────────────────────────────────────────────────────────
+export const BINANCE_API_BASE = 'https://api.binance.com';
+// Binance market orders fill synchronously — polling is a safety fallback only
+export const BINANCE_FILL_POLL_INTERVAL_MS = 1_000;
+export const BINANCE_FILL_POLL_MAX_ATTEMPTS = 5;     // 5s total
+
 // ─── Volatility-adaptive threshold ───────────────────────────────────────────
 export const DEFAULT_VOLATILITY_MULTIPLIER = 1.5;
 export const DEFAULT_VOLATILITY_WINDOW_DAYS = 30;

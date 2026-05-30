@@ -10,6 +10,7 @@
 
 import { loadConfig } from './config';
 import { MercadoBitcoinAdapter } from './adapters/mercadobitcoin/adapter';
+import { BinanceAdapter } from './adapters/binance/adapter';
 import { ExchangeAdapter } from './adapters/types';
 import { RebalancerBot } from './core/rebalancer';
 import { TradeHistoryService } from './core/tracker/history';
@@ -33,13 +34,24 @@ async function main(): Promise<void> {
   const baseAsset = config.symbol.split('-')[0]!;
 
   // ── Build adapter ──────────────────────────────────────────────────────────
-  const adapter: ExchangeAdapter = new MercadoBitcoinAdapter(
-    config.mercadobitcoin,
-    config.dryRun,
-    config.maxSlippageBps,
-    config.symbol,
-  );
-  logger.info(`Using Mercado Bitcoin adapter (${config.symbol}, Lei 9.250/1995)`);
+  let adapter: ExchangeAdapter;
+  if (config.exchange === 'mercadobitcoin') {
+    adapter = new MercadoBitcoinAdapter(
+      config.mercadobitcoin,
+      config.dryRun,
+      config.maxSlippageBps,
+      config.symbol,
+    );
+    logger.info(`Using Mercado Bitcoin adapter (${config.symbol}, Lei 9.250/1995)`);
+  } else {
+    adapter = new BinanceAdapter(
+      config.binance,
+      config.dryRun,
+      config.maxSlippageBps,
+      config.symbol,
+    );
+    logger.info(`Using Binance adapter (${config.symbol})`);
+  }
 
   // ── Build services ─────────────────────────────────────────────────────────
   const history = new TradeHistoryService(config.dbPath);
