@@ -140,13 +140,17 @@ function formatConsoleOutput({ timestamp, level, message, ...meta }: any): strin
   }
 
   if (message.includes('Shannon\'s Demon bot starting')) {
-    const { exchange, dryRun, useAdaptiveThreshold, thresholdBps, pollIntervalSeconds } = meta;
-    return `${colors.cyan}${time}${colors.reset} ${colors.green}${colors.bold}🚀 SHANNON'S DEMON BOT STARTING${colors.reset}\n` +
-           `   Exchange: ${exchange}\n` +
-           `   Dry Run: ${dryRun ? 'YES' : 'NO'}\n` +
-           `   Adaptive Threshold: ${useAdaptiveThreshold ? 'YES' : 'NO'}\n` +
-           `   Threshold: ${thresholdBps} BPS\n` +
-           `   Poll Interval: ${pollIntervalSeconds}s`;
+    const { mode, symbol, dryRun, useAdaptiveThreshold, pollIntervalSeconds } = meta;
+    let output = `${colors.cyan}${time}${colors.reset} ${colors.green}${colors.bold}🚀 SHANNON'S DEMON BOT STARTING${colors.reset}\n`;
+    output += `   Mode:\n`;
+    output += `     exchange: ${mode?.exchange}\n`;
+    output += `     neverExceedExemptionLimit: ${mode?.neverExceedExemptionLimit}\n`;
+    output += `     enableDayTradeSafeguard: ${mode?.enableDayTradeSafeguard}\n`;
+    output += `   Symbol: ${symbol}\n`;
+    output += `   Dry Run: ${dryRun ? 'YES' : 'NO'}\n`;
+    output += `   Adaptive Threshold: ${useAdaptiveThreshold ? 'YES' : 'NO'}\n`;
+    output += `   Poll Interval: ${pollIntervalSeconds}s`;
+    return output;
   }
 
   // Default format for other messages
