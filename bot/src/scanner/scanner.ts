@@ -1,9 +1,16 @@
 import Database from 'better-sqlite3';
-import { MercadoBitcoinAdapter } from '../adapters/mercadobitcoin/adapter';
 import { computeMeanAbsoluteDailyReturn } from '../math';
 import { AssetCandidate, ScanResult, ScanOptions } from './types';
 import { logger } from '../core/tracker/logger';
 import { getDb } from '../core/tracker/db';
+
+// Generic adapter interface for scanner (duck typing)
+interface ScannerAdapter {
+  getCandlesWithVolume(
+    symbol: string,
+    countback: number,
+  ): Promise<Array<{ close: number; volume: number; timestamp: number }>>;
+}
 
 const STABLECOIN_SYMBOLS = new Set([
   'USDC-BRL',
@@ -28,7 +35,7 @@ export class AssetScanner {
   private dbPath: string | undefined;
 
   constructor(
-    private mbAdapter: MercadoBitcoinAdapter,
+    private adapter: ScannerAdapter,
     _db: Database.Database,
     dbPath?: string,
   ) {
@@ -126,7 +133,7 @@ export class AssetScanner {
 
   private async scoreSymbol(symbol: string, windowDays: number): Promise<Omit<AssetCandidate, 'rank'> | null> {
     const countback = windowDays + 1; // +1 to get windowDays returns
-    const candles = await this.mbAdapter.getCandlesWithVolume(symbol, countback);
+    const candles = await this.adapter.getCandlesWithVolume(symbol, countback);
 
     if (candles.length < 2) {
       logger.debug('Insufficient candle data', { symbol, count: candles.length });

@@ -242,6 +242,42 @@ export class BinanceAdapter implements ExchangeAdapter {
   }
 
   /**
+   * Fetch candles with volume data for a specific symbol (scanner use only).
+   * NOT on the ExchangeAdapter interface — scanner-specific.
+   * Returns close prices along with volume in base asset units.
+   * Klines format: [openTime, open, high, low, close, volume, closeTime, ...]
+   * Index 4 = close, Index 5 = volume
+   */
+  async getCandlesWithVolume(
+    symbol: string,
+    countback: number,
+  ): Promise<Array<{ close: number; volume: number; timestamp: number }>> {
+    // Convert human-readable format (SOL-BRL) to Binance format (SOLBRL)
+    const binanceSymbol = symbol.replace('-', '');
+    const klines = await this.endpoints.getKlines(binanceSymbol, '1d', countback);
+
+    const data = klines.map((k) => ({
+      timestamp: k[0],
+      close: parseFloat(k[4]),
+      volume: parseFloat(k[5]),
+    }));
+    data.sort((a, b) => a.timestamp - b.timestamp);
+    return data;
+  }
+
+  /**
+   * Get all BRL-paired trading symbols on Binance (scanner use only).
+   * Returns list of symbols like SOLBRL, HYPEUSDT, etc.
+   */
+  async getAllBrlSymbols(): Promise<string[]> {
+    const exchangeInfo = await this.endpoints.getExchangeInfo();
+    // Filter for TRADING status and BRL quote asset
+    return exchangeInfo.symbols
+      .filter((s) => s.status === 'TRADING' && s.quoteAsset === 'BRL')
+      .map((s) => s.symbol);
+  }
+
+  /**
    * Poll order status until terminal state is reached.
    * Binance market orders usually fill synchronously, so polling is a fallback.
    */
