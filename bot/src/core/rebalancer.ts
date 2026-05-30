@@ -159,8 +159,16 @@ export class RebalancerBot {
         const priceRatio = basePrice / prevPrice;
         const estBaseValueBrl = prev.baseValueBrl * priceRatio;
         const estTotalBrl = estBaseValueBrl + prev.brlBalance;
+
+        // Calculate deviation using the same formula as shouldRebalance()
+        // |base - brl| / min(base, brl) * 10000
+        const smaller = Math.min(estBaseValueBrl, prev.brlBalance);
+        const estDeviationBps = smaller > 0
+          ? Math.round((Math.abs(estBaseValueBrl - prev.brlBalance) / smaller) * 10000)
+          : 0;
+
+        // Calculate allocation percentages for display
         const estBaseRatioBps = Math.round((estBaseValueBrl / estTotalBrl) * 10000);
-        const estDeviationBps = Math.abs(estBaseRatioBps - 5000);
 
         // Calculate prices needed to trigger rebalance (both directions)
         const thresholdRatio = effectiveThresholdBps / 10000;
