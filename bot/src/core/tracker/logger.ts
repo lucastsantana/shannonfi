@@ -51,7 +51,7 @@ function formatConsoleOutput({ timestamp, level, message, ...meta }: any): strin
 
   // Format specific event types
   if (message === 'Price check' && hasMetadata) {
-    const { exchange, basePriceBrl, baseAsset, baseBalance, baseAllocationPct, brlBalance, brlAllocationPct, deviationBps, portfolioValueBrl, thresholdBps, triggerPriceBrl } = meta;
+    const { exchange, basePriceBrl, baseAsset, baseBalance, baseAllocationPct, brlBalance, brlAllocationPct, deviationBps, portfolioValueBrl, thresholdBps, triggerPriceUpBrl, triggerPriceDownBrl } = meta;
 
     let output = `${colors.cyan}${time}${colors.reset} ${colors.green}✓${colors.reset} ${colors.bold}Price Check${colors.reset}\n`;
     output += `   Exchange: ${exchange}\n`;
@@ -61,10 +61,19 @@ function formatConsoleOutput({ timestamp, level, message, ...meta }: any): strin
       output += `   ${baseAsset}: ${colors.bold}${baseBalance}${colors.reset} (${baseAllocationPct}%) | BRL: ${colors.bold}R$ ${brlBalance}${colors.reset} (${brlAllocationPct}%)\n`;
       output += `   Portfolio Total: ${colors.bold}R$ ${portfolioValueBrl}${colors.reset}\n`;
       output += `   Deviation: ${deviationBps} BPS | Threshold: ${thresholdBps} BPS\n`;
-      output += `   Price to trigger: ${colors.bold}R$ ${triggerPriceBrl}${colors.reset}/${baseAsset}`;
+      output += `   If falls to: ${colors.bold}R$ ${triggerPriceDownBrl}${colors.reset}/${baseAsset} | If rises to: ${colors.bold}R$ ${triggerPriceUpBrl}${colors.reset}/${baseAsset}`;
     }
 
     return output;
+  }
+
+  if (message === 'Computed adaptive threshold (will cache for today)' && hasMetadata) {
+    const { date, windowDays, multiplier, thresholdBps } = meta;
+    return `${colors.cyan}${time}${colors.reset} ${colors.blue}📊${colors.reset} ${colors.bold}Adaptive Threshold${colors.reset}\n` +
+           `   Date: ${date}\n` +
+           `   Window: ${windowDays} days\n` +
+           `   Multiplier: ${multiplier}x\n` +
+           `   Result: ${colors.bold}${thresholdBps} BPS${colors.reset}`;
   }
 
   if (message === 'No rebalance needed (price-only estimate)' && hasMetadata) {

@@ -127,6 +127,21 @@ export class RebalancerBot {
     // ── Step 1: fetch price only — cheapest possible request ───────────────────
     const basePrice = await this.adapter.getPrice();
 
+    // ── Step 2: get threshold (cached daily — zero cost after first call today) ─
+    let effectiveThresholdBps = this.config.rebalanceThresholdBps;
+    if (this.config.useAdaptiveThreshold) {
+      try {
+        effectiveThresholdBps = await this.volatility.computeAdaptiveThresholdBps(
+          this.config.thresholdVolatilityMultiplier,
+        );
+      } catch (err) {
+        logger.warn('Adaptive threshold unavailable, using static threshold', {
+          error: (err as Error).message,
+          fallbackBps: this.config.rebalanceThresholdBps,
+        });
+      }
+    }
+
     // Estimate current portfolio state for logging
     let logMetadata: any = {
       exchange: this.config.exchange,
@@ -147,13 +162,12 @@ export class RebalancerBot {
         const estBaseRatioBps = Math.round((estBaseValueBrl / estTotalBrl) * 10000);
         const estDeviationBps = Math.abs(estBaseRatioBps - 5000);
 
-        // Calculate price needed to trigger rebalance
-        const currentRatio = estBaseRatioBps / 10000;
-        const thresholdRatio = this.config.rebalanceThresholdBps / 10000;
-        const triggerRatio = currentRatio < 0.5
-          ? 0.5 + thresholdRatio  // Need to go up if under 50%
-          : 0.5 - thresholdRatio; // Need to go down if over 50%
-        const triggerPrice = (triggerRatio * estTotalBrl) / prev.baseBalance;
+        // Calculate prices needed to trigger rebalance (both directions)
+        const thresholdRatio = effectiveThresholdBps / 10000;
+        const triggerRatioUp = 0.5 + thresholdRatio;    // Price up to this allocation
+        const triggerRatioDown = 0.5 - thresholdRatio;  // Price down to this allocation
+        const triggerPriceUp = (triggerRatioUp * estTotalBrl) / prev.baseBalance;
+        const triggerPriceDown = (triggerRatioDown * estTotalBrl) / prev.baseBalance;
 
         logMetadata.baseAsset = this.config.symbol.split('-')[0];
         logMetadata.baseBalance = prev.baseBalance.toFixed(6);
@@ -162,27 +176,13 @@ export class RebalancerBot {
         logMetadata.brlAllocationPct = ((10000 - estBaseRatioBps) / 100).toFixed(2);
         logMetadata.deviationBps = estDeviationBps;
         logMetadata.portfolioValueBrl = estTotalBrl.toFixed(2);
-        logMetadata.thresholdBps = this.config.rebalanceThresholdBps;
-        logMetadata.triggerPriceBrl = triggerPrice.toFixed(2);
+        logMetadata.thresholdBps = effectiveThresholdBps;
+        logMetadata.triggerPriceUpBrl = triggerPriceUp.toFixed(2);
+        logMetadata.triggerPriceDownBrl = triggerPriceDown.toFixed(2);
       }
     }
 
     logger.info('Price check', logMetadata);
-
-    // ── Step 2: get threshold (cached daily — zero cost after first call today) ─
-    let effectiveThresholdBps = this.config.rebalanceThresholdBps;
-    if (this.config.useAdaptiveThreshold) {
-      try {
-        effectiveThresholdBps = await this.volatility.computeAdaptiveThresholdBps(
-          this.config.thresholdVolatilityMultiplier,
-        );
-      } catch (err) {
-        logger.warn('Adaptive threshold unavailable, using static threshold', {
-          error: (err as Error).message,
-          fallbackBps: this.config.rebalanceThresholdBps,
-        });
-      }
-    }
 
     // ── Step 3: estimate drift from price alone ────────────────────────────────
     // We don't have balances yet — use price to do a cheap pre-check based on
