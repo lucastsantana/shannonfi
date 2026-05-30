@@ -109,7 +109,7 @@ export class TelegramService {
     return lines.join('\n');
   }
 
-  private async sendMessage(text: string): Promise<void> {
+  async sendMessage(text: string): Promise<void> {
     await axios.post(`${this.apiUrl}/sendMessage`, {
       chat_id: this.chatId,
       text,
@@ -117,6 +117,6 @@ export class TelegramService {
       disable_web_page_preview: true,
     });
 
-    logger.debug('Telegram notification sent');
+    logger.debug('Telegram message sent');
   }
 }

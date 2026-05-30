@@ -10,6 +10,7 @@ import { shouldRebalance, computeRebalanceTrade } from '../math';
 import { Config } from '../config';
 import { BR_EFFECTIVE_LIMIT_BRL } from '../constants';
 import { TelegramService } from './notifier/telegram';
+import { DailyDigestService } from './notifier/daily-digest';
 
 // Small delay between sequential API calls during a rebalance execution,
 // to avoid hitting MB's 60 req/60s limit when multiple calls fire back-to-back.
@@ -47,6 +48,7 @@ export class RebalancerBot {
   private lastRebalanceDirection: 'BUY_BASE' | 'SELL_BASE' | null;
   private isRunning = false;
   private telegram: TelegramService | null = null;
+  private dailyDigest: DailyDigestService | null = null;
 
   constructor(
     private adapter: ExchangeAdapter,
@@ -67,6 +69,10 @@ export class RebalancerBot {
       try {
         this.telegram = new TelegramService(this.config.telegram);
         logger.info('Telegram notifications enabled');
+
+        const baseAsset = this.config.symbol.split('-')[0]!;
+        this.dailyDigest = new DailyDigestService(this.history, this.telegram, baseAsset);
+        logger.info('Daily digest enabled');
       } catch (err) {
         logger.warn('Telegram notifications disabled', {
           error: (err as Error).message,
@@ -112,6 +118,11 @@ export class RebalancerBot {
     const todayBRT = new Date().toLocaleDateString('en-CA', {
       timeZone: 'America/Sao_Paulo',
     });
+
+    // ── Check if it's time to send daily digest ──────────────────────────────────
+    if (this.dailyDigest) {
+      await this.dailyDigest.sendDailyDigestIfScheduled();
+    }
 
     // ── Step 1: fetch price only — cheapest possible request ───────────────────
     const basePrice = await this.adapter.getPrice();
