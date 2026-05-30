@@ -30,9 +30,8 @@ volatilityWindowDays: 30
 
 # ─── Safeguards ───────────────────────────────────────────────────────────────
 # enableDayTradeSafeguard: Prevent same-day opposite trades (BUY then SELL, or vice versa)
-# on the same BRT calendar day. Disabled for HYPE-BRL as research confirmed no tax penalty
-# for frequent trading on Brazilian crypto exchanges (Lei 9.250/1995 applies only to stocks).
-enableDayTradeSafeguard: false
+# on the same BRT calendar day. Enabled for safety and operational consistency.
+enableDayTradeSafeguard: true
 
 # Lei 9.250/1995 Art. 21 (MB only): Cap SELL trades to stay ≤ R$34,650/month
 neverExceedExemptionLimit: true
