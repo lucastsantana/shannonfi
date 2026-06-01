@@ -18,16 +18,20 @@ export function computeBaseRatioBps(baseValueBrl: number, totalValueBrl: number)
 }
 
 /**
- * Absolute deviation from 50% target allocation, in basis points.
- * deviationBps = |baseRatioBps - 5000|
+ * Deviation as |base - brl| / min(base, brl) in basis points.
+ * This scales 1:1 with the actual price move, so the threshold multiplier
+ * applies directly to MAD without the 2× amplification from weight-based math.
+ * Measures divergence from the last rebalance point (when holdings were equal).
  */
-export function computeDeviationBps(baseRatioBps: number): number {
-  return Math.abs(baseRatioBps - TARGET_ALLOCATION_BPS);
+export function computeDeviationBps(baseValueBrl: number, brlBalance: number): number {
+  const smaller = Math.min(baseValueBrl, brlBalance);
+  if (smaller <= 0) return 0;
+  return Math.round((Math.abs(baseValueBrl - brlBalance) / smaller) * BPS_DENOMINATOR);
 }
 
 /** Returns true if drift strictly exceeds threshold. */
-export function shouldRebalance(baseRatioBps: number, thresholdBps: number): boolean {
-  return computeDeviationBps(baseRatioBps) > thresholdBps;
+export function shouldRebalance(baseValueBrl: number, brlBalance: number, thresholdBps: number): boolean {
+  return computeDeviationBps(baseValueBrl, brlBalance) > thresholdBps;
 }
 
 /** BRL amount and direction needed to restore 50/50. */

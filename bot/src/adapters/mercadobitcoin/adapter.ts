@@ -86,7 +86,7 @@ export class MercadoBitcoinAdapter implements ExchangeAdapter {
       baseValueBrl,
       totalValueBrl,
       baseRatioBps,
-      deviationBps: computeDeviationBps(baseRatioBps),
+      deviationBps: computeDeviationBps(baseValueBrl, brlBalance),
       timestamp: new Date().toISOString(),
     };
   }

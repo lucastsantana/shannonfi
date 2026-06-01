@@ -223,7 +223,7 @@ export class RebalancerBot {
         const estTotalBrl = estBaseValueBrl + prev.brlBalance;
         const estBaseRatioBps = computeBaseRatioBps(estBaseValueBrl, estTotalBrl);
 
-        if (!shouldRebalance(estBaseRatioBps, effectiveThresholdBps)) {
+        if (!shouldRebalance(estBaseValueBrl, prev.brlBalance, effectiveThresholdBps)) {
           logger.info('No rebalance needed (price-only estimate)', {
             estBaseValueBrl: estBaseValueBrl.toFixed(2),
             brlBalance: prev.brlBalance.toFixed(2),
@@ -287,7 +287,7 @@ export class RebalancerBot {
     }
 
     // ── Guard: drift threshold (precise, with actual balances) ─────────────────
-    if (!shouldRebalance(portfolio.baseRatioBps, effectiveThresholdBps)) {
+    if (!shouldRebalance(portfolio.baseValueBrl, portfolio.brlBalance, effectiveThresholdBps)) {
       logger.info('No rebalance needed', {
         deviationBps: portfolio.deviationBps,
         effectiveThresholdBps,

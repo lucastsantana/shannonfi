@@ -42,7 +42,7 @@ function makePortfolio(overrides: Partial<Portfolio> = {}): Portfolio {
     baseValueBrl: 4000,
     totalValueBrl: 6000,
     baseRatioBps: 6667,
-    deviationBps: 1667,
+    deviationBps: 10000, // |4000 - 2000| / min(4000, 2000) = 2000 / 2000 = 1 = 10000 bps
     timestamp: new Date().toISOString(),
     ...overrides,
   };
@@ -145,7 +145,13 @@ describe('RebalancerBot', () => {
     // Portfolio at 50/50 — no rebalance needed
     vi.mocked(adapter.getPrice).mockResolvedValue(400);
     vi.mocked(adapter.getPortfolio).mockResolvedValue(
-      makePortfolio({ baseRatioBps: 5000, deviationBps: 0 }),
+      makePortfolio({
+        baseValueBrl: 3000,
+        brlBalance: 3000,
+        totalValueBrl: 6000,
+        baseRatioBps: 5000,
+        deviationBps: 0,
+      }),
     );
     await bot.checkAndRebalance();
     expect(adapter.getPrice).toHaveBeenCalledTimes(1);
@@ -168,11 +174,11 @@ describe('RebalancerBot', () => {
     vi.mocked(adapter.getPrice).mockResolvedValue(400);
     vi.mocked(adapter.getPortfolio).mockResolvedValue(
       makePortfolio({
-        baseValueBrl: 3020,
-        brlBalance: 2980,
-        totalValueBrl: 6000,
-        baseRatioBps: 5033,
-        deviationBps: 33,
+        baseValueBrl: 3015,
+        brlBalance: 3000,
+        totalValueBrl: 6015,
+        baseRatioBps: 5012,
+        deviationBps: 50, // |3015 - 3000| / min(3015, 3000) = 15 / 3000 × 10000 = 50 bps < 100
       }),
     );
     await bot.checkAndRebalance();
@@ -226,7 +232,7 @@ describe('RebalancerBot', () => {
     // BUY direction: SOL underweight
     vi.mocked(adapter.getPrice).mockResolvedValue(400);
     vi.mocked(adapter.getPortfolio).mockResolvedValue(
-      makePortfolio({ baseValueBrl: 1500, brlBalance: 4500, totalValueBrl: 6000, baseRatioBps: 2500, deviationBps: 2500 }),
+      makePortfolio({ baseValueBrl: 1500, brlBalance: 4500, totalValueBrl: 6000, baseRatioBps: 2500, deviationBps: 20000 }),
     );
     await bot.checkAndRebalance();
     expect(adapter.executeTrade).not.toHaveBeenCalled();
@@ -249,7 +255,7 @@ describe('RebalancerBot', () => {
     });
     vi.mocked(adapter.getPrice).mockResolvedValue(400);
     vi.mocked(adapter.getPortfolio).mockResolvedValue(
-      makePortfolio({ baseValueBrl: 1500, brlBalance: 4500, totalValueBrl: 6000, baseRatioBps: 2500, deviationBps: 2500 }),
+      makePortfolio({ baseValueBrl: 1500, brlBalance: 4500, totalValueBrl: 6000, baseRatioBps: 2500, deviationBps: 20000 }),
     );
     vi.mocked(adapter.executeTrade).mockResolvedValue(makeTradeRecord({ direction: 'BUY_BASE' }));
     await bot.checkAndRebalance();
@@ -291,7 +297,7 @@ describe('RebalancerBot', () => {
     vi.mocked(tax.getMonthlySalesBrl).mockReturnValue(34_000);
     vi.mocked(adapter.getPrice).mockResolvedValue(400);
     vi.mocked(adapter.getPortfolio).mockResolvedValue(
-      makePortfolio({ baseValueBrl: 1500, brlBalance: 4500, totalValueBrl: 6000, baseRatioBps: 2500, deviationBps: 2500 }),
+      makePortfolio({ baseValueBrl: 1500, brlBalance: 4500, totalValueBrl: 6000, baseRatioBps: 2500, deviationBps: 20000 }),
     );
     vi.mocked(adapter.executeTrade).mockResolvedValue(makeTradeRecord({ direction: 'BUY_BASE' }));
     await bot.checkAndRebalance();
@@ -306,7 +312,16 @@ describe('RebalancerBot', () => {
     (bot as unknown as { volatility: { computeAdaptiveThresholdBps: ReturnType<typeof vi.fn> } }).volatility = {
       computeAdaptiveThresholdBps: vi.fn().mockResolvedValue(2000),
     };
-    vi.mocked(adapter.getPortfolio).mockResolvedValue(makePortfolio()); // deviationBps 1667 < 2000
+    // deviationBps 100 < 2000: |3030 - 3000| / 3000 = 100 bps
+    vi.mocked(adapter.getPortfolio).mockResolvedValue(
+      makePortfolio({
+        baseValueBrl: 3030,
+        brlBalance: 3000,
+        totalValueBrl: 6030,
+        baseRatioBps: 5025,
+        deviationBps: 100,
+      }),
+    );
     await bot.checkAndRebalance();
     expect(adapter.executeTrade).not.toHaveBeenCalled();
   });

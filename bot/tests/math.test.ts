@@ -26,34 +26,44 @@ describe('computeBaseRatioBps', () => {
 
 describe('computeDeviationBps', () => {
   it('returns 0 at perfect 50/50', () => {
-    expect(computeDeviationBps(5000)).toBe(0);
+    // baseValueBrl = 1000, brlBalance = 1000 → |1000 - 1000| / 1000 = 0
+    expect(computeDeviationBps(1000, 1000)).toBe(0);
   });
 
-  it('returns 2500 for 75% SOL', () => {
-    expect(computeDeviationBps(7500)).toBe(2500);
+  it('returns 10000 for 75% SOL (double the BRL)', () => {
+    // baseValueBrl = 1500, brlBalance = 500 → |1500 - 500| / 500 = 2 = 20000 bps
+    expect(computeDeviationBps(1500, 500)).toBe(20000);
   });
 
-  it('returns 2500 for 25% SOL', () => {
-    expect(computeDeviationBps(2500)).toBe(2500);
+  it('returns 10000 for 25% SOL (half the BRL)', () => {
+    // baseValueBrl = 500, brlBalance = 1500 → |500 - 1500| / 500 = 2 = 20000 bps
+    expect(computeDeviationBps(500, 1500)).toBe(20000);
   });
 });
 
 describe('shouldRebalance', () => {
   it('returns false when deviation equals threshold (strict >, not >=)', () => {
-    // deviation = |5100 - 5000| = 100; threshold = 100 → 100 > 100 = false
-    expect(shouldRebalance(5100, 100)).toBe(false);
+    // baseValueBrl = 1100, brlBalance = 1000 → deviation = |1100 - 1000| / 1000 = 1000 bps
+    // threshold = 1000 → 1000 > 1000 = false
+    expect(shouldRebalance(1100, 1000, 1000)).toBe(false);
   });
 
   it('returns false when deviation is below threshold', () => {
-    expect(shouldRebalance(5050, 100)).toBe(false);
+    // baseValueBrl = 1050, brlBalance = 1000 → deviation = |1050 - 1000| / 1000 = 500 bps
+    // threshold = 600 → 500 > 600 = false
+    expect(shouldRebalance(1050, 1000, 600)).toBe(false);
   });
 
   it('returns true when deviation strictly exceeds threshold', () => {
-    expect(shouldRebalance(5101, 100)).toBe(true);
+    // baseValueBrl = 1101, brlBalance = 1000 → deviation = |1101 - 1000| / 1000 = 1010 bps
+    // threshold = 1000 → 1010 > 1000 = true
+    expect(shouldRebalance(1101, 1000, 1000)).toBe(true);
   });
 
   it('returns true for large deviation', () => {
-    expect(shouldRebalance(7500, 100)).toBe(true);
+    // baseValueBrl = 1500, brlBalance = 500 → deviation = |1500 - 500| / 500 = 20000 bps
+    // threshold = 1000 → 20000 > 1000 = true
+    expect(shouldRebalance(1500, 500, 1000)).toBe(true);
   });
 });
 
