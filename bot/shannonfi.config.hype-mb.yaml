@@ -1,0 +1,30 @@
+exchange: mercadobitcoin
+symbol: HYPE-BRL
+
+mercadobitcoin:
+  clientId: "placeholder"
+  clientSecret: "placeholder"
+  apiBaseUrl: "https://api.mercadobitcoin.net/api/v4"
+
+rebalanceThresholdBps: 100
+maxSlippageBps: 100
+minPortfolioValueBrl: 200
+minTradeSizeBrl: 20
+minRebalanceIntervalSeconds: 7200
+
+useAdaptiveThreshold: true
+thresholdVolatilityMultiplier: 1.5
+volatilityWindowDays: 30
+
+pollIntervalSeconds: 900
+dryRun: true
+logLevel: info
+
+dbPath: ./data/hype-mb/shannonfi.db
+tradeHistoryPath: ./data/hype-mb/trade_history.json
+costBasisPath: ./data/hype-mb/cost_basis.json
+taxEventsPath: ./data/hype-mb/tax_events.json
+portfolioSnapshotsPath: ./data/hype-mb/portfolio_snapshots.json
+
+enableDayTradeSafeguard: true
+neverExceedExemptionLimit: false

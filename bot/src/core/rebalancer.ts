@@ -177,7 +177,8 @@ export class RebalancerBot {
         const estBaseValueBrl = prev.baseValueBrl * priceRatio;
         const estTotalBrl = estBaseValueBrl + prev.brlBalance;
         const estBaseRatioBps = computeBaseRatioBps(estBaseValueBrl, estTotalBrl);
-        const estDeviationBps = Math.abs(estBaseRatioBps - 5000);
+        // Use the same relative-ratio calculation as the actual trigger
+        const estDeviationBps = Math.round((Math.abs(estBaseValueBrl - prev.brlBalance) / Math.min(estBaseValueBrl, prev.brlBalance)) * 10000);
 
         // Get acquisition price for reference (cost basis)
         const costBasisLedger = this.costBasis.getLedger();
