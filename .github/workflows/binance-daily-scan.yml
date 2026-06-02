@@ -83,15 +83,13 @@ jobs:
         id: parse-results
         run: |
           if [ -f /tmp/scan-output.log ]; then
-            SCAN_RESULTS=$(cat /tmp/scan-output.log | tail -50)
+            SCAN_RESULTS=$(cat /tmp/scan-output.log | tail -80)
           else
             SCAN_RESULTS="No output captured"
           fi
-          # Escape for JSON
+          # Escape for GitHub output: replace newlines with literal \n
           SCAN_RESULTS="${SCAN_RESULTS//$'\n'/\\n}"
-          echo "results<<EOF" >> $GITHUB_OUTPUT
-          echo "$SCAN_RESULTS" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
+          echo "results=$SCAN_RESULTS" >> $GITHUB_OUTPUT
         continue-on-error: true
 
       - name: Send results to Telegram

@@ -74,16 +74,13 @@ jobs:
         id: parse-results
         run: |
           if [ -f /tmp/mb-scan-output.log ]; then
-            SCAN_RESULTS=$(cat /tmp/mb-scan-output.log | tail -60)
+            SCAN_RESULTS=$(cat /tmp/mb-scan-output.log | tail -80)
           else
             SCAN_RESULTS="No scan output captured"
           fi
-          # Escape newlines for GitHub output
-          {
-            echo "results<<'EOF'"
-            echo "$SCAN_RESULTS"
-            echo "EOF"
-          } >> $GITHUB_OUTPUT
+          # Escape for GitHub output: replace newlines with literal \n
+          SCAN_RESULTS="${SCAN_RESULTS//$'\n'/\\n}"
+          echo "results=$SCAN_RESULTS" >> $GITHUB_OUTPUT
         continue-on-error: true
 
       - name: Send completion notification
