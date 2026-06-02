@@ -71,8 +71,8 @@ jobs:
       - name: Run Binance scan
         working-directory: ./bot
         env:
-          MB_CLIENT_ID: ${{ secrets.MB_CLIENT_ID }}
-          MB_CLIENT_SECRET: ${{ secrets.MB_CLIENT_SECRET }}
+          BINANCE_API_KEY: ${{ secrets.BINANCE_API_KEY }}
+          BINANCE_API_SECRET: ${{ secrets.BINANCE_API_SECRET }}
         run: |
           set -o pipefail
           npm run scan:binance -- --config shannonfi.config.yaml 2>&1 | tee /tmp/scan-output.log

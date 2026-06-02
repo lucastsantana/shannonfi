@@ -38,13 +38,27 @@ export class BinanceAdapter implements ExchangeAdapter {
     private binanceConfig: BinanceConfig,
     private dryRun: boolean,
     private maxSlippageBps: number,
-    private symbol: string = 'SOL-BRL',  // human-readable format
+    private symbol: string,
   ) {
-    this.baseAsset = symbol.split('-')[0]!;      // SOL
-    this.quoteAsset = symbol.split('-')[1]!;     // BRL
+    if (!symbol || !symbol.includes('-')) {
+      throw new Error(`Invalid symbol format: ${symbol}. Expected BASE-QUOTE format (e.g. SOL-BRL)`);
+    }
+    const parts = symbol.split('-');
+    this.baseAsset = parts[0]!;
+    this.quoteAsset = parts[1]!;
     this.binanceSymbol = symbol.replace('-', ''); // SOLBRL
-    // Load credentials directly from GNOME Keyring (never from config files)
-    const { apiKey, apiSecret } = getBinanceCredentials();
+
+    // Load credentials from environment variables (GitHub Actions) or GNOME Keyring (local PM2)
+    let apiKey = process.env.BINANCE_API_KEY;
+    let apiSecret = process.env.BINANCE_API_SECRET;
+
+    if (!apiKey || !apiSecret) {
+      // Fall back to GNOME Keyring for local PM2 instance
+      const creds = getBinanceCredentials();
+      apiKey = creds.apiKey;
+      apiSecret = creds.apiSecret;
+    }
+
     const client = new BinanceClient(
       apiKey,
       apiSecret,
@@ -60,7 +74,7 @@ export class BinanceAdapter implements ExchangeAdapter {
   async getPrice(): Promise<number> {
     const resp = await this.endpoints.getTickerPrice(this.binanceSymbol);
     const price = parseFloat(resp.price);
-    if (price <= 0) throw new Error(`Invalid ${this.binanceSymbol} price: ${resp.price}`);
+    if (!Number.isFinite(price) || price <= 0) throw new Error(`Invalid ${this.binanceSymbol} price: ${resp.price}`);
     return price;
   }
 
@@ -76,12 +90,13 @@ export class BinanceAdapter implements ExchangeAdapter {
       knownPrice !== undefined ? Promise.resolve(knownPrice) : this.getPrice(),
     ]);
 
-    const baseBalance = parseFloat(
-      account.balances.find((b) => b.asset === this.baseAsset)?.free ?? '0',
-    );
-    const brlBalance = parseFloat(
-      account.balances.find((b) => b.asset === this.quoteAsset)?.free ?? '0',
-    );
+    const baseBalanceStr = account.balances.find((b) => b.asset === this.baseAsset)?.free ?? '0';
+    const baseBalance = parseFloat(baseBalanceStr);
+    if (!Number.isFinite(baseBalance) || baseBalance < 0) throw new Error(`Invalid ${this.baseAsset} balance: ${baseBalanceStr}`);
+
+    const brlBalanceStr = account.balances.find((b) => b.asset === this.quoteAsset)?.free ?? '0';
+    const brlBalance = parseFloat(brlBalanceStr);
+    if (!Number.isFinite(brlBalance) || brlBalance < 0) throw new Error(`Invalid ${this.quoteAsset} balance: ${brlBalanceStr}`);
 
     const baseValueBrl = baseBalance * basePrice;
     const totalValueBrl = baseValueBrl + brlBalance;
@@ -159,6 +174,9 @@ export class BinanceAdapter implements ExchangeAdapter {
           const lotSize = symbolInfo.filters.find((f) => (f as any).filterType === 'LOT_SIZE');
           if (!lotSize) throw new Error(`No LOT_SIZE filter for ${this.binanceSymbol}`);
           this.cachedLotStepSize = parseFloat((lotSize as any).stepSize);
+          if (!Number.isFinite(this.cachedLotStepSize) || this.cachedLotStepSize <= 0) {
+            this.cachedLotStepSize = 1e-8;
+          }
           logger.debug('Cached LOT_SIZE', {
             symbol: this.binanceSymbol,
             stepSize: this.cachedLotStepSize,
@@ -236,7 +254,14 @@ export class BinanceAdapter implements ExchangeAdapter {
     const klines = await this.endpoints.getKlines(this.binanceSymbol, interval as any, countback);
 
     // Klines are [openTime, open, high, low, close, ...] — extract close (index 4)
-    const pairs = klines.map((k) => ({ ts: k[0], close: parseFloat(k[4]) }));
+    const pairs = klines.map((k) => {
+      const closeStr = k[4];
+      const close = parseFloat(closeStr);
+      if (!Number.isFinite(close) || close <= 0) {
+        throw new Error(`Invalid candle close: ${closeStr}`);
+      }
+      return { ts: k[0], close };
+    });
     pairs.sort((a, b) => a.ts - b.ts);
     return pairs.map((p) => p.close);
   }
@@ -256,11 +281,15 @@ export class BinanceAdapter implements ExchangeAdapter {
     const binanceSymbol = symbol.replace('-', '');
     const klines = await this.endpoints.getKlines(binanceSymbol, '1d', countback);
 
-    const data = klines.map((k) => ({
-      timestamp: k[0],
-      close: parseFloat(k[4]),
-      volume: parseFloat(k[5]),
-    }));
+    const data = klines.map((k) => {
+      const closeStr = k[4];
+      const volumeStr = k[5];
+      const close = parseFloat(closeStr);
+      const volume = parseFloat(volumeStr);
+      if (!Number.isFinite(close) || close <= 0) throw new Error(`Invalid candle close: ${closeStr}`);
+      if (!Number.isFinite(volume) || volume < 0) throw new Error(`Invalid volume: ${volumeStr}`);
+      return { timestamp: k[0], close, volume };
+    });
     data.sort((a, b) => a.timestamp - b.timestamp);
     return data;
   }
@@ -314,10 +343,12 @@ export class BinanceAdapter implements ExchangeAdapter {
     orderResp: any,
     portfolioBefore: Portfolio,
   ): void {
-    const executedQty = parseFloat(orderResp.executedQty);
-    const cummulativeQuoteQty = parseFloat(orderResp.cummulativeQuoteQty);
+    const executedQtyStr = orderResp.executedQty;
+    const cummulativeQuoteQtyStr = orderResp.cummulativeQuoteQty;
+    const executedQty = parseFloat(executedQtyStr);
+    const cummulativeQuoteQty = parseFloat(cummulativeQuoteQtyStr);
 
-    if (executedQty <= 0 || cummulativeQuoteQty <= 0) {
+    if (!Number.isFinite(executedQty) || !Number.isFinite(cummulativeQuoteQty) || executedQty <= 0 || cummulativeQuoteQty <= 0) {
       record.status = 'FAILED';
       return;
     }
@@ -329,7 +360,12 @@ export class BinanceAdapter implements ExchangeAdapter {
     let feeBrl = 0;
     if (orderResp.fills && Array.isArray(orderResp.fills)) {
       for (const fill of orderResp.fills) {
-        const commission = parseFloat(fill.commission);
+        const commissionStr = fill.commission;
+        const commission = parseFloat(commissionStr);
+        if (!Number.isFinite(commission) || commission < 0) {
+          logger.warn('Invalid commission value', { commission: commissionStr });
+          continue;
+        }
         if (fill.commissionAsset === this.quoteAsset) {
           // Fee is already in BRL
           feeBrl += commission;
