@@ -1,7 +1,7 @@
 {
   "name": "@shannonfi/bot",
   "version": "1.0.0",
-  "description": "Shannon's Demon rebalancing bot for Mercado Bitcoin (SOL-BRL)",
+  "description": "Shannon's Demon rebalancing bot for Mercado Bitcoin",
   "private": true,
   "main": "dist/index.js",
   "scripts": {
@@ -10,13 +10,6 @@
     "start:once": "node dist/index.js --once",
     "dev": "ts-node src/index.ts",
     "dev:once": "ts-node src/index.ts --once",
-    "dev:report": "ts-node src/index.ts --report",
-    "report": "ts-node ../reporting/src/monthly-report.ts",
-    "report:built": "node ../reporting/dist/monthly-report.js",
-    "report:pdf": "ts-node ../reporting/src/latex-report.ts",
-    "report:pdf:built": "node ../reporting/dist/latex-report.js",
-    "strategy-deck": "ts-node ../reporting/src/strategy-deck.ts",
-    "strategy-deck:built": "node ../reporting/dist/strategy-deck.js",
     "setup-check": "ts-node src/scripts/setup-check.ts",
     "liquidate": "./liquidate.sh",
     "liquidate:built": "node dist/scripts/liquidate.js",
@@ -25,7 +18,8 @@
     "test:coverage": "vitest run --coverage",
     "typecheck": "tsc --noEmit",
     "scan": "ts-node -r tsconfig-paths/register src/scanner/scan.ts",
-    "scan:binance": "ts-node -r tsconfig-paths/register src/scanner/scan.ts"
+    "scan:binance": "ts-node -r tsconfig-paths/register src/scanner/scan.ts",
+    "migrate": "ts-node src/scripts/migrate-json-to-db.ts"
   },
   "dependencies": {
     "axios": "^1.16.1",

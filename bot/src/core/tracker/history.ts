@@ -10,7 +10,6 @@ import * as path from 'path';
 import { TradeRecord, PortfolioSnapshot } from '../../adapters/types';
 import { logger } from './logger';
 import { getDb } from './db';
-import { loadConfig } from '../../config';
 
 export class TradeHistoryService {
   private db: Database.Database;

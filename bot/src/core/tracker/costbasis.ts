@@ -9,7 +9,6 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { logger } from './logger';
 import { getDb } from './db';
-import { loadConfig } from '../../config';
 
 export interface CostBasisLedger {
   base: {
