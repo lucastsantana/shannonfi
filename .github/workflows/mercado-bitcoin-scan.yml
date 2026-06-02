@@ -61,12 +61,29 @@ jobs:
 
       - name: Scan Mercado Bitcoin
         working-directory: ./bot
+        id: scan
         env:
           MB_CLIENT_ID: ${{ secrets.MB_CLIENT_ID }}
           MB_CLIENT_SECRET: ${{ secrets.MB_CLIENT_SECRET }}
         run: |
           set -o pipefail
           npm run scan -- --config shannonfi.config.yaml 2>&1 | tee /tmp/mb-scan-output.log
+        continue-on-error: true
+
+      - name: Parse scan results
+        id: parse-results
+        run: |
+          if [ -f /tmp/mb-scan-output.log ]; then
+            SCAN_RESULTS=$(cat /tmp/mb-scan-output.log | tail -60)
+          else
+            SCAN_RESULTS="No scan output captured"
+          fi
+          # Escape newlines for GitHub output
+          {
+            echo "results<<'EOF'"
+            echo "$SCAN_RESULTS"
+            echo "EOF"
+          } >> $GITHUB_OUTPUT
         continue-on-error: true
 
       - name: Send completion notification
@@ -76,8 +93,9 @@ jobs:
           to: ${{ secrets.TELEGRAM_CHAT_ID }}
           token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           message: |
-            📊 Mercado Bitcoin Scan ${{ job.status == 'success' && '✅' && 'completed' || '❌ failed' }}
-            🔗 ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+            📊 Mercado Bitcoin Scan ${{ job.status == 'success' && '✅' || '❌' }}
+
+            ${{ steps.parse-results.outputs.results }}
 
       - name: Upload database artifact
         if: always()

@@ -94,29 +94,16 @@ jobs:
           echo "EOF" >> $GITHUB_OUTPUT
         continue-on-error: true
 
-      - name: Send success report to Telegram
-        if: success()
+      - name: Send results to Telegram
+        if: always()
         uses: appleboy/telegram-action@master
         with:
           to: ${{ secrets.TELEGRAM_CHAT_ID }}
           token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           message: |
-            ✅ Binance Daily Scan Completed
+            📊 Binance Daily Scan ${{ job.status == 'success' && '✅' || '❌' }}
 
-            📅 Date: $(date -u +'%Y-%m-%d %H:%M:%S UTC')
-            🔗 Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-
-      - name: Send failure alert to Telegram
-        if: failure()
-        uses: appleboy/telegram-action@master
-        with:
-          to: ${{ secrets.TELEGRAM_CHAT_ID }}
-          token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          message: |
-            ❌ Binance Daily Scan Failed
-
-            📅 Date: $(date -u +'%Y-%m-%d %H:%M:%S UTC')
-            🔗 View: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+            ${{ steps.parse-results.outputs.results }}
 
       - name: Upload updated database artifact
         if: always()
