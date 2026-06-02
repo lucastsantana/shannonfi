@@ -76,10 +76,8 @@ jobs:
           to: ${{ secrets.TELEGRAM_CHAT_ID }}
           token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           message: |
-            📊 Mercado Bitcoin Scan ${{ job.status == 'success' && '✅' || '❌' }}
-
-            📅 Time: $(date -u +'%Y-%m-%d %H:%M:%S UTC')
-            🔗 Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+            📊 Mercado Bitcoin Scan ${{ job.status == 'success' && '✅' && 'completed' || '❌ failed' }}
+            🔗 ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
 
       - name: Upload database artifact
         if: always()
