@@ -8,6 +8,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
   digest:
@@ -56,13 +57,13 @@ jobs:
             SYMBOL=$(sqlite3 ./data/hype-mb/shannonfi.db "SELECT value FROM db_config WHERE key = 'current_symbol' LIMIT 1;" 2>/dev/null || echo "SOL-BRL")
             BASE_ASSET=$(echo $SYMBOL | cut -d'-' -f1)
 
-            # Query database for latest snapshot
-            sqlite3 ./data/hype-mb/shannonfi.db << SQL || true
+            # Query database for latest snapshot and format with dynamic asset name
+            sqlite3 ./data/hype-mb/shannonfi.db << 'SQL' | sed "s/SOL/$BASE_ASSET/g" || true
             SELECT
               '**Total Value:** R$' || printf("%.2f", total_value_brl) ||
-              ' **$BASE_ASSET Balance:** ' || printf("%.6f", sol_balance) ||
+              ' **SOL Balance:** ' || printf("%.6f", sol_balance) ||
               ' **BRL Balance:** R$' || printf("%.2f", brl_balance) ||
-              ' **$BASE_ASSET Price:** R$' || printf("%.2f", sol_price)
+              ' **SOL Price:** R$' || printf("%.2f", sol_price)
             FROM portfolio_snapshots
             ORDER BY date_brt DESC LIMIT 1;
             SQL
