@@ -60,6 +60,9 @@ jobs:
 
       - name: Scan Mercado Bitcoin
         working-directory: ./bot
+        env:
+          MB_CLIENT_ID: ${{ secrets.MB_CLIENT_ID }}
+          MB_CLIENT_SECRET: ${{ secrets.MB_CLIENT_SECRET }}
         run: |
           set -o pipefail
           npm run scan -- --config shannonfi.config.yaml 2>&1 | tee /tmp/mb-scan-output.log

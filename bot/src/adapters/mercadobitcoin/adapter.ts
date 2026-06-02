@@ -28,11 +28,24 @@ export class MercadoBitcoinAdapter implements ExchangeAdapter {
     private mbConfig: MercadoBitcoinConfig,
     private dryRun: boolean,
     private maxSlippageBps: number,
-    private symbol: string = 'SOL-BRL',
+    private symbol: string,
   ) {
+    if (!symbol || !symbol.includes('-')) {
+      throw new Error(`Invalid symbol format: ${symbol}. Expected BASE-QUOTE format (e.g. SOL-BRL)`);
+    }
     this.baseAsset = symbol.split('-')[0]!;
-    // Load credentials directly from GNOME Keyring (never from config files)
-    const { clientId, clientSecret } = getMercadoBitcoinCredentials();
+
+    // Load credentials from environment variables (GitHub Actions) or GNOME Keyring (local PM2)
+    let clientId = process.env.MB_CLIENT_ID;
+    let clientSecret = process.env.MB_CLIENT_SECRET;
+
+    if (!clientId || !clientSecret) {
+      // Fall back to GNOME Keyring for local PM2 instance
+      const creds = getMercadoBitcoinCredentials();
+      clientId = creds.clientId;
+      clientSecret = creds.clientSecret;
+    }
+
     const client = new MbClient(clientId, clientSecret, mbConfig.apiBaseUrl);
     this.endpoints = new MbEndpoints(client, symbol);
   }
@@ -54,7 +67,7 @@ export class MercadoBitcoinAdapter implements ExchangeAdapter {
     const latest = resp.c[resp.c.length - 1];
     if (!latest) throw new Error('No candle data returned from Mercado Bitcoin');
     const price = parseFloat(latest);
-    if (price <= 0) throw new Error(`Invalid SOL/BRL price: ${latest}`);
+    if (!Number.isFinite(price) || price <= 0) throw new Error(`Invalid SOL/BRL price: ${latest}`);
     return price;
   }
 
@@ -72,8 +85,13 @@ export class MercadoBitcoinAdapter implements ExchangeAdapter {
       knownPrice !== undefined ? Promise.resolve(knownPrice) : this.getPrice(),
     ]);
 
-    const baseBalance = parseFloat(balances.find((b) => b.symbol === this.baseAsset)?.available ?? '0');
-    const brlBalance = parseFloat(balances.find((b) => b.symbol === 'BRL')?.available ?? '0');
+    const baseBalanceStr = balances.find((b) => b.symbol === this.baseAsset)?.available ?? '0';
+    const baseBalance = parseFloat(baseBalanceStr);
+    if (!Number.isFinite(baseBalance) || baseBalance < 0) throw new Error(`Invalid ${this.baseAsset} balance: ${baseBalanceStr}`);
+
+    const brlBalanceStr = balances.find((b) => b.symbol === 'BRL')?.available ?? '0';
+    const brlBalance = parseFloat(brlBalanceStr);
+    if (!Number.isFinite(brlBalance) || brlBalance < 0) throw new Error(`Invalid BRL balance: ${brlBalanceStr}`);
 
     const baseValueBrl = baseBalance * basePrice;
     const totalValueBrl = baseValueBrl + brlBalance;
@@ -167,11 +185,19 @@ export class MercadoBitcoinAdapter implements ExchangeAdapter {
       return record;
     }
 
-    const filledQty = parseFloat(filled.filledQty);
+    const filledQtyStr = filled.filledQty;
+    const filledQty = parseFloat(filledQtyStr);
+    if (!Number.isFinite(filledQty) || filledQty < 0) throw new Error(`Invalid filled quantity: ${filledQtyStr}`);
+
     const fillPriceBrl = filled.avgPrice;
+    if (!Number.isFinite(fillPriceBrl) || fillPriceBrl <= 0) throw new Error(`Invalid fill price: ${fillPriceBrl}`);
+
     // cost is set for BUY (BRL spent); for SELL it is absent — derive from qty × price
     const brlFilled = filled.cost ?? filledQty * fillPriceBrl;
-    const feeBrl = parseFloat(filled.fee);
+
+    const feeBrlStr = filled.fee;
+    const feeBrl = parseFloat(feeBrlStr);
+    if (!Number.isFinite(feeBrl) || feeBrl < 0) throw new Error(`Invalid fee: ${feeBrlStr}`);
 
     if (!isSlippageAcceptable(portfolioBefore.basePrice, fillPriceBrl, this.maxSlippageBps)) {
       logger.warn('Slippage exceeded threshold', {
@@ -201,7 +227,14 @@ export class MercadoBitcoinAdapter implements ExchangeAdapter {
   async getCandles(countback: number, resolution: CandleResolution): Promise<number[]> {
     const mbResolution = MB_RESOLUTION_MAP[resolution];
     const resp = await this.endpoints.getCandles(countback, mbResolution);
-    const pairs = resp.t.map((ts, i) => ({ ts, close: parseFloat(resp.c[i] ?? '0') }));
+    const pairs = resp.t.map((ts, i) => {
+      const closeStr = resp.c[i] ?? '0';
+      const close = parseFloat(closeStr);
+      if (!Number.isFinite(close) || close <= 0) {
+        throw new Error(`Invalid candle close price: ${closeStr}`);
+      }
+      return { ts, close };
+    });
     pairs.sort((a, b) => a.ts - b.ts);
     return pairs.map((p) => p.close);
   }
@@ -216,11 +249,15 @@ export class MercadoBitcoinAdapter implements ExchangeAdapter {
     countback: number,
   ): Promise<Array<{ close: number; volume: number; timestamp: number }>> {
     const resp = await this.endpoints.getCandles(countback, '1d', symbol);
-    const data = resp.t.map((ts, i) => ({
-      timestamp: ts,
-      close: parseFloat(resp.c[i] ?? '0'),
-      volume: parseFloat(resp.v[i] ?? '0'),
-    }));
+    const data = resp.t.map((ts, i) => {
+      const closeStr = resp.c[i] ?? '0';
+      const volumeStr = resp.v[i] ?? '0';
+      const close = parseFloat(closeStr);
+      const volume = parseFloat(volumeStr);
+      if (!Number.isFinite(close) || close <= 0) throw new Error(`Invalid candle close: ${closeStr}`);
+      if (!Number.isFinite(volume) || volume < 0) throw new Error(`Invalid volume: ${volumeStr}`);
+      return { timestamp: ts, close, volume };
+    });
     data.sort((a, b) => a.timestamp - b.timestamp);
     return data;
   }
