@@ -2,7 +2,7 @@ name: Mercado Bitcoin Daily Scan
 
 on:
   schedule:
-    # Run at 20:00 UTC (5 PM BRT)
+    # Run at 20:00 UTC (17:00 BRT)
     - cron: '0 20 * * *'
   workflow_dispatch:
 
@@ -27,7 +27,7 @@ jobs:
           cache-dependency-path: 'bot/package-lock.json'
 
       - name: Download database artifact
-        uses: dawidd6/action-download-artifact@v2
+        uses: dawidd6/action-download-artifact@v3
         with:
           name: hype-mb-database
           path: ./bot/data/hype-mb
@@ -39,7 +39,7 @@ jobs:
       - name: Install dependencies
         run: cd bot && npm ci
 
-      - name: Create runtime config from secrets
+      - name: Create runtime config
         working-directory: ./bot
         run: |
           cat > shannonfi.config.yaml << 'EOF'
@@ -61,7 +61,7 @@ jobs:
         working-directory: ./bot
         run: npm run build
 
-      - name: Scan Mercado Bitcoin
+      - name: Run scan
         working-directory: ./bot
         env:
           MB_CLIENT_ID: ${{ secrets.MB_CLIENT_ID }}

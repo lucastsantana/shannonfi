@@ -22,78 +22,54 @@ jobs:
           fetch-depth: 0
 
       - name: Download latest database artifact
-        uses: dawidd6/action-download-artifact@v2
+        uses: dawidd6/action-download-artifact@v3
         with:
           name: hype-mb-database
           path: ./bot/data/hype-mb
           if_no_artifact_found: ignore
 
-      - name: Create backup directory
-        run: mkdir -p ./backups
-
-      - name: Check if database exists
-        id: check-db
+      - name: Create backup
+        id: backup
         run: |
-          if [ -f ./bot/data/hype-mb/shannonfi.db ]; then
-            echo "exists=true" >> $GITHUB_OUTPUT
-          else
+          if [ ! -f ./bot/data/hype-mb/shannonfi.db ]; then
             echo "exists=false" >> $GITHUB_OUTPUT
+            exit 0
           fi
-
-      - name: Create monthly backup
-        if: steps.check-db.outputs.exists == 'true'
-        run: |
+          echo "exists=true" >> $GITHUB_OUTPUT
           BACKUP_DATE=$(date -u +'%Y-%m-%d')
-          BACKUP_FILE="backups/shannonfi-db-${BACKUP_DATE}.db"
+          BACKUP_FILE="shannonfi-db-${BACKUP_DATE}.db"
           cp ./bot/data/hype-mb/shannonfi.db "$BACKUP_FILE"
+          echo "file=$BACKUP_FILE" >> $GITHUB_OUTPUT
+          echo "date=$BACKUP_DATE" >> $GITHUB_OUTPUT
           ls -lh "$BACKUP_FILE"
-          echo "BACKUP_FILE=$BACKUP_FILE" >> $GITHUB_ENV
 
-      - name: Commit and push backup
-        if: steps.check-db.outputs.exists == 'true'
-        run: |
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git config user.name "github-actions[bot]"
-          git add backups/
-          git commit -m "Monthly database backup: $(date -u +'%Y-%m-%d')" || echo "No changes to commit"
-          git push origin main
-
-      - name: Create release for backup
-        if: steps.check-db.outputs.exists == 'true'
-        uses: softprops/action-gh-release@v1
+      - name: Create GitHub release with backup
+        if: steps.backup.outputs.exists == 'true'
+        uses: softprops/action-gh-release@v2
         with:
-          name: "Database Backup - $(date -u +'%Y-%m-%d')"
-          tag_name: "db-backup-$(date -u +'%Y-%m-%d')"
-          files: |
-            ${{ env.BACKUP_FILE }}
+          name: "Database Backup ${{ steps.backup.outputs.date }}"
+          tag_name: "db-backup-${{ steps.backup.outputs.date }}"
+          files: ${{ steps.backup.outputs.file }}
           body: |
-            Monthly database backup for Shannon's Demon bot.
+            Monthly database backup — ${{ steps.backup.outputs.date }}
 
-            **Backup Date:** $(date -u +'%Y-%m-%d %H:%M:%S UTC')
+            Contains trade history, tax events, cost basis, and portfolio snapshots.
 
-            Contains:
-            - Trade history
-            - Tax events
-            - Cost basis data
-            - Portfolio snapshots
-
-      - name: Upload to artifact (for reference)
-        if: steps.check-db.outputs.exists == 'true'
+      - name: Upload backup artifact
+        if: steps.backup.outputs.exists == 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: monthly-backup-${{ github.run_id }}
-          path: ${{ env.BACKUP_FILE }}
+          name: monthly-backup-${{ steps.backup.outputs.date }}
+          path: ${{ steps.backup.outputs.file }}
           retention-days: 180
 
-      - name: Send completion notification
+      - name: Send Telegram notification
         uses: appleboy/telegram-action@master
         if: always()
         with:
           to: ${{ secrets.TELEGRAM_CHAT_ID }}
           token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           message: |
-            💾 Monthly Database Backup ${{ steps.check-db.outputs.exists == 'true' && '✅' || '⚠️' }}
-
-            📅 Backup Date: $(date -u +'%Y-%m-%d')
-            📊 Status: ${{ job.status }}
-            🔗 Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+            💾 Monthly Database Backup ${{ steps.backup.outputs.exists == 'true' && '✅' || '⚠️ No DB found' }}
+            📅 ${{ steps.backup.outputs.date }}
+            🔗 ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
