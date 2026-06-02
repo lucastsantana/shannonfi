@@ -44,6 +44,7 @@ jobs:
         run: |
           cat > shannonfi.config.yaml << 'EOF'
           exchange: mercadobitcoin
+          dbPath: ./data/hype-mb/shannonfi.db
           mercadobitcoin:
             clientId: "${{ secrets.MB_CLIENT_ID }}"
             clientSecret: "${{ secrets.MB_CLIENT_SECRET }}"

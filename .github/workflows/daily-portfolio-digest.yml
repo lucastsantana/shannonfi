@@ -52,13 +52,17 @@ jobs:
             echo "**Report Date:** $(date -u +'%Y-%m-%d')"
             echo ""
 
+            # Get current symbol (asset being tracked)
+            SYMBOL=$(sqlite3 ./data/hype-mb/shannonfi.db "SELECT value FROM db_config WHERE key = 'current_symbol' LIMIT 1;" 2>/dev/null || echo "SOL-BRL")
+            BASE_ASSET=$(echo $SYMBOL | cut -d'-' -f1)
+
             # Query database for latest snapshot
-            sqlite3 ./data/hype-mb/shannonfi.db << 'SQL' || true
+            sqlite3 ./data/hype-mb/shannonfi.db << SQL || true
             SELECT
               '**Total Value:** R$' || printf("%.2f", total_value_brl) ||
-              ' **SOL Balance:** ' || printf("%.6f", sol_balance) ||
+              ' **$BASE_ASSET Balance:** ' || printf("%.6f", sol_balance) ||
               ' **BRL Balance:** R$' || printf("%.2f", brl_balance) ||
-              ' **SOL Price:** R$' || printf("%.2f", sol_price)
+              ' **$BASE_ASSET Price:** R$' || printf("%.2f", sol_price)
             FROM portfolio_snapshots
             ORDER BY date_brt DESC LIMIT 1;
             SQL
