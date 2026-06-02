@@ -34,7 +34,7 @@ jobs:
           DB="./bot/data/hype-mb/shannonfi.db"
 
           if [ ! -f "$DB" ]; then
-            echo "⚠️ No database found — no trades recorded yet." > /tmp/digest.txt
+            echo "⚠️ No database found — no trades recorded yet." > ${{ github.workspace }}/digest.txt
             exit 0
           fi
 
@@ -95,9 +95,9 @@ jobs:
               WHERE month_brt = strftime('%Y-%m', 'now');
             " 2>/dev/null || echo "🧾 Tax: No events this month"
 
-          } > /tmp/digest.txt
+          } > ${{ github.workspace }}/digest.txt
 
-          cat /tmp/digest.txt
+          cat ${{ github.workspace }}/digest.txt
 
       - name: Send digest to Telegram
         uses: appleboy/telegram-action@master
@@ -105,7 +105,7 @@ jobs:
           to: ${{ secrets.TELEGRAM_CHAT_ID }}
           token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           format: html
-          message_file: /tmp/digest.txt
+          message_file: ${{ github.workspace }}/digest.txt
 
       - name: Upload database artifact
         if: always()
