@@ -62,7 +62,7 @@ jobs:
         working-directory: ./bot
         run: |
           set -o pipefail
-          npm run scan 2>&1 | tee /tmp/mb-scan-output.log
+          npm run scan -- --config shannonfi.config.yaml 2>&1 | tee /tmp/mb-scan-output.log
         continue-on-error: true
 
       - name: Send completion notification

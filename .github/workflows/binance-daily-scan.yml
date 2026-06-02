@@ -72,7 +72,7 @@ jobs:
         working-directory: ./bot
         run: |
           set -o pipefail
-          npm run scan:binance 2>&1 | tee /tmp/scan-output.log
+          npm run scan:binance -- --config shannonfi.config.yaml 2>&1 | tee /tmp/scan-output.log
         continue-on-error: true
 
       - name: Parse scan results
