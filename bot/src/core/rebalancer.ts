@@ -11,6 +11,7 @@ import { Config } from '../config';
 import { BR_EFFECTIVE_LIMIT_BRL } from '../constants';
 import { TelegramService } from './notifier/telegram';
 import { DailyDigestService } from './notifier/daily-digest';
+import { getDb } from './tracker/db';
 
 // Small delay between sequential API calls during a rebalance execution,
 // to avoid hitting MB's 60 req/60s limit when multiple calls fire back-to-back.
@@ -275,6 +276,7 @@ export class RebalancerBot {
       totalValueBrl: portfolio.totalValueBrl.toFixed(2),
       baseRatio: (portfolio.baseRatioBps / 100).toFixed(2) + '%',
       deviationBps: portfolio.deviationBps,
+      baseAsset: this.config.symbol.split('-')[0],
     });
 
     // ── Guard: minimum portfolio size ──────────────────────────────────────────
@@ -365,6 +367,7 @@ export class RebalancerBot {
       brlAmount: brlAmount.toFixed(2),
       baseRatioBps: portfolio.baseRatioBps,
       effectiveThresholdBps,
+      baseAsset: this.config.symbol.split('-')[0],
     });
 
     // Small delay before placing the order to avoid request bursts
@@ -427,10 +430,27 @@ export class RebalancerBot {
       }
     }
 
-    // Persist trade first so tax_events FK constraint is satisfied
-    await this.history.appendTrade(tradeRecord);
+    // Wrap all three DB writes (cost_basis, trades, tax_events) in a single transaction
+    // to ensure atomicity. Telegram notification is sent after the transaction commits.
+    const db = getDb();
+    const txn = db.transaction(() => {
+      this.history.appendTrade(tradeRecord);
+      if (pendingTaxEvent) {
+        this.tax.appendTaxEvent(pendingTaxEvent);
+      }
+    });
 
-    // Send Telegram notification if configured
+    try {
+      txn();
+    } catch (err) {
+      logger.error('Failed to persist trade to database (transaction rolled back)', {
+        tradeId: tradeRecord.id,
+        error: (err as Error).message,
+      });
+      throw err;
+    }
+
+    // Send Telegram notification if configured (outside transaction since it's async and external)
     if (this.telegram && (tradeRecord.status === 'FILLED' || tradeRecord.status === 'DRY_RUN')) {
       const baseAsset = this.config.symbol.split('-')[0]!;
       const before: { baseBalance: number; brlBalance: number; basePrice: number; baseValueBrl: number; baseRatioBps: number; deviationBps: number } = {
@@ -455,7 +475,6 @@ export class RebalancerBot {
     }
 
     if (pendingTaxEvent) {
-      this.tax.appendTaxEvent(pendingTaxEvent);
       if (tradeRecord.direction === 'SELL_BASE') {
         logger.info('Tax event recorded (SELL_BASE)', {
           tradedVolumeBrl: pendingTaxEvent.tradedVolumeBrl.toFixed(2),
@@ -468,6 +487,7 @@ export class RebalancerBot {
         logger.info('Cost basis updated (BUY_BASE)', {
           baseAcquired: (tradeRecord.baseAmountFilled ?? 0).toFixed(6),
           brlSpent: (tradeRecord.brlAmountFilled ?? brlAmount).toFixed(2),
+          baseAsset: this.config.symbol.split('-')[0],
         });
       }
     }
@@ -483,8 +503,6 @@ export class RebalancerBot {
     const todayBRT = new Date().toLocaleDateString('en-CA', {
       timeZone: 'America/Sao_Paulo',
     });
-    const existing = this.history.readSnapshots();
-    if (existing.some((s) => s.dateBRT === todayBRT)) return;
 
     const snapshot: PortfolioSnapshot = {
       dateBRT: todayBRT,

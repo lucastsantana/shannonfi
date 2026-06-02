@@ -1,4 +1,4 @@
-import { execSync } from 'child_process';
+import axios from 'axios';
 import { logger } from '../tracker/logger';
 import { TradeRecord } from '../../adapters/types';
 import { TelegramConfig } from '../../config';
@@ -117,11 +117,11 @@ export class TelegramService {
       disable_web_page_preview: true,
     };
 
-    const jsonPayload = JSON.stringify(payload).replace(/"/g, '\\"');
-    const cmd = `curl -s -X POST "${this.apiUrl}/sendMessage" -H "Content-Type: application/json" -d '${JSON.stringify(payload)}'`;
-
     try {
-      execSync(cmd, { stdio: 'ignore' });
+      await axios.post(`${this.apiUrl}/sendMessage`, payload, {
+        headers: { 'Content-Type': 'application/json' },
+        timeout: 10_000,
+      });
       logger.debug('Telegram message sent');
     } catch (err) {
       logger.warn('Failed to send Telegram message', { error: (err as Error).message });
@@ -152,12 +152,11 @@ export class TelegramService {
     };
 
     try {
-      const result = execSync(
-        `curl -s -X POST "${this.apiUrl}/sendMessage" -H "Content-Type: application/json" -d '${JSON.stringify(payload)}'`,
-        { encoding: 'utf-8' }
-      );
-      const response = JSON.parse(result);
-      const messageId = response.result?.message_id || 0;
+      const response = await axios.post(`${this.apiUrl}/sendMessage`, payload, {
+        headers: { 'Content-Type': 'application/json' },
+        timeout: 10_000,
+      });
+      const messageId = response.data?.result?.message_id || 0;
       logger.debug('Telegram message with buttons sent', { messageId });
       return messageId;
     } catch (err) {
@@ -191,10 +190,10 @@ export class TelegramService {
     };
 
     try {
-      execSync(
-        `curl -s -X POST "${this.apiUrl}/editMessageText" -H "Content-Type: application/json" -d '${JSON.stringify(payload)}'`,
-        { stdio: 'ignore' }
-      );
+      await axios.post(`${this.apiUrl}/editMessageText`, payload, {
+        headers: { 'Content-Type': 'application/json' },
+        timeout: 10_000,
+      });
       logger.debug('Telegram message edited', { messageId });
     } catch (err) {
       logger.warn('Failed to edit Telegram message', { error: (err as Error).message });
@@ -211,10 +210,10 @@ export class TelegramService {
     };
 
     try {
-      execSync(
-        `curl -s -X POST "${this.apiUrl}/editMessageText" -H "Content-Type: application/json" -d '${JSON.stringify(payload)}'`,
-        { stdio: 'ignore' }
-      );
+      await axios.post(`${this.apiUrl}/editMessageText`, payload, {
+        headers: { 'Content-Type': 'application/json' },
+        timeout: 10_000,
+      });
       logger.debug('Telegram message text updated', { messageId });
     } catch (err) {
       logger.warn('Failed to update Telegram message text', { error: (err as Error).message });
@@ -229,10 +228,10 @@ export class TelegramService {
     };
 
     try {
-      execSync(
-        `curl -s -X POST "${this.apiUrl}/answerCallbackQuery" -H "Content-Type: application/json" -d '${JSON.stringify(payload)}'`,
-        { stdio: 'ignore' }
-      );
+      await axios.post(`${this.apiUrl}/answerCallbackQuery`, payload, {
+        headers: { 'Content-Type': 'application/json' },
+        timeout: 10_000,
+      });
       logger.debug('Callback query answered', { callbackQueryId });
     } catch (err) {
       logger.warn('Failed to answer callback query', { error: (err as Error).message });
@@ -253,10 +252,9 @@ export class TelegramService {
     while (Date.now() - startTime < timeoutMs) {
       try {
         const url = `${this.apiUrl}/getUpdates?offset=${lastUpdateId + 1}&timeout=30&allowed_updates=callback_query`;
-        const result = execSync(`curl -s "${url}"`, { encoding: 'utf-8' });
-        const response = JSON.parse(result);
+        const response = await axios.get(url, { timeout: 40_000 });
 
-        const updates = response.result || [];
+        const updates = response.data?.result || [];
         for (const update of updates) {
           lastUpdateId = Math.max(lastUpdateId, update.update_id);
           if (update.callback_query) {

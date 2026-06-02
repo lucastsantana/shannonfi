@@ -110,7 +110,7 @@ async function main(): Promise<void> {
         config.mercadobitcoin || {},
         config.dryRun || false,
         config.maxSlippageBps || 100,
-        config.symbol || 'SOL-BRL',
+        config.symbol,
       );
       logger.info('Initialized Mercado Bitcoin adapter');
     } else if (config.exchange === 'binance') {
@@ -118,7 +118,7 @@ async function main(): Promise<void> {
         config.binance || {},
         config.dryRun || false,
         config.maxSlippageBps || 100,
-        config.symbol || 'SOL-BRL',
+        config.symbol,
       );
       logger.info('Initialized Binance adapter');
     } else {

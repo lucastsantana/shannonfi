@@ -11,8 +11,6 @@ import { logger } from './logger';
 import { getDb } from './db';
 import { loadConfig } from '../../config';
 
-const DATA_DIR = path.resolve(__dirname, '../../../data');
-
 export interface CostBasisLedger {
   base: {
     averageCostBrl: number;
@@ -25,16 +23,16 @@ export class CostBasisService {
   private db: Database.Database;
   private retentionDays: number;
   private asset: string;
+  private dataDir: string;
 
-  constructor(dbPath?: string, asset: string = 'SOL') {
+  constructor(dbPath: string | undefined, retentionDays: number, asset: string) {
+    if (!asset) throw new Error('asset parameter is required');
     this.db = getDb(dbPath);
     this.asset = asset;
-    try {
-      const config = loadConfig();
-      this.retentionDays = config.jsonRetentionDays ?? 15;
-    } catch {
-      this.retentionDays = 15;
-    }
+    this.retentionDays = retentionDays;
+    // Derive data directory from dbPath to ensure isolation per instance
+    const resolvedDbPath = dbPath ?? path.resolve(__dirname, '../../../data/shannonfi.db');
+    this.dataDir = path.dirname(resolvedDbPath);
     // Ensure a row exists for this asset on first use
     this.db.prepare('INSERT OR IGNORE INTO cost_basis (asset) VALUES (?)').run(this.asset);
   }
@@ -76,8 +74,11 @@ export class CostBasisService {
   private writeCostBasisToJson(ledger: CostBasisLedger): void {
     if (this.retentionDays === 0) return;
     try {
-      fs.mkdirSync(DATA_DIR, { recursive: true });
-      fs.writeFileSync(path.join(DATA_DIR, 'cost_basis.json'), JSON.stringify(ledger, null, 2), 'utf-8');
+      fs.mkdirSync(this.dataDir, { recursive: true });
+      const tmpPath = path.join(this.dataDir, 'cost_basis.json.tmp');
+      const targetPath = path.join(this.dataDir, 'cost_basis.json');
+      fs.writeFileSync(tmpPath, JSON.stringify(ledger, null, 2), 'utf-8');
+      fs.renameSync(tmpPath, targetPath);
     } catch (err) {
       logger.debug('Failed to write cost basis JSON', { error: (err as Error).message });
     }

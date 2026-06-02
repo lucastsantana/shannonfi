@@ -46,8 +46,11 @@ export class AssetScanner {
     logger.info('Asset scanner starting', { windowDays: options.windowDays });
     const startTime = Date.now();
 
-    // Discover BRL-paired symbols
-    // Use hardcoded list of known symbols; if /tickers is available, validate against it
+    // Discover BRL-paired symbols.
+    // NOTE: This symbol list is hardcoded for now. To make it configurable per exchange,
+    // future enhancement would need to: (1) add scanSymbols config option, (2) pass through ScanOptions,
+    // (3) fetch dynamically from exchange /tickers endpoint, or (4) read from a symbols config file.
+    // The list is not dependent on the current trading symbol (config.symbol) — it scans across all known symbols.
     const knownSymbols = [
       'BTC-BRL', 'ETH-BRL', 'SOL-BRL', 'HYPE-BRL', 'XRP-BRL', 'ADA-BRL',
       'DOGE-BRL', 'LINK-BRL', 'LTC-BRL', 'BCH-BRL', 'AVAX-BRL', 'ARB-BRL',
@@ -145,7 +148,15 @@ export class AssetScanner {
     const mad = computeMeanAbsoluteDailyReturn(closes);
 
     // Compute rolling return: (last - first) / first
+    if (closes.length < 2) {
+      logger.warn('Insufficient candle data for rolling return', { symbol, count: closes.length });
+      return null;
+    }
     const firstClose = closes[0]!;
+    if (firstClose <= 0) {
+      logger.warn('Invalid first close price', { symbol, price: firstClose });
+      return null;
+    }
     const lastClose = closes[closes.length - 1]!;
     const rollingReturn = (lastClose - firstClose) / firstClose;
 

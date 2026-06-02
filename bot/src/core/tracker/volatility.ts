@@ -13,16 +13,16 @@ export class VolatilityService {
   ) {}
 
   /**
-   * Returns the adaptive threshold in BPS, recomputing only once per calendar day (UTC).
+   * Returns the adaptive threshold in BPS, recomputing only once per calendar day (BRT).
    * On subsequent calls within the same day the cached value is returned immediately
    * without any API request.
    */
   async computeAdaptiveThresholdBps(multiplier: number): Promise<number> {
-    const todayUTC = new Date().toISOString().slice(0, 10);
+    const todayBRT = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
 
-    if (this.cachedDate === todayUTC && this.cachedThresholdBps !== null) {
+    if (this.cachedDate === todayBRT && this.cachedThresholdBps !== null) {
       logger.debug('Using cached adaptive threshold', {
-        date: todayUTC,
+        date: todayBRT,
         thresholdBps: this.cachedThresholdBps,
       });
       return this.cachedThresholdBps;
@@ -37,11 +37,11 @@ export class VolatilityService {
     const mad = computeMeanAbsoluteDailyReturn(closes);
     const thresholdBps = computeAdaptiveThresholdBps(mad, multiplier);
 
-    this.cachedDate = todayUTC;
+    this.cachedDate = todayBRT;
     this.cachedThresholdBps = thresholdBps;
 
     logger.info('Computed adaptive threshold (will cache for today)', {
-      date: todayUTC,
+      date: todayBRT,
       windowDays: this.windowDays,
       candlesReceived: closes.length,
       madPct: (mad * 100).toFixed(2) + '%',

@@ -19,9 +19,10 @@ async function main() {
   console.log('\n=== Shannon\'s Demon — JSON to SQLite Migration ===\n');
 
   // Initialize services (will create SQLite schema if needed)
-  const history = new TradeHistoryService();
-  const costBasis = new CostBasisService();
-  const tax = new TaxService();
+  const retentionDays = 15;
+  const history = new TradeHistoryService(undefined, retentionDays);
+  const costBasis = new CostBasisService(undefined, retentionDays, 'SOL');
+  const tax = new TaxService(undefined, retentionDays);
 
   let migratedTrades = 0;
   let migratedSnapshots = 0;

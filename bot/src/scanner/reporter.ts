@@ -216,7 +216,15 @@ export class ScanReporter {
       return;
     }
 
-    const candidates: AssetCandidate[] = JSON.parse(scanRow.scan_data);
+    let candidates: AssetCandidate[];
+    try {
+      candidates = JSON.parse(scanRow.scan_data);
+    } catch (err) {
+      logger.error('Failed to parse scan data', { scanId, error: (err as Error).message });
+      await this.telegram!.answerCallbackQuery(callbackQueryId, 'Failed to load scan results');
+      return;
+    }
+
     const lines: string[] = [];
     lines.push('🔍 <b>Asset Scanner</b>');
     lines.push('━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
@@ -261,7 +269,14 @@ export class ScanReporter {
       return;
     }
 
-    const candidates: AssetCandidate[] = JSON.parse(scanRow.scan_data);
+    let candidates: AssetCandidate[];
+    try {
+      candidates = JSON.parse(scanRow.scan_data);
+    } catch (err) {
+      logger.error('Failed to parse scan data', { scanId, error: (err as Error).message });
+      return;
+    }
+
     const scanResult: ScanResult = {
       id: scanRow.id,
       timestamp: scanRow.timestamp,

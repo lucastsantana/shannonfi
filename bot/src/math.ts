@@ -98,20 +98,3 @@ export function isSlippageAcceptable(
   return slippage <= maxSlippageBps;
 }
 
-/** NAV per share — port of compute_nav_per_share() from math.rs. */
-export function computeNavPerShare(totalValueBrl: number, totalShares: number): number {
-  if (totalShares <= 0) throw new Error('totalShares must be positive');
-  return totalValueBrl / totalShares;
-}
-
-/** Integer square root — port of isqrt_u128() from math.rs (Newton-Raphson). */
-export function isqrt(n: bigint): bigint {
-  if (n === 0n) return 0n;
-  let x = BigInt(Math.ceil(Math.sqrt(Number(n))));
-  while (true) {
-    const x1 = (x + n / x) / 2n;
-    if (x1 >= x) break;
-    x = x1;
-  }
-  return x;
-}

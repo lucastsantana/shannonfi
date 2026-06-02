@@ -12,20 +12,17 @@ import { logger } from './logger';
 import { getDb } from './db';
 import { loadConfig } from '../../config';
 
-const DATA_DIR = path.resolve(__dirname, '../../../data');
-
 export class TradeHistoryService {
   private db: Database.Database;
   private retentionDays: number;
+  private dataDir: string;
 
-  constructor(dbPath?: string) {
+  constructor(dbPath?: string, retentionDays: number = 15) {
     this.db = getDb(dbPath);
-    try {
-      const config = loadConfig();
-      this.retentionDays = config.jsonRetentionDays ?? 15;
-    } catch {
-      this.retentionDays = 15; // default
-    }
+    this.retentionDays = retentionDays;
+    // Derive data directory from dbPath to ensure isolation per instance
+    const resolvedDbPath = dbPath ?? path.resolve(__dirname, '../../../data/shannonfi.db');
+    this.dataDir = path.dirname(resolvedDbPath);
   }
 
   async appendTrade(record: TradeRecord): Promise<void> {
@@ -96,8 +93,11 @@ export class TradeHistoryService {
       const trades = this.readTrades();
       const cutoff = this.getCutoffDate();
       const filtered = trades.filter((t) => new Date(t.timestamp) >= cutoff);
-      fs.mkdirSync(DATA_DIR, { recursive: true });
-      fs.writeFileSync(path.join(DATA_DIR, 'trade_history.json'), JSON.stringify(filtered, null, 2), 'utf-8');
+      fs.mkdirSync(this.dataDir, { recursive: true });
+      const tmpPath = path.join(this.dataDir, 'trade_history.json.tmp');
+      const targetPath = path.join(this.dataDir, 'trade_history.json');
+      fs.writeFileSync(tmpPath, JSON.stringify(filtered, null, 2), 'utf-8');
+      fs.renameSync(tmpPath, targetPath);
     } catch (err) {
       logger.debug('Failed to write trade history JSON', { error: (err as Error).message });
     }
@@ -224,8 +224,11 @@ export class TradeHistoryService {
       const snapshots = this.readSnapshots();
       const cutoff = this.getCutoffDateBrt();
       const filtered = snapshots.filter((s) => s.dateBRT >= cutoff);
-      fs.mkdirSync(DATA_DIR, { recursive: true });
-      fs.writeFileSync(path.join(DATA_DIR, 'portfolio_snapshots.json'), JSON.stringify(filtered, null, 2), 'utf-8');
+      fs.mkdirSync(this.dataDir, { recursive: true });
+      const tmpPath = path.join(this.dataDir, 'portfolio_snapshots.json.tmp');
+      const targetPath = path.join(this.dataDir, 'portfolio_snapshots.json');
+      fs.writeFileSync(tmpPath, JSON.stringify(filtered, null, 2), 'utf-8');
+      fs.renameSync(tmpPath, targetPath);
     } catch (err) {
       logger.debug('Failed to write portfolio snapshots JSON', { error: (err as Error).message });
     }

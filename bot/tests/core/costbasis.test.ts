@@ -8,7 +8,7 @@ describe('CostBasisService (BRL-native AVCO)', () => {
     // Each test gets a fresh unique :memory: database
     // by creating a unique path string
     const testPath = `:memory:?mode=memory&cache=shared&hash=${Math.random()}`;
-    svc = new CostBasisService(testPath);
+    svc = new CostBasisService(testPath, 15, 'SOL');
   });
 
   it('starts with empty ledger', () => {

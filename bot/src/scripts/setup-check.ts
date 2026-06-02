@@ -135,8 +135,20 @@ async function checkBinance(): Promise<void> {
   console.log(`\n4. Checking ${config.symbol} market (recent candles)...`);
   const binanceSymbol = config.symbol.replace('-', '');
   const klines = await endpoints.getKlines(binanceSymbol, '1d', 7);
-  const lastClose = parseFloat(klines[klines.length - 1]?.[4] ?? '0');
-  if (lastClose === 0) { console.error('   FAIL — No candle data returned'); process.exit(1); }
+  if (!klines || klines.length === 0) {
+    console.error('   FAIL — No candle data returned from Binance');
+    process.exit(1);
+  }
+  const lastKline = klines[klines.length - 1];
+  if (!lastKline || !lastKline[4]) {
+    console.error('   FAIL — Invalid kline format from Binance');
+    process.exit(1);
+  }
+  const lastClose = parseFloat(lastKline[4]);
+  if (!Number.isFinite(lastClose) || lastClose <= 0) {
+    console.error(`   FAIL — Invalid close price from Binance: ${lastKline[4]}`);
+    process.exit(1);
+  }
   console.log(`   OK — ${klines.length} daily candles. Latest close: R$${lastClose.toFixed(2)}/${baseAsset}`);
 
   const totalBrl = brlBalance + baseBalance * lastClose;

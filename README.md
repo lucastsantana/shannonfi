@@ -1,159 +1,139 @@
-# Shannon's Demon
+# Shannon's Demon — Mercado Bitcoin Bot
 
-[Shannon's Demon](https://en.wikipedia.org/wiki/Entropy_and_second_law_of_thermodynamics) is a volatility-harvesting strategy: hold two assets in a fixed 50/50 ratio by value and rebalance whenever the ratio drifts. Each rebalance systematically sells the outperformer and buys the underperformer, generating excess return from volatility over time.
-
-This repository provides a production-ready implementation running on **Mercado Bitcoin (HYPE/BRL)**.
+Volatility-harvesting rebalancer holding HYPE/BRL at 50/50. Sells the outperformer and buys the underperformer whenever drift exceeds a dynamic threshold, capturing the volatility premium over time.
 
 ---
 
-## Getting Started
+## Architecture
 
-A fully operational rebalancer for your Mercado Bitcoin account running the Shannon's Demon strategy on HYPE/BRL — no smart contract deployment, no Solana toolchain, no blockchain fees.
-
-**Key facts:**
-- Funds stay in your Mercado Bitcoin account (no on-chain custody)
-- Trades HYPE/BRL natively via Mercado Bitcoin REST API (market orders)
-- Automatic Brazilian tax compliance tracking (Lei 9.250/1995 Art. 21)
-- SQLite persistence with 15-day JSON rolling backup for audit trails
-- Automatic monthly performance reports with rule-based commentary (no API key needed)
-- 62 unit tests, TypeScript, dry-run mode, PM2 for continuous operation
-- Mercado Bitcoin taker fees (~0.3%) apply per rebalance
-- Volatility-adaptive rebalance threshold for regime-responsive timing
-
-**Full documentation, setup guide, and configuration reference:** **[bot/README.md](./bot/README.md)**
-
-**Quick start:**
-```bash
-cd bot
-cp shannonfi.config.yaml.example shannonfi.config.yaml
-npm install && npm run build
-npm run setup-check     # validate credentials and account
-DRY_RUN=true node dist/index.js --once   # test without real orders
-bash start.sh           # run continuously with credentials from keyring
-```
+| Component | Role |
+|---|---|
+| **Local PM2 (`hype-mb`)** | Live rebalancer — runs 24/7, executes trades, sends Telegram alerts and daily digest at 00:30 BRT |
+| **GitHub Actions** | Daily asset scanner (20:00 UTC) and monthly DB backup |
 
 ---
 
-## Monthly Reporting
+## Local PM2 Setup
 
-The bot auto-generates a comprehensive performance report on the **1st of each month at 3:00 AM BRT**. You can also generate reports manually:
+### 1. Store credentials in GNOME Keyring
 
 ```bash
-cd bot
-npm run report -- --month 2026-05    # specific month
-npm run report                        # previous month
+secret-tool store --label="MB Client ID"     service mercadobitcoin key clientId
+secret-tool store --label="MB Client Secret" service mercadobitcoin key clientSecret
+secret-tool store --label="Telegram Token"   service telegram key botToken
 ```
 
-Each report includes:
-- **Executive summary** with rule-based commentary (no API key required)
-- **Performance metrics** vs HYPE-only, CDI (risk-free), and IBOV (equity) benchmarks
-- **Rebalance history** with prices and fees
-- **Tax summary** per Lei 9.250/1995 Art. 21 (exemption status, DARF deadlines)
-- **Portfolio state** with AVCO cost basis and unrealized P&L
-- **Track record** (CAGR, Sharpe, max drawdown, total fees)
+### 2. Configure the instance
 
-Reports are saved to `data/reports/YYYY-MM.md` and scheduled via systemd (local) or GitHub Actions (cloud).
+Edit `bot/configs/hype-mb.yaml`:
 
-See **[bot/README.md § Monthly Reporting](./bot/README.md#monthly-reporting)** for setup and customization.
-
----
-
-## Trade Notifications
-
-Real-time Telegram notifications when rebalance trades are executed. Each message includes fill price, fee, portfolio state before/after, and allocation drift.
-
-**Setup:**
-```bash
-# Create a Telegram bot via @BotFather, get your chat ID
-secret-tool store service telegram key botToken <your-bot-token>
-```
-
-Add to `bot/shannonfi.config.yaml`:
 ```yaml
+exchange: mercadobitcoin
+symbol: HYPE-BRL
+dbPath: ./data/hype-mb/shannonfi.db
+
+mercadobitcoin:
+  clientId: ""        # loaded from keyring at runtime
+  clientSecret: ""
+
+rebalanceThresholdBps: 100
+maxSlippageBps: 100
+minPortfolioValueBrl: 200
+minTradeSizeBrl: 20
+
+useAdaptiveThreshold: true
+thresholdVolatilityMultiplier: 1.5
+volatilityWindowDays: 30
+
+neverExceedExemptionLimit: false
+dryRun: false
+logLevel: info
+
 telegram:
-  chatId: "123456789"    # Your personal Telegram chat ID
+  chatId: "YOUR_CHAT_ID"
 ```
 
-See **[bot/README.md § Trade Notifications](./bot/README.md#trade-notifications)** for setup details and message format.
+### 3. Start with PM2
 
----
-
-## Deployment
-
-### Local (PM2)
-
-**Prerequisites:** Node.js 20+, GNOME Keyring (WSL2/Linux)
-
-1. Store credentials:
-   ```bash
-   secret-tool store service mercadobitcoin key clientId <your-mb-client-id>
-   secret-tool store service mercadobitcoin key clientSecret <your-mb-client-secret>
-   ```
-
-2. Build and run:
-   ```bash
-   cd bot
-   npm install && npm run build
-   bash start.sh --once        # test dry-run first
-   pm2 start ./start.sh --name shannonfi  # run continuously
-   ```
-
-3. Monitor:
-   ```bash
-   pm2 logs shannonfi
-   pm2 show shannonfi
-   ```
-
-See **[bot/README.md](./bot/README.md)** for full setup guide, tuning options, and troubleshooting.
-
-### GitHub Actions (Scheduled)
-
-Two workflows run automatically on GitHub:
-
-**Rebalancer** — **[`.github/workflows/rebalancer.yml`](./.github/workflows/rebalancer.yml)** — every 15 minutes
-
-**Required Secrets:**
-- `MB_CLIENT_ID` — Mercado Bitcoin OAuth client ID
-- `MB_CLIENT_SECRET` — Mercado Bitcoin OAuth client secret
-- `SLACK_WEBHOOK_URL` (optional) — Slack failure notifications
-
-**Configuration Variables:**
-- `REBALANCE_THRESHOLD_BPS` (default: 100 = 1%)
-- `MAX_SLIPPAGE_BPS` (default: 100 = 1%)
-- `VOLATILITY_MULTIPLIER` (default: 1.5)
-- `VOLATILITY_WINDOW_DAYS` (default: 30)
-- `NEVER_EXCEED_EXEMPTION_LIMIT` (default: false)
-
-**Monthly Report** — **[`.github/workflows/monthly-report.yml`](./.github/workflows/monthly-report.yml)** — 1st of each month at 06:00 UTC (03:00 BRT)
-
-Automatically generates and uploads monthly performance reports as artifacts (retained 365 days).
-
----
-
-## Dependency Map
-
+```bash
+cd bot
+npm install && npm run build
+pm2 start start.sh --name hype-mb
+pm2 save
 ```
-Node.js 20
-├── bot/package.json
-│   ├── axios — HTTP client for Mercado Bitcoin REST API
-│   ├── zod — Config schema validation
-│   ├── winston — Structured logging
-│   ├── @types/node, typescript — Build tools
-│   └── vitest — Unit test framework
-├── Mercado Bitcoin API v4
-│   └── OAuth2 (client credentials) → HYPE/BRL market orders, price candles
-└── GNOME Keyring (local only)
-    └── secret-tool lookup → store/retrieve credentials
+
+### 4. Useful PM2 commands
+
+```bash
+pm2 logs hype-mb          # live logs
+pm2 restart hype-mb       # restart after config change
+pm2 stop hype-mb          # stop
+pm2 status                # all instances
 ```
 
 ---
 
-## Resources
+## GitHub Actions Setup
 
-- [Shannon's Demon Strategy](https://en.wikipedia.org/wiki/Entropy_and_second_law_of_thermodynamics) — The volatility-harvesting concept
-- [Mercado Bitcoin API](https://www.mercadobitcoin.com.br) — Official exchange
-- [Lei 9.250/1995 Art. 21](https://www.gov.br/receita/pt-br) — Brazilian tax exemption for domestic crypto trading
+Two workflows run in the cloud:
+
+| Workflow | Schedule | Purpose |
+|---|---|---|
+| `mercado-bitcoin-scan.yml` | Daily 20:00 UTC | Scans all MB pairs, ranks by volatility score, sends results to Telegram |
+| `monthly-db-backup.yml` | 1st of month 00:00 UTC | Creates a GitHub Release with a DB snapshot |
+
+### Required secrets
+
+Go to **Settings → Secrets and variables → Actions** and add:
+
+| Secret | Value |
+|---|---|
+| `MB_CLIENT_ID` | Mercado Bitcoin client ID |
+| `MB_CLIENT_SECRET` | Mercado Bitcoin client secret |
+| `TELEGRAM_BOT_TOKEN` | Token from @BotFather |
+| `TELEGRAM_CHAT_ID` | Your Telegram chat ID |
+
+To get your Telegram chat ID: message your bot, then open `https://api.telegram.org/bot<TOKEN>/getUpdates` and copy the `chat.id` value.
+
+### Push secrets from local keyring (one-time)
+
+```bash
+gh secret set MB_CLIENT_ID       --body "$(secret-tool lookup service mercadobitcoin key clientId)"
+gh secret set MB_CLIENT_SECRET   --body "$(secret-tool lookup service mercadobitcoin key clientSecret)"
+gh secret set TELEGRAM_BOT_TOKEN --body "$(secret-tool lookup service telegram key botToken)"
+gh secret set TELEGRAM_CHAT_ID   --body "YOUR_CHAT_ID"
+```
 
 ---
 
-**Last Updated:** 2026-05-27
+## Telegram notifications
+
+| Event | Sender |
+|---|---|
+| Trade executed | Local PM2 bot (immediate) |
+| Daily digest at 00:30 BRT | Local PM2 bot |
+| Asset scanner results | GitHub Actions (daily 20:00 UTC) |
+| Monthly backup confirmation | GitHub Actions (1st of month) |
+
+---
+
+## Data files
+
+All persistent state lives under `bot/data/hype-mb/`:
+
+| File | Contents |
+|---|---|
+| `shannonfi.db` | Primary SQLite store (trades, snapshots, tax, cost basis) |
+| `trade_history.json` | Rolling 15-day backup |
+| `cost_basis.json` | AVCO state |
+| `tax_events.json` | Rolling 15-day backup |
+| `portfolio_snapshots.json` | Rolling 15-day backup |
+
+---
+
+## Dry-run / one-shot
+
+```bash
+cd bot
+DRY_RUN=true node dist/index.js --config configs/hype-mb.yaml --once
+```

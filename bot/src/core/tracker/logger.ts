@@ -90,20 +90,22 @@ function formatConsoleOutput({ timestamp, level, message, ...meta }: any): strin
   }
 
   if (message === 'Portfolio snapshot' && hasMetadata) {
-    const { exchange, baseBalance, brlBalance, basePriceBrl, totalValueBrl, baseRatio, deviationBps } = meta;
+    const { exchange, baseBalance, brlBalance, basePriceBrl, totalValueBrl, baseRatio, deviationBps, baseAsset } = meta;
+    const asset = baseAsset || 'HYPE';
     return `${colors.cyan}${time}${colors.reset} ${colors.blue}📊${colors.reset} ${colors.bold}Portfolio Snapshot${colors.reset}\n` +
            `   Exchange: ${exchange}\n` +
-           `   HYPE: ${baseBalance} (R$ ${(parseFloat(baseBalance) * parseFloat(basePriceBrl)).toFixed(2)})\n` +
+           `   ${asset}: ${baseBalance} (R$ ${(parseFloat(baseBalance) * parseFloat(basePriceBrl)).toFixed(2)})\n` +
            `   BRL: R$ ${brlBalance}\n` +
            `   Total: ${colors.bold}R$ ${totalValueBrl}${colors.reset} | Ratio: ${baseRatio} | Drift: ${deviationBps} BPS`;
   }
 
   if (message === 'Rebalance triggered' && hasMetadata) {
-    const { direction, brlAmount, baseRatioBps, effectiveThresholdBps } = meta;
+    const { direction, brlAmount, baseRatioBps, effectiveThresholdBps, baseAsset } = meta;
+    const asset = baseAsset || 'HYPE';
     const directionEmoji = direction === 'BUY_BASE' ? '🟢' : '🔴';
     const directionText = direction === 'BUY_BASE' ? 'BUY' : 'SELL';
     return `${colors.cyan}${time}${colors.reset} ${directionEmoji} ${colors.bold}${colors.green}REBALANCE TRIGGERED${colors.reset}\n` +
-           `   Direction: ${directionText} HYPE\n` +
+           `   Direction: ${directionText} ${asset}\n` +
            `   Amount: R$ ${parseFloat(brlAmount).toFixed(2)}\n` +
            `   Current Ratio: ${(parseFloat(baseRatioBps) / 100).toFixed(2)}% | Threshold: ${effectiveThresholdBps} BPS`;
   }
@@ -119,9 +121,10 @@ function formatConsoleOutput({ timestamp, level, message, ...meta }: any): strin
   }
 
   if (message === 'Cost basis updated (BUY_BASE)' && hasMetadata) {
-    const { baseAcquired, brlSpent } = meta;
+    const { baseAcquired, brlSpent, baseAsset } = meta;
+    const asset = baseAsset || 'HYPE';
     return `${colors.cyan}${time}${colors.reset} ${colors.green}✓${colors.reset} ${colors.bold}Cost Basis Updated${colors.reset}\n` +
-           `   Acquired: ${baseAcquired} HYPE\n` +
+           `   Acquired: ${baseAcquired} ${asset}\n` +
            `   Spent: R$ ${parseFloat(brlSpent).toFixed(2)}`;
   }
 

@@ -12,8 +12,6 @@ import { BR_MONTHLY_EXEMPTION_LIMIT_BRL, BR_HOLIDAYS } from '../../constants';
 import { getDb } from './db';
 import { loadConfig } from '../../config';
 
-const DATA_DIR = path.resolve(__dirname, '../../../data');
-
 export interface TaxEvent {
   tradeId: string;
   tradeDateBRT: string;           // YYYY-MM-DD
@@ -47,14 +45,22 @@ export interface MonthlySummary {
 export class TaxService {
   private db: Database.Database;
   private retentionDays: number;
+  private dataDir: string;
 
-  constructor(dbPath?: string) {
+  constructor(dbPath?: string, retentionDays: number = 15) {
     this.db = getDb(dbPath);
-    try {
-      const config = loadConfig();
-      this.retentionDays = config.jsonRetentionDays ?? 15;
-    } catch {
-      this.retentionDays = 15; // default
+    this.retentionDays = retentionDays;
+    // Derive data directory from dbPath to ensure isolation per instance
+    const resolvedDbPath = dbPath ?? path.resolve(__dirname, '../../../data/shannonfi.db');
+    this.dataDir = path.dirname(resolvedDbPath);
+
+    // Warn if BR_HOLIDAYS coverage has expired
+    const maxYear = Math.max(...[...BR_HOLIDAYS].map(d => parseInt(d.slice(0, 4))));
+    if (new Date().getFullYear() > maxYear) {
+      logger.warn('BR_HOLIDAYS may be out of date — payment deadlines may be inaccurate', {
+        coverage: `through ${maxYear}`,
+        currentYear: new Date().getFullYear(),
+      });
     }
   }
 
@@ -120,8 +126,11 @@ export class TaxService {
       const events = this.readEvents();
       const cutoff = this.getCutoffDateBrt();
       const filtered = events.filter((e) => e.tradeDateBRT >= cutoff);
-      fs.mkdirSync(DATA_DIR, { recursive: true });
-      fs.writeFileSync(path.join(DATA_DIR, 'tax_events.json'), JSON.stringify(filtered, null, 2), 'utf-8');
+      fs.mkdirSync(this.dataDir, { recursive: true });
+      const tmpPath = path.join(this.dataDir, 'tax_events.json.tmp');
+      const targetPath = path.join(this.dataDir, 'tax_events.json');
+      fs.writeFileSync(tmpPath, JSON.stringify(filtered, null, 2), 'utf-8');
+      fs.renameSync(tmpPath, targetPath);
     } catch (err) {
       logger.debug('Failed to write tax events JSON', { error: (err as Error).message });
     }

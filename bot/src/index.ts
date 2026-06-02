@@ -54,10 +54,11 @@ async function main(): Promise<void> {
   }
 
   // ── Build services ─────────────────────────────────────────────────────────
-  const history = new TradeHistoryService(config.dbPath);
+  const retentionDays = config.jsonRetentionDays ?? 15;
+  const history = new TradeHistoryService(config.dbPath, retentionDays);
   const pnl = new PnlService(history);
-  const costBasis = new CostBasisService(config.dbPath, baseAsset);
-  const tax = new TaxService(config.dbPath);
+  const costBasis = new CostBasisService(config.dbPath, retentionDays, baseAsset);
+  const tax = new TaxService(config.dbPath, retentionDays);
   const volatility = new VolatilityService(adapter, config.volatilityWindowDays);
   const metrics = new MetricsService(history);
 

@@ -88,9 +88,10 @@ async function main(): Promise<void> {
   }
 
   // Record trade, cost basis, and tax — same logic as RebalancerBot
-  const history = new TradeHistoryService(config.dbPath);
-  const costBasis = new CostBasisService(config.dbPath, baseAsset);
-  const tax = new TaxService(config.dbPath);
+  const retentionDays = config.jsonRetentionDays ?? 15;
+  const history = new TradeHistoryService(config.dbPath, retentionDays);
+  const costBasis = new CostBasisService(config.dbPath, retentionDays, baseAsset);
+  const tax = new TaxService(config.dbPath, retentionDays);
   const pnl = new PnlService(history);
 
   if (tradeRecord.status === 'FILLED' || tradeRecord.status === 'DRY_RUN') {

@@ -2,9 +2,7 @@ import axios, { AxiosInstance } from 'axios';
 import axiosRetry from 'axios-retry';
 import { OAuth2TokenResponse } from './raw-types';
 import { logger } from '../../core/tracker/logger';
-
-const MB_API_BASE = 'https://api.mercadobitcoin.net/api/v4';
-const TOKEN_REFRESH_BUFFER_MS = 60_000; // refresh 60s before expiry
+import { MB_API_BASE, MB_TOKEN_REFRESH_BUFFER_MS } from '../../constants';
 
 export class MbClient {
   private http: AxiosInstance;
@@ -14,9 +12,10 @@ export class MbClient {
   constructor(
     private clientId: string,
     private clientSecret: string,
-    baseUrl = MB_API_BASE,
+    baseUrl?: string,
   ) {
-    this.http = axios.create({ baseURL: baseUrl, timeout: 15_000 });
+    const resolvedBaseUrl = baseUrl ?? MB_API_BASE;
+    this.http = axios.create({ baseURL: resolvedBaseUrl, timeout: 15_000 });
     axiosRetry(this.http, {
       retries: 3,
       retryDelay: axiosRetry.exponentialDelay,
@@ -27,7 +26,7 @@ export class MbClient {
   }
 
   private async ensureToken(): Promise<string> {
-    if (this.accessToken && Date.now() < this.tokenExpiresAt - TOKEN_REFRESH_BUFFER_MS) {
+    if (this.accessToken && Date.now() < this.tokenExpiresAt - MB_TOKEN_REFRESH_BUFFER_MS) {
       return this.accessToken;
     }
 

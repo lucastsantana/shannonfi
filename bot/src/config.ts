@@ -33,9 +33,9 @@ const TelegramSchema = z.object({
 // ─── Shared strategy fields (all exchanges) ───────────────────────────────────
 
 const CommonConfigSchema = z.object({
-  // Trading pair symbol (e.g. SOL-BRL, HYPE-BRL). The base asset is derived
+  // Trading pair symbol (e.g. SOL-BRL, HYPE-BRL, BTC-BRL). The base asset is derived
   // as the portion before the hyphen; the quote currency is always BRL.
-  symbol: z.string().regex(/^[A-Z]+-BRL$/, "Symbol must match BASE-BRL (e.g. 'SOL-BRL')").default('SOL-BRL'),
+  symbol: z.string().regex(/^[A-Z]+-BRL$/, "Symbol must match BASE-BRL format").default('SOL-BRL'),
 
   // ─── Strategy ───────────────────────────────────────────────────────────────
   rebalanceThresholdBps: z.number().int().min(10).max(2000).default(DEFAULT_REBALANCE_THRESHOLD_BPS),
