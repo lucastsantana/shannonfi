@@ -53,6 +53,8 @@ jobs:
           useAdaptiveThreshold: true
           dryRun: false
           logLevel: info
+          telegram:
+            chatId: "${{ secrets.TELEGRAM_CHAT_ID }}"
           EOF
 
       - name: Build TypeScript
@@ -61,76 +63,11 @@ jobs:
 
       - name: Scan Mercado Bitcoin
         working-directory: ./bot
-        id: scan
         env:
           MB_CLIENT_ID: ${{ secrets.MB_CLIENT_ID }}
           MB_CLIENT_SECRET: ${{ secrets.MB_CLIENT_SECRET }}
-        run: |
-          set -o pipefail
-          npm run scan -- --config shannonfi.config.yaml 2>&1 | tee /tmp/mb-scan-output.log
-        continue-on-error: true
-
-      - name: Format scan results for Telegram
-        id: parse-results
-        run: |
-          # Extract the Asset Scanner Results table from logs
-          if [ ! -f /tmp/mb-scan-output.log ]; then
-            echo "results=📊 Mercado Bitcoin Scan ✅" >> $GITHUB_OUTPUT
-            exit 0
-          fi
-
-          # Find and extract the scanner results section
-          RESULTS=$(cat /tmp/mb-scan-output.log | grep -A 50 "Asset Scanner Results" | head -40)
-
-          if [ -z "$RESULTS" ]; then
-            echo "results=📊 Mercado Bitcoin Scan ✅" >> $GITHUB_OUTPUT
-            exit 0
-          fi
-
-          # Parse the table and format for Telegram
-          {
-            echo "🔍 <b>Asset Scanner — Mercado Bitcoin</b>"
-            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            echo ""
-            echo "<b>Top Candidates</b>"
-            echo ""
-
-            # Extract asset rows from table
-            echo "$RESULTS" | grep "^│.*│" | grep -v "Symbol" | grep -v "─" | head -10 | while IFS= read -r line; do
-              # Parse: │  1 │ HYPE-BRL  │  4.0% │ + 86.0% │    R$184K │   0.07    │
-              RANK=$(echo "$line" | cut -d'│' -f2 | xargs)
-              SYMBOL=$(echo "$line" | cut -d'│' -f3 | xargs)
-              MAD=$(echo "$line" | cut -d'│' -f4 | xargs)
-              RETURN=$(echo "$line" | cut -d'│' -f5 | xargs)
-              VOL=$(echo "$line" | cut -d'│' -f6 | xargs)
-              SCORE=$(echo "$line" | cut -d'│' -f7 | xargs)
-
-              if [ -n "$RANK" ] && [ -n "$SYMBOL" ]; then
-                ASSET=$(echo "$SYMBOL" | cut -d'-' -f1)
-                echo "${RANK}. <b>${ASSET}</b> — MAD: ${MAD} | Vol: ${VOL} | Score: ${SCORE}"
-              fi
-            done
-
-            echo ""
-            echo "⏰ <i>Daily scans: 20:00 UTC (15:00 BRT)</i>"
-          } > /tmp/telegram-message.txt
-
-          # Read the formatted message and escape for GitHub output
-          MESSAGE=$(cat /tmp/telegram-message.txt)
-          MESSAGE="${MESSAGE//$'\n'/\\n}"
-          echo "results=$MESSAGE" >> $GITHUB_OUTPUT
-        continue-on-error: true
-
-      - name: Send completion notification
-        uses: appleboy/telegram-action@master
-        if: always()
-        with:
-          to: ${{ secrets.TELEGRAM_CHAT_ID }}
-          token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          message: |
-            📊 Mercado Bitcoin Scan ${{ job.status == 'success' && '✅' || '❌' }}
-
-            ${{ steps.parse-results.outputs.results }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        run: npm run scan -- --config shannonfi.config.yaml
 
       - name: Upload database artifact
         if: always()

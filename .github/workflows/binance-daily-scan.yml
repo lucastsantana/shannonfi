@@ -1,4 +1,4 @@
-name: Binance Daily Scan + Telegram Report
+name: Binance Daily Scan
 
 on:
   schedule:
@@ -48,21 +48,16 @@ jobs:
         working-directory: ./bot
         run: |
           cat > shannonfi.config.yaml << 'EOF'
-          exchange: mercadobitcoin
+          exchange: binance
           dbPath: ./data/hype-mb/shannonfi.db
-          mercadobitcoin:
-            clientId: "${{ secrets.MB_CLIENT_ID }}"
-            clientSecret: "${{ secrets.MB_CLIENT_SECRET }}"
+          binance: {}
           rebalanceThresholdBps: 100
           maxSlippageBps: 100
-          minPortfolioValueBrl: 200
-          minTradeSizeBrl: 20
           useAdaptiveThreshold: true
-          thresholdVolatilityMultiplier: 1.5
-          volatilityWindowDays: 30
-          neverExceedExemptionLimit: false
           dryRun: ${{ github.event.inputs.dry_run || 'false' }}
           logLevel: info
+          telegram:
+            chatId: "${{ secrets.TELEGRAM_CHAT_ID }}"
           EOF
 
       - name: Build TypeScript
@@ -74,72 +69,8 @@ jobs:
         env:
           BINANCE_API_KEY: ${{ secrets.BINANCE_API_KEY }}
           BINANCE_API_SECRET: ${{ secrets.BINANCE_API_SECRET }}
-        run: |
-          set -o pipefail
-          npm run scan:binance -- --config shannonfi.config.yaml 2>&1 | tee /tmp/scan-output.log
-        continue-on-error: true
-
-      - name: Format scan results for Telegram
-        id: parse-results
-        run: |
-          # Extract the Asset Scanner Results table from logs
-          if [ ! -f /tmp/scan-output.log ]; then
-            echo "results=📊 Binance Daily Scan ✅" >> $GITHUB_OUTPUT
-            exit 0
-          fi
-
-          # Find and extract the scanner results section
-          RESULTS=$(cat /tmp/scan-output.log | grep -A 50 "Asset Scanner Results" | head -40)
-
-          if [ -z "$RESULTS" ]; then
-            echo "results=📊 Binance Daily Scan ✅" >> $GITHUB_OUTPUT
-            exit 0
-          fi
-
-          # Parse the table and format for Telegram
-          {
-            echo "🔍 <b>Asset Scanner — Binance</b>"
-            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            echo ""
-            echo "<b>Top Candidates</b>"
-            echo ""
-
-            # Extract asset rows from table
-            echo "$RESULTS" | grep "^│.*│" | grep -v "Symbol" | grep -v "─" | head -10 | while IFS= read -r line; do
-              # Parse: │  1 │ HYPE-BRL  │  4.0% │ + 86.0% │    R$184K │   0.07    │
-              RANK=$(echo "$line" | cut -d'│' -f2 | xargs)
-              SYMBOL=$(echo "$line" | cut -d'│' -f3 | xargs)
-              MAD=$(echo "$line" | cut -d'│' -f4 | xargs)
-              RETURN=$(echo "$line" | cut -d'│' -f5 | xargs)
-              VOL=$(echo "$line" | cut -d'│' -f6 | xargs)
-              SCORE=$(echo "$line" | cut -d'│' -f7 | xargs)
-
-              if [ -n "$RANK" ] && [ -n "$SYMBOL" ]; then
-                ASSET=$(echo "$SYMBOL" | cut -d'-' -f1)
-                echo "${RANK}. <b>${ASSET}</b> — MAD: ${MAD} | Vol: ${VOL} | Score: ${SCORE}"
-              fi
-            done
-
-            echo ""
-            echo "⏰ <i>Daily scans: 21:00 UTC (16:00 BRT)</i>"
-          } > /tmp/telegram-message.txt
-
-          # Read the formatted message and escape for GitHub output
-          MESSAGE=$(cat /tmp/telegram-message.txt)
-          MESSAGE="${MESSAGE//$'\n'/\\n}"
-          echo "results=$MESSAGE" >> $GITHUB_OUTPUT
-        continue-on-error: true
-
-      - name: Send results to Telegram
-        if: always()
-        uses: appleboy/telegram-action@master
-        with:
-          to: ${{ secrets.TELEGRAM_CHAT_ID }}
-          token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          message: |
-            📊 Binance Daily Scan ${{ job.status == 'success' && '✅' || '❌' }}
-
-            ${{ steps.parse-results.outputs.results }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        run: npm run scan:binance -- --config shannonfi.config.yaml
 
       - name: Upload updated database artifact
         if: always()
@@ -149,13 +80,4 @@ jobs:
           path: ./bot/data/hype-mb/shannonfi.db
           retention-days: 30
           overwrite: true
-          if-no-files-found: ignore
-
-      - name: Upload scan logs
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: scan-logs-${{ github.run_number }}
-          path: /tmp/scan-output.log
-          retention-days: 7
           if-no-files-found: ignore

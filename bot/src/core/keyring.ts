@@ -96,6 +96,13 @@ export function getBinanceCredentials(): { apiKey: string; apiSecret: string } {
  * Returns null if not configured.
  */
 export function getTelegramCredentials(): { botToken: string } | null {
+  // Check environment variable first (GitHub Actions)
+  const envToken = process.env.TELEGRAM_BOT_TOKEN;
+  if (envToken) {
+    logger.debug('Loaded Telegram bot token from environment variable');
+    return { botToken: envToken };
+  }
+
   try {
     const botToken = execSync('secret-tool lookup service telegram key botToken 2>/dev/null', {
       encoding: 'utf-8',
