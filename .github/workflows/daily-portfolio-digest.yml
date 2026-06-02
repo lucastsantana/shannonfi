@@ -1,0 +1,111 @@
+name: Daily Portfolio & Tax Digest
+
+on:
+  schedule:
+    # Run at 22:00 UTC (7 PM BRT) — after both scans
+    - cron: '0 22 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  digest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: 'bot/package-lock.json'
+
+      - name: Download database artifact
+        uses: dawidd6/action-download-artifact@v2
+        with:
+          name: hype-mb-database
+          path: ./bot/data/hype-mb
+          if_no_artifact_found: ignore
+
+      - name: Create data directory
+        run: mkdir -p ./bot/data/hype-mb
+
+      - name: Install dependencies
+        run: cd bot && npm ci
+
+      - name: Build TypeScript
+        working-directory: ./bot
+        run: npm run build
+
+      - name: Generate digest data
+        working-directory: ./bot
+        id: digest
+        run: |
+          {
+            echo "## 📈 Daily Portfolio Digest"
+            echo ""
+            echo "**Report Date:** $(date -u +'%Y-%m-%d')"
+            echo ""
+
+            # Query database for latest snapshot
+            sqlite3 ./data/hype-mb/shannonfi.db << 'SQL' || true
+            SELECT
+              '**Total Value:** R$' || printf("%.2f", total_value_brl) ||
+              ' **SOL Balance:** ' || printf("%.6f", sol_balance) ||
+              ' **BRL Balance:** R$' || printf("%.2f", brl_balance) ||
+              ' **SOL Price:** R$' || printf("%.2f", sol_price)
+            FROM portfolio_snapshots
+            ORDER BY date_brt DESC LIMIT 1;
+            SQL
+
+            echo ""
+            echo "### Recent Trades (Last 5)"
+            sqlite3 ./data/hype-mb/shannonfi.db << 'SQL' || true
+            SELECT
+              '- ' || direction || ' @ R$' || printf("%.2f", fill_price) || ' (' || timestamp || ')'
+            FROM trades
+            WHERE status = 'FILLED'
+            ORDER BY timestamp DESC
+            LIMIT 5;
+            SQL
+
+            echo ""
+            echo "### Tax Status (Current Month)"
+            sqlite3 ./data/hype-mb/shannonfi.db << 'SQL' || true
+            SELECT
+              '**Sales:** R$' || printf("%.2f", COALESCE(SUM(traded_volume_brl), 0)) ||
+              ' **Exempt:** ' || (CASE WHEN COALESCE(SUM(traded_volume_brl), 0) <= 35000 THEN '✅' ELSE '❌' END)
+            FROM tax_events
+            WHERE month_brt = strftime('%Y-%m', 'now');
+            SQL
+          } > /tmp/digest-content.txt
+
+          cat /tmp/digest-content.txt
+          echo "content=$(cat /tmp/digest-content.txt | sed 's/$/\\n/g' | tr -d '\n')" >> $GITHUB_OUTPUT
+
+      - name: Send digest to Telegram
+        uses: appleboy/telegram-action@master
+        with:
+          to: ${{ secrets.TELEGRAM_CHAT_ID }}
+          token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          message: |
+            📈 Daily Portfolio Digest
+
+            📅 Date: $(date -u +'%Y-%m-%d %H:%M:%S UTC')
+
+            View full report: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+      - name: Upload database artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hype-mb-database
+          path: ./bot/data/hype-mb/shannonfi.db
+          retention-days: 30
+          overwrite: true
+          if-no-files-found: ignore

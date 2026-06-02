@@ -1,0 +1,99 @@
+name: Monthly Database Backup
+
+on:
+  schedule:
+    # Run on the 1st of each month at 00:00 UTC
+    - cron: '0 0 1 * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download latest database artifact
+        uses: dawidd6/action-download-artifact@v2
+        with:
+          name: hype-mb-database
+          path: ./bot/data/hype-mb
+          if_no_artifact_found: ignore
+
+      - name: Create backup directory
+        run: mkdir -p ./backups
+
+      - name: Check if database exists
+        id: check-db
+        run: |
+          if [ -f ./bot/data/hype-mb/shannonfi.db ]; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create monthly backup
+        if: steps.check-db.outputs.exists == 'true'
+        run: |
+          BACKUP_DATE=$(date -u +'%Y-%m-%d')
+          BACKUP_FILE="backups/shannonfi-db-${BACKUP_DATE}.db"
+          cp ./bot/data/hype-mb/shannonfi.db "$BACKUP_FILE"
+          ls -lh "$BACKUP_FILE"
+          echo "BACKUP_FILE=$BACKUP_FILE" >> $GITHUB_ENV
+
+      - name: Commit and push backup
+        if: steps.check-db.outputs.exists == 'true'
+        run: |
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
+          git add backups/
+          git commit -m "Monthly database backup: $(date -u +'%Y-%m-%d')" || echo "No changes to commit"
+          git push origin main
+
+      - name: Create release for backup
+        if: steps.check-db.outputs.exists == 'true'
+        uses: softprops/action-gh-release@v1
+        with:
+          name: "Database Backup - $(date -u +'%Y-%m-%d')"
+          tag_name: "db-backup-$(date -u +'%Y-%m-%d')"
+          files: |
+            ${{ env.BACKUP_FILE }}
+          body: |
+            Monthly database backup for Shannon's Demon bot.
+
+            **Backup Date:** $(date -u +'%Y-%m-%d %H:%M:%S UTC')
+
+            Contains:
+            - Trade history
+            - Tax events
+            - Cost basis data
+            - Portfolio snapshots
+
+      - name: Upload to artifact (for reference)
+        if: steps.check-db.outputs.exists == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: monthly-backup-${{ github.run_id }}
+          path: ${{ env.BACKUP_FILE }}
+          retention-days: 180
+
+      - name: Send completion notification
+        uses: appleboy/telegram-action@master
+        if: always()
+        with:
+          to: ${{ secrets.TELEGRAM_CHAT_ID }}
+          token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          message: |
+            💾 Monthly Database Backup ${{ steps.check-db.outputs.exists == 'true' && '✅' || '⚠️' }}
+
+            📅 Backup Date: $(date -u +'%Y-%m-%d')
+            📊 Status: ${{ job.status }}
+            🔗 Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}

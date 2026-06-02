@@ -1,108 +1,134 @@
-name: Daily Binance Asset Scanner
+name: Binance Daily Scan + Telegram Report
 
 on:
   schedule:
-    # 09:00 AM BRT = 12:00 PM UTC
-    - cron: '0 12 * * *'
+    # Run at 21:00 UTC (6 PM BRT)
+    - cron: '0 21 * * *'
   workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Run in dry-run mode'
+        required: false
+        default: 'false'
+
+permissions:
+  contents: read
+  actions: read
 
 jobs:
-  binance-scan:
+  scan:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 15
 
     steps:
-      - name: Checkout
+      - name: Checkout code
         uses: actions/checkout@v4
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: 'bot/package-lock.json'
 
-      - name: Restore SQLite cache (Binance)
-        uses: actions/cache@v4
+      - name: Download database artifact
+        uses: dawidd6/action-download-artifact@v2
         with:
-          path: bot/data/btc-binance/shannonfi.db
-          key: bot-sqlite-binance-${{ github.repository }}
-          restore-keys: |
-            bot-sqlite-binance-
+          name: hype-mb-database
+          path: ./bot/data/hype-mb
+          if_no_artifact_found: ignore
+
+      - name: Create data directory
+        run: mkdir -p ./bot/data/hype-mb
 
       - name: Install dependencies
-        working-directory: bot
-        run: npm ci
+        run: cd bot && npm ci
 
-      - name: Build
-        working-directory: bot
-        run: npm run build
-
-      - name: Create Binance config from secrets
-        working-directory: bot
+      - name: Create runtime config from secrets
+        working-directory: ./bot
         run: |
-          cat > configs/btc-binance-gh.yaml <<'EOF'
-          exchange: binance
-          symbol: BTC-BRL
-
-          binance:
-            apiBaseUrl: "https://api.binance.com"
-
+          cat > shannonfi.config.yaml << 'EOF'
+          exchange: mercadobitcoin
+          mercadobitcoin:
+            clientId: "${{ secrets.MB_CLIENT_ID }}"
+            clientSecret: "${{ secrets.MB_CLIENT_SECRET }}"
           rebalanceThresholdBps: 100
           maxSlippageBps: 100
-          minPortfolioValueBrl: 10
-          minTradeSizeBrl: 1
-          pollIntervalSeconds: 300
-          minRebalanceIntervalSeconds: 300
-
+          minPortfolioValueBrl: 200
+          minTradeSizeBrl: 20
           useAdaptiveThreshold: true
-          thresholdVolatilityMultiplier: 1.25
+          thresholdVolatilityMultiplier: 1.5
           volatilityWindowDays: 30
-
-          enableDayTradeSafeguard: true
-
-          dryRun: false
+          neverExceedExemptionLimit: false
+          dryRun: ${{ github.event.inputs.dry_run || 'false' }}
           logLevel: info
-
-          dbPath: ./data/btc-binance/shannonfi.db
-          jsonRetentionDays: 15
-
-          telegram:
-            chatId: "${{ secrets.TELEGRAM_CHAT_ID }}"
           EOF
 
-      - name: Run Binance asset scanner
-        working-directory: bot
+      - name: Build TypeScript
+        working-directory: ./bot
+        run: npm run build
+
+      - name: Run Binance scan
+        working-directory: ./bot
         run: |
-          npm run scan -- \
-            --config ./configs/btc-binance-gh.yaml \
-            --window 30 \
-            --min-volume 5000 \
-            --top 15
+          set -o pipefail
+          npm run scan:binance 2>&1 | tee /tmp/scan-output.log
         continue-on-error: true
-        env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
 
-      - name: Save SQLite cache (Binance)
-        uses: actions/cache@v4
+      - name: Parse scan results
+        id: parse-results
+        run: |
+          if [ -f /tmp/scan-output.log ]; then
+            SCAN_RESULTS=$(cat /tmp/scan-output.log | tail -50)
+          else
+            SCAN_RESULTS="No output captured"
+          fi
+          # Escape for JSON
+          SCAN_RESULTS="${SCAN_RESULTS//$'\n'/\\n}"
+          echo "results<<EOF" >> $GITHUB_OUTPUT
+          echo "$SCAN_RESULTS" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+        continue-on-error: true
+
+      - name: Send success report to Telegram
+        if: success()
+        uses: appleboy/telegram-action@master
+        with:
+          to: ${{ secrets.TELEGRAM_CHAT_ID }}
+          token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          message: |
+            ✅ Binance Daily Scan Completed
+
+            📅 Date: $(date -u +'%Y-%m-%d %H:%M:%S UTC')
+            🔗 Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+      - name: Send failure alert to Telegram
+        if: failure()
+        uses: appleboy/telegram-action@master
+        with:
+          to: ${{ secrets.TELEGRAM_CHAT_ID }}
+          token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          message: |
+            ❌ Binance Daily Scan Failed
+
+            📅 Date: $(date -u +'%Y-%m-%d %H:%M:%S UTC')
+            🔗 View: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+      - name: Upload updated database artifact
         if: always()
+        uses: actions/upload-artifact@v4
         with:
-          path: bot/data/btc-binance/shannonfi.db
-          key: bot-sqlite-binance-${{ github.repository }}-${{ github.run_number }}
+          name: hype-mb-database
+          path: ./bot/data/hype-mb/shannonfi.db
+          retention-days: 30
+          overwrite: true
+          if-no-files-found: ignore
 
-      - name: Notify Slack on failure
-        if: failure() && vars.SLACK_WEBHOOK_URL != ''
-        uses: slackapi/slack-github-action@v1
+      - name: Upload scan logs
+        if: always()
+        uses: actions/upload-artifact@v4
         with:
-          webhook-url: ${{ secrets.SLACK_WEBHOOK_URL }}
-          payload: |
-            {
-              "text": "❌ Binance Asset Scanner Failed",
-              "blocks": [
-                {
-                  "type": "section",
-                  "text": {
-                    "type": "mrkdwn",
-                    "text": "*Binance Asset Scanner Failed*\n<${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View logs>"
-                  }
-                }
-              ]
-            }
+          name: scan-logs-${{ github.run_number }}
+          path: /tmp/scan-output.log
+          retention-days: 7
+          if-no-files-found: ignore
