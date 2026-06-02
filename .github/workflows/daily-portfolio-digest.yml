@@ -23,18 +23,28 @@ jobs:
         uses: dawidd6/action-download-artifact@v3
         with:
           name: hype-mb-database
-          path: ./bot/data/hype-mb
+          path: ./artifact-download
           if_no_artifact_found: ignore
 
-      - name: Create data directory
-        run: mkdir -p ./bot/data/hype-mb
+      - name: Locate and stage database
+        run: |
+          mkdir -p ./bot/data/hype-mb
+          # dawidd6 v3 may place file directly or in a subdirectory — find it
+          DB_SRC=$(find ./artifact-download -name "shannonfi.db" 2>/dev/null | head -1)
+          if [ -n "$DB_SRC" ]; then
+            cp "$DB_SRC" ./bot/data/hype-mb/shannonfi.db
+            echo "✅ Database staged from: $DB_SRC ($(du -sh ./bot/data/hype-mb/shannonfi.db | cut -f1))"
+          else
+            echo "⚠️  No DB found in artifact. Contents of artifact-download:"
+            find ./artifact-download 2>/dev/null || echo "  (empty or missing)"
+          fi
 
       - name: Generate Telegram digest message
         run: |
           DB="./bot/data/hype-mb/shannonfi.db"
 
           if [ ! -f "$DB" ]; then
-            echo "⚠️ No database found — no trades recorded yet." > ${{ github.workspace }}/digest.txt
+            echo "⚠️ No database found — run the MB scan first." > ${{ github.workspace }}/digest.txt
             exit 0
           fi
 
