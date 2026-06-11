@@ -96,9 +96,9 @@ async function main(): Promise<void> {
   const db = getDb(dbPath);
 
   // Initialize config table with current symbol if not set
-  const currentSymbol = getDbConfig('current_symbol');
+  const currentSymbol = getDbConfig('current_symbol', undefined, dbPath);
   if (!currentSymbol) {
-    setDbConfig('current_symbol', config.symbol);
+    setDbConfig('current_symbol', config.symbol, dbPath);
     logger.info('Initialized config with symbol', { symbol: config.symbol });
   }
 
@@ -147,7 +147,7 @@ async function main(): Promise<void> {
 
   try {
     // Get current symbol from DB
-    const activeSymbol = getDbConfig('current_symbol', config.symbol);
+    const activeSymbol = getDbConfig('current_symbol', config.symbol, dbPath);
 
     try {
     // Set up reporter

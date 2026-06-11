@@ -67,18 +67,22 @@ export function resetDb(): void {
 
 /**
  * Get a config value by key, with optional default.
+ * Pass dbPath to target a specific instance's database; otherwise uses the
+ * currently active singleton (whichever path was last opened via getDb()).
  */
-export function getDbConfig(key: string, defaultValue?: string): string | null {
-  const db = getDb();
+export function getDbConfig(key: string, defaultValue?: string, dbPath?: string): string | null {
+  const db = getDb(dbPath);
   const row = db.prepare('SELECT value FROM config WHERE key = ?').get(key) as { value: string } | undefined;
   return row?.value ?? defaultValue ?? null;
 }
 
 /**
  * Set a config value by key.
+ * Pass dbPath to target a specific instance's database; otherwise uses the
+ * currently active singleton (whichever path was last opened via getDb()).
  */
-export function setDbConfig(key: string, value: string): void {
-  const db = getDb();
+export function setDbConfig(key: string, value: string, dbPath?: string): void {
+  const db = getDb(dbPath);
   const now = new Date().toISOString();
   db.prepare('INSERT OR REPLACE INTO config (key, value, set_at) VALUES (?, ?, ?)').run(key, value, now);
 }
