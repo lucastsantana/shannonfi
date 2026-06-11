@@ -28,12 +28,12 @@ export class TradeHistoryService {
     const stmt = this.db.prepare(`
       INSERT INTO trades (
         id, client_order_id, exchange_order_id, exchange, timestamp, direction,
-        brl_amount_target, sol_amount_filled, brl_amount_filled, fill_price, fee_brl,
+        brl_amount_target, base_amount_filled, brl_amount_filled, fill_price, fee_brl,
         status, dry_run, realized_gain_brl, trade_date_brt,
-        before_sol_balance, before_brl_balance, before_sol_price, before_sol_value,
-        before_total_value, before_sol_ratio_bps, before_deviation_bps, before_timestamp,
-        after_sol_balance, after_brl_balance, after_sol_price, after_sol_value,
-        after_total_value, after_sol_ratio_bps, after_deviation_bps, after_timestamp
+        before_base_balance, before_brl_balance, before_base_price, before_base_value,
+        before_total_value, before_base_ratio_bps, before_deviation_bps, before_timestamp,
+        after_base_balance, after_brl_balance, after_base_price, after_base_value,
+        after_total_value, after_base_ratio_bps, after_deviation_bps, after_timestamp
       ) VALUES (
         ?, ?, ?, ?, ?, ?,
         ?, ?, ?, ?, ?,
@@ -121,7 +121,7 @@ export class TradeHistoryService {
       timestamp: row.timestamp,
       direction: row.direction,
       brlAmountTarget: row.brl_amount_target,
-      baseAmountFilled: row.sol_amount_filled,
+      baseAmountFilled: row.base_amount_filled,
       brlAmountFilled: row.brl_amount_filled,
       fillPrice: row.fill_price,
       feeBrl: row.fee_brl,
@@ -130,22 +130,22 @@ export class TradeHistoryService {
       realizedGainBrl: row.realized_gain_brl,
       tradeDateBRT: row.trade_date_brt,
       portfolioBefore: {
-        baseBalance: row.before_sol_balance,
+        baseBalance: row.before_base_balance,
         brlBalance: row.before_brl_balance,
-        basePrice: row.before_sol_price,
-        baseValueBrl: row.before_sol_value,
+        basePrice: row.before_base_price,
+        baseValueBrl: row.before_base_value,
         totalValueBrl: row.before_total_value,
-        baseRatioBps: row.before_sol_ratio_bps,
+        baseRatioBps: row.before_base_ratio_bps,
         deviationBps: row.before_deviation_bps,
         timestamp: row.before_timestamp,
       },
-      portfolioAfter: row.after_sol_balance !== null ? {
-        baseBalance: row.after_sol_balance,
+      portfolioAfter: row.after_base_balance !== null ? {
+        baseBalance: row.after_base_balance,
         brlBalance: row.after_brl_balance,
-        basePrice: row.after_sol_price,
-        baseValueBrl: row.after_sol_value,
+        basePrice: row.after_base_price,
+        baseValueBrl: row.after_base_value,
         totalValueBrl: row.after_total_value,
-        baseRatioBps: row.after_sol_ratio_bps,
+        baseRatioBps: row.after_base_ratio_bps,
         deviationBps: row.after_deviation_bps,
         timestamp: row.after_timestamp,
       } : null,
@@ -195,8 +195,8 @@ export class TradeHistoryService {
   appendSnapshot(snapshot: PortfolioSnapshot): void {
     const stmt = this.db.prepare(`
       INSERT OR REPLACE INTO portfolio_snapshots (
-        date_brt, timestamp, total_value_brl, sol_balance, brl_balance,
-        sol_price, sol_ratio_bps, effective_threshold_bps, rebalanced_today, exchange
+        date_brt, timestamp, total_value_brl, base_balance, brl_balance,
+        base_price, base_ratio_bps, effective_threshold_bps, rebalanced_today, exchange
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
@@ -246,10 +246,10 @@ export class TradeHistoryService {
       dateBRT: row.date_brt,
       timestamp: row.timestamp,
       totalValueBrl: row.total_value_brl,
-      baseBalance: row.sol_balance,
+      baseBalance: row.base_balance,
       brlBalance: row.brl_balance,
-      basePrice: row.sol_price,
-      baseRatioBps: row.sol_ratio_bps,
+      basePrice: row.base_price,
+      baseRatioBps: row.base_ratio_bps,
       effectiveThresholdBps: row.effective_threshold_bps,
       rebalancedToday: row.rebalanced_today === 1,
       exchange: row.exchange,

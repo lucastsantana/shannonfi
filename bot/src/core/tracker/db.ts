@@ -84,6 +84,18 @@ export function setDbConfig(key: string, value: string): void {
 }
 
 /**
+ * Rename a column on a table if it still exists under its old name.
+ * No-op if the table already uses the new name (idempotent).
+ */
+function renameColumnIfExists(db: Database.Database, table: string, oldName: string, newName: string): void {
+  const columns = db.pragma(`table_info(${table})`) as { name: string }[];
+  if (columns.some((c) => c.name === oldName)) {
+    db.exec(`ALTER TABLE ${table} RENAME COLUMN ${oldName} TO ${newName}`);
+    logger.info('Renamed column', { table, from: oldName, to: newName });
+  }
+}
+
+/**
  * Initialize database schema if tables don't exist.
  */
 function runMigrations(db: Database.Database): void {
@@ -97,7 +109,7 @@ function runMigrations(db: Database.Database): void {
       timestamp           TEXT NOT NULL,
       direction           TEXT NOT NULL,
       brl_amount_target   REAL NOT NULL,
-      sol_amount_filled   REAL,
+      base_amount_filled  REAL,
       brl_amount_filled   REAL,
       fill_price          REAL,
       fee_brl             REAL,
@@ -107,22 +119,22 @@ function runMigrations(db: Database.Database): void {
       trade_date_brt      TEXT,
 
       -- portfolioBefore (always present)
-      before_sol_balance  REAL NOT NULL,
+      before_base_balance  REAL NOT NULL,
       before_brl_balance  REAL NOT NULL,
-      before_sol_price    REAL NOT NULL,
-      before_sol_value    REAL NOT NULL,
+      before_base_price    REAL NOT NULL,
+      before_base_value    REAL NOT NULL,
       before_total_value  REAL NOT NULL,
-      before_sol_ratio_bps INTEGER NOT NULL,
+      before_base_ratio_bps INTEGER NOT NULL,
       before_deviation_bps INTEGER NOT NULL,
       before_timestamp    TEXT NOT NULL,
 
       -- portfolioAfter (nullable)
-      after_sol_balance   REAL,
+      after_base_balance   REAL,
       after_brl_balance   REAL,
-      after_sol_price     REAL,
-      after_sol_value     REAL,
+      after_base_price     REAL,
+      after_base_value     REAL,
       after_total_value   REAL,
-      after_sol_ratio_bps INTEGER,
+      after_base_ratio_bps INTEGER,
       after_deviation_bps INTEGER,
       after_timestamp     TEXT
     );
@@ -131,10 +143,10 @@ function runMigrations(db: Database.Database): void {
       date_brt              TEXT PRIMARY KEY,
       timestamp             TEXT NOT NULL,
       total_value_brl       REAL NOT NULL,
-      sol_balance           REAL NOT NULL,
+      base_balance          REAL NOT NULL,
       brl_balance           REAL NOT NULL,
-      sol_price             REAL NOT NULL,
-      sol_ratio_bps         INTEGER NOT NULL,
+      base_price            REAL NOT NULL,
+      base_ratio_bps        INTEGER NOT NULL,
       effective_threshold_bps INTEGER NOT NULL,
       rebalanced_today      INTEGER NOT NULL DEFAULT 0,
       exchange              TEXT NOT NULL DEFAULT 'mercadobitcoin'
@@ -159,7 +171,7 @@ function runMigrations(db: Database.Database): void {
     CREATE TABLE IF NOT EXISTS cost_basis (
       asset                 TEXT PRIMARY KEY,
       average_cost_brl      REAL NOT NULL DEFAULT 0,
-      total_sol             REAL NOT NULL DEFAULT 0,
+      total_base            REAL NOT NULL DEFAULT 0,
       last_updated          TEXT NOT NULL DEFAULT ''
     );
 
@@ -207,6 +219,21 @@ function runMigrations(db: Database.Database): void {
     UPDATE tax_events SET direction = 'BUY_BASE'  WHERE direction = 'BUY_SOL';
     UPDATE tax_events SET direction = 'SELL_BASE' WHERE direction = 'SELL_SOL';
   `);
+
+  // Migrate legacy 'sol_*'/'total_sol' columns to asset-agnostic 'base_*'/'total_base' names
+  renameColumnIfExists(db, 'trades', 'sol_amount_filled', 'base_amount_filled');
+  renameColumnIfExists(db, 'trades', 'before_sol_balance', 'before_base_balance');
+  renameColumnIfExists(db, 'trades', 'before_sol_price', 'before_base_price');
+  renameColumnIfExists(db, 'trades', 'before_sol_value', 'before_base_value');
+  renameColumnIfExists(db, 'trades', 'before_sol_ratio_bps', 'before_base_ratio_bps');
+  renameColumnIfExists(db, 'trades', 'after_sol_balance', 'after_base_balance');
+  renameColumnIfExists(db, 'trades', 'after_sol_price', 'after_base_price');
+  renameColumnIfExists(db, 'trades', 'after_sol_value', 'after_base_value');
+  renameColumnIfExists(db, 'trades', 'after_sol_ratio_bps', 'after_base_ratio_bps');
+  renameColumnIfExists(db, 'portfolio_snapshots', 'sol_balance', 'base_balance');
+  renameColumnIfExists(db, 'portfolio_snapshots', 'sol_price', 'base_price');
+  renameColumnIfExists(db, 'portfolio_snapshots', 'sol_ratio_bps', 'base_ratio_bps');
+  renameColumnIfExists(db, 'cost_basis', 'total_sol', 'total_base');
 
   logger.info('Database schema initialized');
 }

@@ -38,11 +38,11 @@ export class CostBasisService {
 
   getLedger(): CostBasisLedger {
     const stmt = this.db.prepare(
-      'SELECT average_cost_brl, total_sol, last_updated FROM cost_basis WHERE asset = ?'
+      'SELECT average_cost_brl, total_base, last_updated FROM cost_basis WHERE asset = ?'
     );
     const row = stmt.get(this.asset) as {
       average_cost_brl: number;
-      total_sol: number;
+      total_base: number;
       last_updated: string;
     } | undefined;
 
@@ -53,7 +53,7 @@ export class CostBasisService {
     return {
       base: {
         averageCostBrl: row.average_cost_brl,
-        totalBase: row.total_sol,
+        totalBase: row.total_base,
       },
       lastUpdated: row.last_updated,
     };
@@ -63,7 +63,7 @@ export class CostBasisService {
     const lastUpdated = new Date().toISOString();
     const stmt = this.db.prepare(`
       UPDATE cost_basis
-      SET average_cost_brl = ?, total_sol = ?, last_updated = ?
+      SET average_cost_brl = ?, total_base = ?, last_updated = ?
       WHERE asset = ?
     `);
     stmt.run(ledger.base.averageCostBrl, ledger.base.totalBase, lastUpdated, this.asset);
