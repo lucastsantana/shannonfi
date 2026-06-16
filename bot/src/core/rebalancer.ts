@@ -185,12 +185,12 @@ export class RebalancerBot {
         const costBasisLedger = this.costBasis.getLedger();
         const acquisitionPrice = costBasisLedger.base.averageCostBrl > 0 ? costBasisLedger.base.averageCostBrl : prevPrice;
 
-        // Calculate trigger prices based on comparison between base price and BRL allocation
+        // Trigger prices using the same relative-difference formula as shouldRebalance:
+        // SELL fires when estBaseValue / brlBalance = 1 + T  →  price = prevPrice * brlBalance*(1+T) / prevBaseValue
+        // BUY  fires when brlBalance / estBaseValue  = 1 + T  →  price = prevPrice * brlBalance / (prevBaseValue*(1+T))
         const thresholdRatio = effectiveThresholdBps / 10000;
-        const triggerRatioUp = 0.5 + thresholdRatio;
-        const triggerRatioDown = 0.5 - thresholdRatio;
-        const triggerPriceUp = (triggerRatioUp * estTotalBrl) / prev.baseBalance;
-        const triggerPriceDown = (triggerRatioDown * estTotalBrl) / prev.baseBalance;
+        const triggerPriceUp = (prevPrice * prev.brlBalance * (1 + thresholdRatio)) / prev.baseValueBrl;
+        const triggerPriceDown = (prevPrice * prev.brlBalance) / (prev.baseValueBrl * (1 + thresholdRatio));
 
         logMetadata.baseAsset = this.config.symbol.split('-')[0];
         logMetadata.baseBalance = prev.baseBalance.toFixed(6);
@@ -208,38 +208,7 @@ export class RebalancerBot {
 
     logger.info('Price check', logMetadata);
 
-    // ── Step 3: estimate drift from price alone ────────────────────────────────
-    // We don't have balances yet — use price to do a cheap pre-check based on
-    // the last known portfolio ratio. If we've never rebalanced, skip the
-    // pre-check and proceed to fetch balances.
-    //
-    // This is intentionally an approximation: the true ratio requires balances.
-    // Its only purpose is to save the balance fetch on most cycles.
-    if (lastTrade?.portfolioAfter) {
-      const prev = lastTrade.portfolioAfter;
-      const prevPrice = prev.basePrice;
-      if (prevPrice > 0) {
-        // Estimate current base value using price drift; cash is unchanged
-        const priceRatio = basePrice / prevPrice;
-        const estBaseValueBrl = prev.baseValueBrl * priceRatio;
-        const estTotalBrl = estBaseValueBrl + prev.brlBalance;
-        const estBaseRatioBps = computeBaseRatioBps(estBaseValueBrl, estTotalBrl);
-
-        if (!shouldRebalance(estBaseValueBrl, prev.brlBalance, effectiveThresholdBps)) {
-          logger.info('No rebalance needed (price-only estimate)', {
-            estBaseValueBrl: estBaseValueBrl.toFixed(2),
-            brlBalance: prev.brlBalance.toFixed(2),
-            effectiveThresholdBps,
-          });
-          return;
-        }
-        logger.debug('Price estimate suggests rebalance — fetching balances', {
-          estBaseValueBrl: estBaseValueBrl.toFixed(2),
-        });
-      }
-    }
-
-    // ── Step 4: cooldown check — in-memory, zero cost ─────────────────────────
+    // ── Step 3: cooldown check — in-memory, zero cost ─────────────────────────
     const now = Date.now();
     const secondsSinceLast = (now - this.lastRebalanceTime) / 1000;
     if (secondsSinceLast < this.config.minRebalanceIntervalSeconds) {
