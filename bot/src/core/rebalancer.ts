@@ -432,7 +432,7 @@ export class RebalancerBot {
 
     // Wrap all three DB writes (cost_basis, trades, tax_events) in a single transaction
     // to ensure atomicity. Telegram notification is sent after the transaction commits.
-    const db = getDb();
+    const db = getDb(this.config.dbPath);
     const txn = db.transaction(() => {
       this.history.appendTrade(tradeRecord);
       if (pendingTaxEvent) {
