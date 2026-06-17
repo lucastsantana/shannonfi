@@ -223,8 +223,12 @@ function generateHtml(d: DashboardData): string {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Shannon's Demon volatility-harvesting bot · ${d.symbol} portfolio tracker on Mercado Bitcoin">
+  <meta name="theme-color" content="#000000">
+  <meta name="robots" content="noindex,nofollow">
   <title>SHANNON'S DEMON // ${d.symbol}</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=VT323&family=Share+Tech+Mono&display=swap" rel="stylesheet">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -287,6 +291,10 @@ function generateHtml(d: DashboardData): string {
     .blink   { animation: blink 1.1s step-end infinite; }
     .flicker { animation: flicker 9s linear infinite; }
     .live-dot{ animation: pulse-live 2s ease-in-out infinite; font-size:.8em; }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
+    }
 
     a { text-decoration: none; }
     a:hover { text-decoration: underline; opacity: .85; }
@@ -397,7 +405,8 @@ function generateHtml(d: DashboardData): string {
     }
 
     /* ── Data tables ────────────────────────────────── */
-    table { width: 100%; border-collapse: collapse; }
+    .tbl-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    table { width: 100%; border-collapse: collapse; min-width: 560px; }
     .tbl  { border: 1px solid var(--b); background: var(--p); }
     .tbl thead th {
       background: #010e01;
@@ -451,19 +460,20 @@ function generateHtml(d: DashboardData): string {
   </style>
 </head>
 <body>
-<div class="wrap flicker">
+<noscript><div style="background:#330000;color:#ff6666;padding:10px;text-align:center;font-family:monospace">⚠ JavaScript required for live price updates and strategy chart.</div></noscript>
+<div class="wrap flicker" role="main">
 
 <!-- ═══  TITLE  ══════════════════════════════════════════════════════════════ -->
-<div class="hdr">
-  <div class="hdr-title">&#9878; SHANNON'S DEMON</div>
-  <div class="hdr-sub">&#9608;&#9608;&#9608; ORDER FROM ENTROPY &middot; ALPHA FROM CHAOS &#9608;&#9608;&#9608;</div>
+<header class="hdr" role="banner">
+  <div class="hdr-title" role="heading" aria-level="1">&#9878; SHANNON'S DEMON</div>
+  <div class="hdr-sub" aria-hidden="true">&#9608;&#9608;&#9608; ORDER FROM ENTROPY &middot; ALPHA FROM CHAOS &#9608;&#9608;&#9608;</div>
   <div class="hdr-meta">${d.symbol} &nbsp;&#183;&nbsp; MERCADO BITCOIN &nbsp;&#183;&nbsp; EST. ${d.snapshots[0]?.date_brt ?? '—'}</div>
   <div class="hdr-gen">
-    PRICE: <span data-live="price">R$${livePrice.toFixed(2)}</span>
-    &nbsp;<span class="live-dot" title="Updates every 30s">&#9679; LIVE</span>
-    &nbsp;&#183;&nbsp; LAST REFRESH: <span data-live="updated">${d.generatedAt} BRT</span>
+    PRICE: <span data-live="price" aria-label="live price" aria-live="polite">R$${livePrice.toFixed(2)}</span>
+    &nbsp;<span class="live-dot" aria-hidden="true" title="Updates every 30s">&#9679; LIVE</span>
+    &nbsp;&#183;&nbsp; LAST REFRESH: <span data-live="updated" aria-live="polite">${d.generatedAt} BRT</span>
   </div>
-</div>
+</header>
 
 <!-- ═══  SCORE BAR  ══════════════════════════════════════════════════════════ -->
 <div class="scores">
@@ -515,64 +525,68 @@ function generateHtml(d: DashboardData): string {
 </div>
 
 <!-- ═══  STRATEGY CHART  ═════════════════════════════════════════════════════ -->
-<div class="sec">
+<section class="sec" aria-label="Strategy Scoreboard">
   <div class="sec-hdr">&#9878; STRATEGY SCOREBOARD
     <span class="sec-sub">&#9472; ${d.daysActive} DAYS &#183; &#9646;&#9646; SHANNON &nbsp; &#9646;&#9646; 50/50 HOLD &nbsp; &#9646;&#9646; ALL-IN ${d.baseAsset} &nbsp; &#9673; REBALANCE</span>
   </div>
   <div class="chart-wrap">
-    <canvas id="bench-chart"></canvas>
+    <canvas id="bench-chart" role="img" aria-label="Line chart comparing Shannon's Demon, 50/50 Buy-and-Hold, and All-in ${d.baseAsset} portfolio values over time"></canvas>
   </div>
-</div>
+</section>
 
 <!-- ═══  TRADE HISTORY  ══════════════════════════════════════════════════════ -->
-<div class="sec">
+<section class="sec" aria-label="Trade History">
   <div class="sec-hdr">&#9889; TRADE HISTORY <span class="sec-sub">&#9472; ${tradeCount} REBALANCES EXECUTED &#183; NEWEST FIRST</span></div>
-  <table class="tbl">
-    <thead>
-      <tr>
-        <th>#</th>
-        <th>DATE / TIME (BRT)</th>
-        <th>ACTION</th>
-        <th class="num">${d.baseAsset} QTY</th>
-        <th class="num">FILL PRICE</th>
-        <th class="num">BRL AMT</th>
-        <th class="num">FEE</th>
-        <th class="num">GAIN / LOSS</th>
-        <th class="num">DEV BPS</th>
-      </tr>
-    </thead>
-    <tbody>${tradeRows}</tbody>
-  </table>
-</div>
+  <div class="tbl-wrap">
+    <table class="tbl">
+      <thead>
+        <tr>
+          <th scope="col">#</th>
+          <th scope="col">DATE / TIME (BRT)</th>
+          <th scope="col">ACTION</th>
+          <th scope="col" class="num">${d.baseAsset} QTY</th>
+          <th scope="col" class="num">FILL PRICE</th>
+          <th scope="col" class="num">BRL AMT</th>
+          <th scope="col" class="num">FEE</th>
+          <th scope="col" class="num">GAIN / LOSS</th>
+          <th scope="col" class="num">DEV BPS</th>
+        </tr>
+      </thead>
+      <tbody>${tradeRows}</tbody>
+    </table>
+  </div>
+</section>
 
 <!-- ═══  TAX LEDGER  ════════════════════════════════════════════════════════ -->
-<div class="sec">
+<section class="sec" aria-label="Tax Ledger">
   <div class="sec-hdr">&#128272; TAX LEDGER <span class="sec-sub">&#9472; LEI 9.250/1995 ART. 21 &#183; SELL PROCEEDS &#8804; R$35,000/MO = EXEMPT</span></div>
-  <table class="tbl">
-    <thead>
-      <tr>
-        <th>MONTH</th>
-        <th class="num">TOTAL SELL PROCEEDS</th>
-        <th class="num">REALIZED GAIN</th>
-        <th>STATUS</th>
-        <th>UTILISATION</th>
-      </tr>
-    </thead>
-    <tbody>${taxRows}</tbody>
-  </table>
-</div>
+  <div class="tbl-wrap">
+    <table class="tbl">
+      <thead>
+        <tr>
+          <th scope="col">MONTH</th>
+          <th scope="col" class="num">TOTAL SELL PROCEEDS</th>
+          <th scope="col" class="num">REALIZED GAIN</th>
+          <th scope="col">STATUS</th>
+          <th scope="col">UTILISATION</th>
+        </tr>
+      </thead>
+      <tbody>${taxRows}</tbody>
+    </table>
+  </div>
+</section>
 
 <!-- ═══  FOOTER  ════════════════════════════════════════════════════════════ -->
-<div class="ftr">
+<footer class="ftr" role="contentinfo">
   SHANNON'S DEMON &#9612; ${d.symbol} &#9612; MERCADO BITCOIN &nbsp;&#183;&nbsp;
   INITIAL: R$${d.initialTotal.toFixed(2)} on ${d.snapshots[0]?.date_brt ?? '—'} &nbsp;&#183;&nbsp;
   <span style="color:var(--B)">shannonfi v1.0</span>
-</div>
+</footer>
 <div class="credits">
   FULL IMPLEMENTATION BY &nbsp;
-  <a class="cyan" href="https://github.com/lucastsantana" target="_blank" rel="noopener">LUCAS SANTANA</a>
+  <a class="cyan" href="https://github.com/lucastsantana" target="_blank" rel="noopener noreferrer">LUCAS SANTANA</a>
   <span class="dim">&nbsp;&amp;&nbsp;</span>
-  <a class="mag" href="https://claude.ai" target="_blank" rel="noopener">CLAUDE (ANTHROPIC)</a>
+  <a class="mag" href="https://claude.ai" target="_blank" rel="noopener noreferrer">CLAUDE (ANTHROPIC)</a>
 </div>
 
 </div><!-- /.wrap -->
