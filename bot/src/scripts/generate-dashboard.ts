@@ -609,7 +609,7 @@ var API   = 'https://api.mercadobitcoin.net/api/v4/tickers?symbols=' + SYM;
       labels: labels,
       datasets: [
         {
-          label: '⚖ Shannon\'s Demon',
+          label: "⚖ Shannon's Demon",
           data: shannon,
           borderColor: '#ff00ff',
           backgroundColor: 'rgba(255,0,255,0.07)',
