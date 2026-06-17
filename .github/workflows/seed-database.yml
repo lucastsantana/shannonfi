@@ -1,0 +1,37 @@
+name: Seed Database
+
+# One-time workflow to bootstrap the hype-mb-database artifact from the
+# DB_SEED_GZ_B64 secret (local DB compressed + base64-encoded).
+#
+# After running once:
+#   1. Delete the DB_SEED_GZ_B64 secret from repo settings
+#   2. Delete this file
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  seed:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Decode and restore database
+        env:
+          DB_SEED_GZ_B64: ${{ secrets.DB_SEED_GZ_B64 }}
+        run: |
+          mkdir -p ./bot/data/hype-mb
+          echo "$DB_SEED_GZ_B64" | base64 -d | gunzip > ./bot/data/hype-mb/shannonfi.db
+          echo "Restored $(du -h ./bot/data/hype-mb/shannonfi.db | cut -f1) database"
+
+      - name: Upload as hype-mb-database artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: hype-mb-database
+          path: ./bot/data/hype-mb/shannonfi.db
+          retention-days: 90
+          overwrite: true
