@@ -288,6 +288,9 @@ function generateHtml(d: DashboardData): string {
     .flicker { animation: flicker 9s linear infinite; }
     .live-dot{ animation: pulse-live 2s ease-in-out infinite; font-size:.8em; }
 
+    a { text-decoration: none; }
+    a:hover { text-decoration: underline; opacity: .85; }
+
     /* ── Typography ─────────────────────────────────── */
     .gain { color: var(--G); }
     .loss { color: var(--r); }
@@ -571,9 +574,9 @@ function generateHtml(d: DashboardData): string {
 </div>
 <div class="credits">
   FULL IMPLEMENTATION BY &nbsp;
-  <span class="cyan">LUCAS SANTANA</span>
+  <a class="cyan" href="https://github.com/lucastsantana" target="_blank" rel="noopener">LUCAS SANTANA</a>
   <span class="dim">&nbsp;&amp;&nbsp;</span>
-  <span class="mag">CLAUDE (ANTHROPIC)</span>
+  <a class="mag" href="https://claude.ai" target="_blank" rel="noopener">CLAUDE (ANTHROPIC)</a>
 </div>
 
 </div><!-- /.wrap -->
