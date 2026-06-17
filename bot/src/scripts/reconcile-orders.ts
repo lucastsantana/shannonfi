@@ -28,14 +28,21 @@ import { v4 as uuidv4 } from 'uuid';
 
 const BRT_OFFSET_MS = -3 * 60 * 60 * 1000;
 
-function toBRT(iso: string): string {
-  const d = new Date(new Date(iso).getTime() + BRT_OFFSET_MS);
+function toIso(ts: number | string): string {
+  return typeof ts === 'number' ? new Date(ts * 1000).toISOString() : ts;
+}
+
+function toBRT(ts: number | string): string {
+  const d = new Date(new Date(toIso(ts)).getTime() + BRT_OFFSET_MS);
   return d.toISOString().slice(0, 10);
 }
 
 async function main() {
   const isDryRun = process.argv.includes('--dry-run');
-  const config = loadConfig();
+  const args = process.argv.slice(2);
+  const configIdx = args.indexOf('--config');
+  const configPath = configIdx !== -1 ? args[configIdx + 1] : undefined;
+  const config = loadConfig(configPath);
   const baseAsset = config.symbol.split('-')[0]!;
 
   console.log(`\n=== Order Reconciliation: ${config.symbol} ===`);
@@ -74,7 +81,7 @@ async function main() {
   // ── Find unrecorded orders ────────────────────────────────────────────────────
   const missing = filled.filter(
     (o) => !recordedIds.has(o.id) && !recordedClientIds.has(o.externalId ?? ''),
-  ).sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+  ).sort((a, b) => (a.created_at as unknown as number) - (b.created_at as unknown as number));
 
   console.log(`Missing from DB: ${missing.length}`);
 
@@ -89,10 +96,11 @@ async function main() {
     const side = o.side === 'buy' ? 'BUY_BASE ' : 'SELL_BASE';
     const qty = parseFloat(o.filledQty);
     const price = o.avgPrice;
-    const brl = o.cost;
+    // MB omits `cost` on SELL orders — compute from qty * price
+    const brl = o.cost ?? (qty * price);
     const fee = parseFloat(o.fee);
     console.log(
-      `  ${o.created_at.slice(0, 19)}Z  ${side}  ` +
+      `  ${toIso(o.created_at).slice(0, 19)}Z  ${side}  ` +
       `${qty.toFixed(6)} ${baseAsset}  @R$${price.toFixed(2)}  ` +
       `BRL=${brl.toFixed(2)}  fee=${fee.toFixed(4)}  id=${o.id}`,
     );
@@ -110,6 +118,9 @@ async function main() {
 
   function nearestSnapshot(iso: string) {
     const t = new Date(iso).getTime();
+    // Prefer the snapshot from the same day or the nearest preceding one
+    const before = snapshots.filter((s) => new Date(s.timestamp).getTime() <= t);
+    if (before.length > 0) return before[before.length - 1]!;
     return snapshots.reduce((best, s) =>
       Math.abs(new Date(s.timestamp).getTime() - t) <
       Math.abs(new Date(best.timestamp).getTime() - t) ? s : best,
@@ -135,48 +146,27 @@ async function main() {
     }
   }
 
-  // ── Reset cost_basis to rebuild from scratch ──────────────────────────────────
-  console.log(`\nResetting ${baseAsset} cost basis to rebuild from full trade history...`);
-  db.prepare('UPDATE cost_basis SET average_cost_brl = 0, total_base = 0 WHERE asset = ?').run(baseAsset);
-
-  const costBasis = new CostBasisService(config.dbPath, config.jsonRetentionDays ?? 15, baseAsset);
   const tax = new TaxService(config.dbPath, config.jsonRetentionDays ?? 15);
 
-  // ── Replay all existing recorded trades to rebuild cost basis state ───────────
-  const allRecorded = [...recorded].sort(
-    (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime(),
-  );
-
-  console.log('\nReplaying recorded trades to restore cost basis:');
-  for (const t of allRecorded) {
-    if (t.status !== 'FILLED' && t.status !== 'DRY_RUN') continue;
-    if (t.direction === 'BUY_BASE' && t.baseAmountFilled != null) {
-      costBasis.updateAfterBuy(t.baseAmountFilled, t.brlAmountFilled ?? t.brlAmountTarget);
-      console.log(`  ${t.timestamp.slice(0, 10)} BUY  +${t.baseAmountFilled.toFixed(6)} ${baseAsset}`);
-    } else if (t.direction === 'SELL_BASE' && t.baseAmountFilled != null) {
-      costBasis.updateAfterSell(t.baseAmountFilled, t.brlAmountFilled ?? t.brlAmountTarget);
-      console.log(`  ${t.timestamp.slice(0, 10)} SELL -${t.baseAmountFilled.toFixed(6)} ${baseAsset}`);
-    }
-  }
-
-  // ── Insert each missing trade in chronological order ─────────────────────────
+  // ── Insert missing trades (DB only, no cost basis yet) ───────────────────────
   console.log('\nInserting missing trades:');
 
-  // Build a mutable list of all trades (recorded + missing) to interleave correctly
   const missingByTime = [...missing].sort(
-    (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
+    (a, b) => (a.created_at as unknown as number) - (b.created_at as unknown as number),
   );
 
   for (const o of missingByTime) {
     const direction = o.side === 'buy' ? 'BUY_BASE' : 'SELL_BASE';
     const baseAmountFilled = parseFloat(o.filledQty);
-    const brlAmountFilled = o.cost;
     const fillPrice = o.avgPrice;
+    const brlAmountFilled = o.cost ?? (baseAmountFilled * fillPrice);
     const feeBrl = parseFloat(o.fee);
+    const createdIso = toIso(o.created_at);
+    const updatedIso = toIso(o.updated_at);
     const tradeDateBRT = toBRT(o.created_at);
-    const snap = nearestSnapshot(o.created_at);
+    const snap = nearestSnapshot(createdIso);
 
-    // Estimate before portfolio from nearest snapshot (best available approximation)
+    // Estimate before/after portfolio from nearest snapshot
     const beforeBaseBalance = snap.baseBalance;
     const beforeBrlBalance = snap.brlBalance;
     const beforeBasePrice = snap.basePrice;
@@ -185,67 +175,18 @@ async function main() {
     const beforeRatioBps = computeBaseRatioBps(beforeBaseValue, beforeTotal);
     const beforeDeviationBps = computeDeviationBps(beforeBaseValue, beforeBrlBalance);
 
-    // Estimate after portfolio
-    let afterBaseBalance: number;
-    let afterBrlBalance: number;
-    if (direction === 'BUY_BASE') {
-      afterBaseBalance = beforeBaseBalance + baseAmountFilled;
-      afterBrlBalance = beforeBrlBalance - brlAmountFilled;
-    } else {
-      afterBaseBalance = beforeBaseBalance - baseAmountFilled;
-      afterBrlBalance = beforeBrlBalance + brlAmountFilled - feeBrl;
-    }
+    const afterBaseBalance = direction === 'BUY_BASE'
+      ? beforeBaseBalance + baseAmountFilled
+      : beforeBaseBalance - baseAmountFilled;
+    const afterBrlBalance = direction === 'BUY_BASE'
+      ? beforeBrlBalance - brlAmountFilled
+      : beforeBrlBalance + brlAmountFilled - feeBrl;
     const afterBaseValue = afterBaseBalance * fillPrice;
     const afterTotal = afterBaseValue + afterBrlBalance;
     const afterRatioBps = computeBaseRatioBps(afterBaseValue, afterTotal);
     const afterDeviationBps = computeDeviationBps(afterBaseValue, afterBrlBalance);
 
-    // Cost basis
-    let realizedGainBrl = 0;
-    if (direction === 'BUY_BASE') {
-      costBasis.updateAfterBuy(baseAmountFilled, brlAmountFilled);
-    } else {
-      realizedGainBrl = costBasis.updateAfterSell(baseAmountFilled, brlAmountFilled);
-    }
-
-    const ledger = costBasis.getLedger();
-    const costBasisBrl = ledger.base.averageCostBrl * baseAmountFilled;
     const tradeId = uuidv4();
-
-    // Build trade record matching the DB schema
-    const tradeRecord = {
-      id: tradeId,
-      clientOrderId: o.externalId ?? `recovered-${o.id}`,
-      exchangeOrderId: o.id,
-      exchange: 'mercadobitcoin',
-      timestamp: o.created_at,
-      direction,
-      brlAmountTarget: brlAmountFilled,
-      baseAmountFilled,
-      brlAmountFilled,
-      fillPrice,
-      feeBrl,
-      status: 'FILLED',
-      dryRun: 0,
-      realizedGainBrl,
-      tradeDateBRT,
-      beforeBaseBalance,
-      beforeBrlBalance,
-      beforeBasePrice,
-      beforeBaseValue,
-      beforeTotal,
-      beforeRatioBps,
-      beforeDeviationBps,
-      beforeTimestamp: snap.timestamp,
-      afterBaseBalance,
-      afterBrlBalance,
-      afterBasePrice: fillPrice,
-      afterBaseValue,
-      afterTotal,
-      afterRatioBps,
-      afterDeviationBps,
-      afterTimestamp: o.updated_at,
-    };
 
     db.prepare(`
       INSERT OR IGNORE INTO trades (
@@ -266,25 +207,17 @@ async function main() {
         ?, ?, ?, ?
       )
     `).run(
-      tradeRecord.id, tradeRecord.clientOrderId, tradeRecord.exchangeOrderId,
-      tradeRecord.exchange, tradeRecord.timestamp, tradeRecord.direction,
-      tradeRecord.brlAmountTarget, tradeRecord.baseAmountFilled, tradeRecord.brlAmountFilled,
-      tradeRecord.fillPrice, tradeRecord.feeBrl,
-      tradeRecord.status, tradeRecord.dryRun, tradeRecord.realizedGainBrl, tradeRecord.tradeDateBRT,
-      tradeRecord.beforeBaseBalance, tradeRecord.beforeBrlBalance, tradeRecord.beforeBasePrice,
-      tradeRecord.beforeBaseValue, tradeRecord.beforeTotal,
-      tradeRecord.beforeRatioBps, tradeRecord.beforeDeviationBps, tradeRecord.beforeTimestamp,
-      tradeRecord.afterBaseBalance, tradeRecord.afterBrlBalance, tradeRecord.afterBasePrice,
-      tradeRecord.afterBaseValue, tradeRecord.afterTotal,
-      tradeRecord.afterRatioBps, tradeRecord.afterDeviationBps, tradeRecord.afterTimestamp,
+      tradeId, o.externalId ?? `recovered-${o.id}`, o.id,
+      'mercadobitcoin', createdIso, direction,
+      brlAmountFilled, baseAmountFilled, brlAmountFilled, fillPrice, feeBrl,
+      'FILLED', 0, 0 /* realized_gain_brl: corrected in rebuild below */, tradeDateBRT,
+      beforeBaseBalance, beforeBrlBalance, beforeBasePrice, beforeBaseValue, beforeTotal,
+      beforeRatioBps, beforeDeviationBps, snap.timestamp,
+      afterBaseBalance, afterBrlBalance, fillPrice, afterBaseValue, afterTotal,
+      afterRatioBps, afterDeviationBps, updatedIso,
     );
 
-    // Build and insert tax event
-    const cumMonthlySales = tax.getMonthlySalesBrl(tradeDateBRT.slice(0, 7)) + (direction === 'SELL_BASE' ? brlAmountFilled : 0);
-    const cumMonthlyGain = (direction === 'SELL_BASE' ? realizedGainBrl : 0);
-    const exempt = cumMonthlySales <= 35000 ? 1 : 0;
-    const paymentDeadline = exempt ? null : tax.computePaymentDeadline(tradeDateBRT.slice(0, 7));
-
+    // Tax event placeholder — realized_gain_brl corrected in rebuild below
     db.prepare(`
       INSERT OR IGNORE INTO tax_events (
         trade_id, trade_date_brt, month_brt, direction,
@@ -295,26 +228,87 @@ async function main() {
       tradeId, tradeDateBRT, tradeDateBRT.slice(0, 7), direction,
       direction === 'SELL_BASE' ? brlAmountFilled : 0,
       direction === 'SELL_BASE' ? brlAmountFilled : 0,
-      direction === 'SELL_BASE' ? costBasisBrl : 0,
-      realizedGainBrl,
-      direction === 'SELL_BASE' ? cumMonthlySales : 0,
-      cumMonthlyGain,
-      exempt,
-      paymentDeadline,
-      'mercadobitcoin',
+      0, 0, 0, 0, 1, null, 'mercadobitcoin',
     );
 
     const side = direction === 'BUY_BASE' ? 'BUY ' : 'SELL';
     console.log(
       `  ✓ ${tradeDateBRT}  ${side}  ${baseAmountFilled.toFixed(6)} ${baseAsset}  ` +
-      `@R$${fillPrice.toFixed(2)}  BRL=${brlAmountFilled.toFixed(2)}  ` +
-      `gain=${realizedGainBrl.toFixed(4)}  [${o.id}]`,
+      `@R$${fillPrice.toFixed(2)}  BRL=${brlAmountFilled.toFixed(2)}  [${o.id}]`,
     );
   }
 
-  // ── Final cost basis state ────────────────────────────────────────────────────
+  // ── Rebuild cost basis and tax events from all trades in chronological order ──
+  console.log('\nRebuilding cost basis and tax events from full trade history...');
+  db.prepare('UPDATE cost_basis SET average_cost_brl = 0, total_base = 0, last_updated = ? WHERE asset = ?')
+    .run(new Date().toISOString(), baseAsset);
+  db.prepare('INSERT OR IGNORE INTO cost_basis (asset) VALUES (?)').run(baseAsset);
+
+  const costBasis = new CostBasisService(config.dbPath, config.jsonRetentionDays ?? 15, baseAsset);
+
+  // Read all trades (recorded + newly inserted) sorted chronologically
+  const allTrades = (db.prepare(
+    `SELECT id, direction, base_amount_filled, brl_amount_filled, fill_price, trade_date_brt
+     FROM trades WHERE status IN ('FILLED','DRY_RUN') ORDER BY timestamp ASC`
+  ).all() as {
+    id: string;
+    direction: string;
+    base_amount_filled: number;
+    brl_amount_filled: number;
+    fill_price: number;
+    trade_date_brt: string;
+  }[]);
+
+  // Running monthly sale totals for tax
+  const monthlySalesBrl: Record<string, number> = {};
+  const monthlyGainBrl: Record<string, number> = {};
+
+  for (const t of allTrades) {
+    const month = t.trade_date_brt.slice(0, 7);
+    monthlySalesBrl[month] = monthlySalesBrl[month] ?? 0;
+    monthlyGainBrl[month] = monthlyGainBrl[month] ?? 0;
+
+    let realizedGainBrl = 0;
+    let costBasisBrl = 0;
+
+    if (t.direction === 'BUY_BASE') {
+      costBasis.updateAfterBuy(t.base_amount_filled, t.brl_amount_filled);
+    } else {
+      const avgCost = costBasis.getLedger().base.averageCostBrl;
+      costBasisBrl = avgCost * t.base_amount_filled;
+      realizedGainBrl = costBasis.updateAfterSell(t.base_amount_filled, t.brl_amount_filled);
+      monthlySalesBrl[month]! += t.brl_amount_filled;
+      monthlyGainBrl[month]! += realizedGainBrl;
+    }
+
+    const cumMonthlySales = monthlySalesBrl[month]!;
+    const cumMonthlyGain = monthlyGainBrl[month]!;
+    const exempt = cumMonthlySales <= 35000 ? 1 : 0;
+    const paymentDeadline = exempt ? null : tax.computePaymentDeadline(month);
+
+    // Update the trade with correct realized gain
+    db.prepare('UPDATE trades SET realized_gain_brl = ? WHERE id = ?').run(realizedGainBrl, t.id);
+
+    // Upsert tax event with correct values
+    db.prepare(`
+      INSERT OR REPLACE INTO tax_events (
+        trade_id, trade_date_brt, month_brt, direction,
+        traded_volume_brl, gross_proceeds_brl, cost_basis_brl, realized_gain_brl,
+        cum_monthly_sales_brl, cum_monthly_gain_brl, exempt, payment_deadline, exchange
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      t.id, t.trade_date_brt, month, t.direction,
+      t.direction === 'SELL_BASE' ? t.brl_amount_filled : 0,
+      t.direction === 'SELL_BASE' ? t.brl_amount_filled : 0,
+      costBasisBrl, realizedGainBrl,
+      t.direction === 'SELL_BASE' ? cumMonthlySales : 0,
+      t.direction === 'SELL_BASE' ? cumMonthlyGain : 0,
+      exempt, paymentDeadline, 'mercadobitcoin',
+    );
+  }
+
   const finalLedger = costBasis.getLedger();
-  console.log('\nFinal cost basis:');
+  console.log('Final cost basis:');
   console.log(`  ${baseAsset}: avg R$${finalLedger.base.averageCostBrl.toFixed(2)}, total ${finalLedger.base.totalBase.toFixed(6)}`);
 
   // ── Summary ───────────────────────────────────────────────────────────────────
@@ -323,6 +317,6 @@ async function main() {
 }
 
 main().catch((err) => {
-  console.error('Reconciliation failed:', (err as Error).message);
+  console.error('Reconciliation failed:', (err as Error).stack ?? (err as Error).message);
   process.exit(1);
 });
