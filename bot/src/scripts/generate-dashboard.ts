@@ -502,7 +502,7 @@ function generateHtml(d: DashboardData): string {
     <div class="sr"><span class="sl">COST BASIS</span><span class="sv">R$${avgCost.toFixed(2)} / ${d.baseAsset}</span></div>
   </div>
   <div class="panel">
-    <div class="panel-hdr">&#127919; BOT STATUS</div>
+    <div class="panel-hdr">&#129302; BOT STATUS</div>
     <div class="sr"><span class="sl">STRATEGY</span><span class="sv mag">SHANNON'S DEMON</span></div>
     <div class="sr"><span class="sl">SYMBOL</span><span class="sv cyan">${d.symbol}</span></div>
     <div class="sr"><span class="sl">DEVIATION NOW</span><span class="sv ${devCls}">${liveDev} BPS ${devLabel}</span></div>
@@ -747,7 +747,9 @@ var API   = 'https://api.mercadobitcoin.net/api/v4/tickers?symbols=' + SYM;
           el.textContent = fP(ret) + ' vs R$' + INIT.toFixed(2);
           el.className = (el.dataset.baseClass || '') + ' ' + rc;
         });
-        var ts = new Date().toISOString().replace('T', ' ').slice(0, 19) + 'Z';
+        var now = new Date();
+        var brtMs = now.getTime() - 3 * 60 * 60 * 1000;
+        var ts = new Date(brtMs).toISOString().replace('T', ' ').slice(0, 19) + ' BRT';
         document.querySelectorAll('[data-live="updated"]').forEach(function (el) {
           el.textContent = ts;
         });
@@ -820,6 +822,10 @@ async function main(): Promise<void> {
   const initialPrice = firstSnap?.base_price      ?? 1;
   const allInQty     = initialTotal / initialPrice;
 
+  const rebalancedDates = new Set(
+    trades.map((t) => t.trade_date_brt).filter(Boolean),
+  );
+
   const benchmark: BenchmarkRow[] = snapshots.map((s) => {
     const shannon = s.total_value_brl;
     const bhHalf  = initialHype * s.base_price + initialBrl;
@@ -828,7 +834,7 @@ async function main(): Promise<void> {
       date: s.date_brt, price: s.base_price,
       shannonValue: shannon, bhHalfValue: bhHalf, bhAllInValue: bhAllIn,
       excess: shannon - bhHalf, vsAllIn: shannon - bhAllIn,
-      rebalanced: s.rebalanced_today === 1,
+      rebalanced: rebalancedDates.has(s.date_brt),
     };
   });
 
