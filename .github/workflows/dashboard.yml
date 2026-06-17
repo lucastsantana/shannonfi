@@ -49,6 +49,7 @@ jobs:
         with:
           name: hype-mb-database
           path: ./bot/data/hype-mb
+          workflow: rebalancer.yml
           if_no_artifact_found: ignore
 
       - name: Create data directory
