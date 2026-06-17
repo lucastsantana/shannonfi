@@ -1,0 +1,83 @@
+name: Dashboard
+
+# Generates the portfolio dashboard and deploys it to GitHub Pages.
+# Triggers automatically after each Rebalancer run, and every 6 hours
+# as a fallback (keeps the page fresh even without a rebalance).
+#
+# One-time setup required:
+#   GitHub repo → Settings → Pages → Source: GitHub Actions
+
+on:
+  workflow_run:
+    workflows: ["Rebalancer"]
+    types: [completed]
+  schedule:
+    - cron: '0 */6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: bot/package-lock.json
+
+      - name: Download database
+        uses: dawidd6/action-download-artifact@v3
+        with:
+          name: hype-mb-database
+          path: ./bot/data/hype-mb
+          if_no_artifact_found: ignore
+
+      - name: Create data directory
+        run: mkdir -p ./bot/data/hype-mb
+
+      - name: Install dependencies
+        run: cd bot && npm ci
+
+      - name: Build
+        working-directory: ./bot
+        run: npm run build
+
+      - name: Generate dashboard
+        working-directory: ./bot
+        run: node dist/scripts/generate-dashboard.js --config configs/hype-mb.yaml
+
+      - name: Prepare Pages artifact
+        run: |
+          mkdir -p public
+          cp ./bot/data/hype-mb/dashboard.html ./public/index.html
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: ./public
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

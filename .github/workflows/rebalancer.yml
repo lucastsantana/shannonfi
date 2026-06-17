@@ -1,0 +1,80 @@
+name: Rebalancer
+
+# Runs the Shannon's Demon rebalancing bot on a 15-minute schedule.
+#
+# ⚠️  If you also run the bot locally via PM2, stop it before enabling this
+#     workflow to avoid two instances trading the same account simultaneously:
+#       pm2 stop hype-mb
+#
+# Required secrets: MB_CLIENT_ID, MB_CLIENT_SECRET
+# Optional secrets: TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  rebalance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: bot/package-lock.json
+
+      - name: Download database
+        uses: dawidd6/action-download-artifact@v3
+        with:
+          name: hype-mb-database
+          path: ./bot/data/hype-mb
+          if_no_artifact_found: ignore
+
+      - name: Create data directory
+        run: mkdir -p ./bot/data/hype-mb
+
+      - name: Install dependencies
+        run: cd bot && npm ci
+
+      - name: Build
+        working-directory: ./bot
+        run: npm run build
+
+      - name: Run rebalancer (single cycle)
+        working-directory: ./bot
+        env:
+          MB_CLIENT_ID: ${{ secrets.MB_CLIENT_ID }}
+          MB_CLIENT_SECRET: ${{ secrets.MB_CLIENT_SECRET }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        run: node dist/index.js --config configs/hype-mb.yaml --once
+
+      - name: Upload database artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hype-mb-database
+          path: ./bot/data/hype-mb/shannonfi.db
+          retention-days: 90
+          overwrite: true
+          if-no-files-found: ignore
+
+      - name: Notify on failure
+        if: failure()
+        uses: appleboy/telegram-action@master
+        with:
+          to: ${{ secrets.TELEGRAM_CHAT_ID }}
+          token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          message: |
+            ⚠️ Rebalancer failed
+            🔗 ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}

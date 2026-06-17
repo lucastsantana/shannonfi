@@ -21,7 +21,9 @@
     "scan:binance": "ts-node -r tsconfig-paths/register src/scanner/scan.ts",
     "migrate": "ts-node src/scripts/migrate-json-to-db.ts",
     "reconcile": "ts-node src/scripts/reconcile-orders.ts",
-    "reconcile:built": "node dist/scripts/reconcile-orders.js"
+    "reconcile:built": "node dist/scripts/reconcile-orders.js",
+    "dashboard": "ts-node src/scripts/generate-dashboard.ts",
+    "dashboard:built": "node dist/scripts/generate-dashboard.js"
   },
   "dependencies": {
     "axios": "^1.16.1",
