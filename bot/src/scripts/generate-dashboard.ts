@@ -459,12 +459,9 @@ function generateHtml(d: DashboardData): string {
   <div class="hdr-sub">&#9608;&#9608;&#9608; ORDER FROM ENTROPY &middot; ALPHA FROM CHAOS &#9608;&#9608;&#9608;</div>
   <div class="hdr-meta">${d.symbol} &nbsp;&#183;&nbsp; MERCADO BITCOIN &nbsp;&#183;&nbsp; EST. ${d.snapshots[0]?.date_brt ?? '—'}</div>
   <div class="hdr-gen">
-    GENERATED: ${d.generatedAt} BRT &nbsp;&#183;&nbsp;
     PRICE: <span data-live="price">R$${livePrice.toFixed(2)}</span>
     &nbsp;<span class="live-dot" title="Updates every 30s">&#9679; LIVE</span>
-  </div>
-  <div class="hdr-gen" style="font-size:.72em;margin-top:3px">
-    LAST REFRESH: <span data-live="updated">${d.generatedAt} BRT</span>
+    &nbsp;&#183;&nbsp; LAST REFRESH: <span data-live="updated">${d.generatedAt} BRT</span>
   </div>
 </div>
 
@@ -569,7 +566,6 @@ function generateHtml(d: DashboardData): string {
 <div class="ftr">
   SHANNON'S DEMON &#9612; ${d.symbol} &#9612; MERCADO BITCOIN &nbsp;&#183;&nbsp;
   INITIAL: R$${d.initialTotal.toFixed(2)} on ${d.snapshots[0]?.date_brt ?? '—'} &nbsp;&#183;&nbsp;
-  DATA AS OF ${d.generatedAt} BRT &nbsp;&#183;&nbsp;
   <span style="color:var(--B)">shannonfi v1.0</span>
 </div>
 <div class="credits">
