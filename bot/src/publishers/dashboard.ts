@@ -552,8 +552,17 @@ function generateHtml(d: DashboardData): string {
       animation: pulse-c 5s ease-in-out infinite;
       margin: 6px 0;
     }
-    .hdr-meta { color: var(--y); letter-spacing: 5px; font-size: .9em; opacity: .9; }
-    .hdr-gen  { color: var(--d); font-size: .78em; margin-top: 6px; }
+    .hdr-meta {
+      display: flex; flex-wrap: wrap; justify-content: center; align-items: baseline;
+      gap: 4px 8px; color: var(--y); letter-spacing: 3px; font-size: .9em; opacity: .9;
+    }
+    .hdr-meta span { white-space: nowrap; }
+    .hdr-meta .sep { opacity: .5; letter-spacing: 0; }
+    .hdr-gen  {
+      display: flex; flex-wrap: wrap; justify-content: center; align-items: baseline;
+      gap: 4px 10px; color: var(--d); font-size: .78em; margin-top: 6px;
+    }
+    .hdr-gen .unit { white-space: nowrap; }
 
     /* ── Score bar ──────────────────────────────────── */
     .scores {
@@ -566,8 +575,8 @@ function generateHtml(d: DashboardData): string {
     .score { text-align: center; padding: 12px 6px; border-right: 1px solid var(--b); transition: background .15s ease, border-color .3s ease; }
     .score:last-child { border-right: none; }
     .score:hover { background: rgba(var(--G-rgb),.08); }
-    .score-lbl { color: var(--d); font-size:.72em; letter-spacing:2px; text-transform:uppercase; }
-    .score-val { font-family: var(--ft); font-size: 2.1em; margin-top: 6px; }
+    .score-lbl { color: var(--d); font-size:.72em; letter-spacing:2px; text-transform:uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .score-val { font-family: var(--ft); font-size: 2.1em; margin-top: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
     /* ── Two-up panels ──────────────────────────────── */
     .panels { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 16px; }
@@ -587,9 +596,9 @@ function generateHtml(d: DashboardData): string {
       padding-bottom: 7px;
       margin-bottom: 10px;
     }
-    .sr  { display:flex; justify-content:space-between; align-items:center; padding:4px 0; border-bottom:1px solid rgba(var(--b-rgb),.28); }
-    .sl  { color: var(--d); }
-    .sv  { color: var(--c); }
+    .sr  { display:flex; flex-wrap: wrap; justify-content:space-between; align-items:baseline; gap: 2px 10px; padding:4px 0; border-bottom:1px solid rgba(var(--b-rgb),.28); }
+    .sl  { color: var(--d); white-space: nowrap; }
+    .sv  { color: var(--c); white-space: nowrap; text-align: right; }
     .sv.gain { color: var(--G); }
     .sv.loss { color: var(--r); }
     .sv.yel  { color: var(--y); }
@@ -633,6 +642,7 @@ function generateHtml(d: DashboardData): string {
       border-bottom: 1px solid var(--b);
       border-right: 1px solid rgba(var(--b-rgb),.35);
       text-align: left;
+      white-space: nowrap;
     }
     .tbl thead th.num { text-align: right; }
     .tbl thead th.ctr { text-align: center; }
@@ -642,6 +652,7 @@ function generateHtml(d: DashboardData): string {
       padding: 5px 9px;
       border-right: 1px solid rgba(var(--b-rgb),.28);
       vertical-align: middle;
+      white-space: nowrap;
     }
     .tbl td:last-child { border-right: none; }
     .num { text-align: right; }
@@ -696,6 +707,8 @@ function generateHtml(d: DashboardData): string {
       margin-bottom: 16px;
       border: 1px solid var(--b);
       background: var(--p);
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
     }
     .tab-btn {
       flex: 1;
@@ -708,6 +721,7 @@ function generateHtml(d: DashboardData): string {
       padding: 10px 8px;
       cursor: pointer;
       text-align: center;
+      white-space: nowrap;
       transition: color .15s, background .15s, box-shadow .3s ease;
     }
     .tab-btn:hover { color: var(--c); background: rgba(var(--G-rgb),.06); }
@@ -806,27 +820,29 @@ function generateHtml(d: DashboardData): string {
     }
 
     @media (max-width: 480px) {
-      body { padding: 8px; font-size: 12px; }
+      body { padding: 8px; font-size: 13px; }
       .hdr { padding: 16px 8px 12px; }
       .hdr-title { font-size: 1.9em; letter-spacing: 3px; }
       .hdr-sub  { font-size: .78em; letter-spacing: 4px; }
-      .hdr-meta { font-size: .72em; letter-spacing: 2px; }
-      .hdr-gen  { font-size: .68em; }
+      .hdr-meta { font-size: .76em; letter-spacing: 1.5px; gap: 3px 6px; }
+      .hdr-gen  { font-size: .74em; gap: 3px 8px; }
       .scores { grid-template-columns: repeat(2, 1fr); }
       .scores .score:nth-child(3) { border-right: 1px solid var(--b); }
       .scores .score:nth-child(2n) { border-right: none; }
       .score { padding: 10px 4px; }
       .score-val { font-size: 1.5em; }
-      .score-lbl { font-size: .62em; letter-spacing: 1px; }
+      .score-lbl { font-size: .68em; letter-spacing: .5px; }
       .panel { padding: 10px 12px; }
       .panel-hdr { font-size: 1.1em; }
+      .sr { font-size: .92em; }
       .sv.big { font-size: 1.15em; }
       .sec-hdr { font-size: 1.1em; padding: 6px 10px; }
-      .sec-sub { display: block; margin-left: 0; margin-top: 2px; }
+      .sec-sub { display: block; margin-left: 0; margin-top: 2px; font-size: .78em; }
       .chart-wrap { height: 230px; padding: 14px 8px 10px; }
       table { min-width: 480px; }
-      .tbl thead th, .tbl td { padding: 5px 6px; font-size: .68em; }
-      .tab-btn { font-size: .95em; letter-spacing: 1px; padding: 8px 4px; }
+      .tbl thead th, .tbl td { padding: 6px 8px; font-size: .82em; }
+      .tabs { gap: 0; }
+      .tab-btn { font-size: .95em; letter-spacing: 1px; padding: 8px 10px; }
       .prose { padding: 12px 14px; }
       .prose h2 { font-size: 1.2em; }
       .prose h3 { font-size: 1em; }
@@ -844,11 +860,15 @@ function generateHtml(d: DashboardData): string {
 <header class="hdr" role="banner">
   <div class="hdr-title" role="heading" aria-level="1"><span class="hdr-emoji" aria-hidden="true">&#9878;</span>SHANNON'S DEMON</div>
   <div class="hdr-sub" aria-hidden="true">&#9608;&#9608;&#9608; ORDER FROM ENTROPY &middot; ALPHA FROM CHAOS &#9608;&#9608;&#9608;</div>
-  <div class="hdr-meta">${d.symbol} &nbsp;&#183;&nbsp; MERCADO BITCOIN &nbsp;&#183;&nbsp; EST. ${d.snapshots[0]?.date_brt ?? '—'}</div>
+  <div class="hdr-meta">
+    <span>${d.symbol}</span><span class="sep" aria-hidden="true">&#183;</span>
+    <span>${d.exchangeName.toUpperCase()}</span><span class="sep" aria-hidden="true">&#183;</span>
+    <span>EST. ${d.snapshots[0]?.date_brt ?? '—'}</span>
+  </div>
   <div class="hdr-gen">
-    PRICE: <span data-live="price" aria-label="live price" aria-live="polite">R$${livePrice.toFixed(2)}</span>
-    &nbsp;<span class="live-dot" aria-hidden="true" title="Updates every 30s">&#9679; LIVE</span>
-    &nbsp;&#183;&nbsp; LAST REFRESH: <span data-live="updated" aria-live="polite">${d.generatedAt} BRT</span>
+    <span class="unit">PRICE: <span data-live="price" aria-label="live price" aria-live="polite">R$${livePrice.toFixed(2)}</span></span>
+    <span class="unit"><span class="live-dot" aria-hidden="true" title="Updates every 30s">&#9679; LIVE</span></span>
+    <span class="unit">LAST REFRESH: <span data-live="updated" aria-live="polite">${d.generatedAt} BRT</span></span>
   </div>
 </header>
 
@@ -1061,7 +1081,7 @@ function generateHtml(d: DashboardData): string {
 
 <!-- ═══  FOOTER  ════════════════════════════════════════════════════════════ -->
 <footer class="ftr" role="contentinfo">
-  SHANNON'S DEMON &#9612; ${d.symbol} &#9612; MERCADO BITCOIN &nbsp;&#183;&nbsp;
+  SHANNON'S DEMON &#9612; ${d.symbol} &#9612; ${d.exchangeName.toUpperCase()} &nbsp;&#183;&nbsp;
   INITIAL: R$${d.initialTotal.toFixed(2)} on ${d.snapshots[0]?.date_brt ?? '—'} &nbsp;&#183;&nbsp;
   <span style="color:var(--B)">shannonfi v1.0</span>
 </footer>
