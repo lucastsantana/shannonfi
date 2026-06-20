@@ -18,6 +18,10 @@ permissions:
   contents: read
   actions: read
 
+concurrency:
+  group: hype-mb-database
+  cancel-in-progress: false
+
 jobs:
   rebalance:
     runs-on: ubuntu-latest
