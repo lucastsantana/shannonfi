@@ -14,6 +14,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { loadConfig } from '../config';
 import { getDb } from '../core/tracker/db';
+import { GOOGLE_FONTS_HTML, DARK_THEME_VARS, SHARED_TEXT_CLASSES } from './theme';
 
 // ─── Row types ────────────────────────────────────────────────────────────────
 
@@ -385,9 +386,7 @@ function generateHtml(d: DashboardData): string {
   })}
   </script>
 
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=VT323&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+  ${GOOGLE_FONTS_HTML.trim()}
   <style>
     *, *::before, *::after {
       box-sizing: border-box; margin: 0; padding: 0;
@@ -399,27 +398,9 @@ function generateHtml(d: DashboardData): string {
        Same hue families in both modes (blue, orange-red,
        cyan/teal, magenta, yellow/amber) — light mode darkens
        and de-saturates them for legibility on a light page,
-       since the dark mode's neon values are unreadable on white. */
-    :root {
-      --g:    #a9c9ff; --g-rgb:    169,201,255;
-      --G:    #2979ff; --G-rgb:    41,121,255;
-      --b:    #445166; --b-rgb:    68,81,102;
-      --B:    #2a323f; --B-rgb:    42,50,63;
-      --c:    #00ffff; --c-rgb:    0,255,255;
-      --m:    #ff00ff; --m-rgb:    255,0,255;
-      --y:    #ffff00; --y-rgb:    255,255,0;
-      --r:    #ff4500; --r-rgb:    255,69,0;
-      --d:    #8fa3c4; --d-rgb:    143,163,196;
-      --bg:   #000000; --bg-rgb:   0,0,0;
-      --p:    #010108; --p-rgb:    1,1,8;
-      --neut: #cccccc;
-      --ov-rgb:    0,0,0;
-      --hdr2-bg:   #010102;
-      --hdr3-bg:   #01010e;
-      --nscr-bg:   #330000;
-      --nscr-fg:   #ff6666;
-      --fn: 'Share Tech Mono', 'Courier New', monospace;
-      --ft: 'VT323', monospace;
+       since the dark mode's neon values are unreadable on white.
+       Dark-mode values come from theme.ts, shared with the PDF report. */
+    :root {${DARK_THEME_VARS}
     }
 
     [data-theme="light"] {
@@ -508,16 +489,7 @@ function generateHtml(d: DashboardData): string {
     a:hover { text-decoration: underline; opacity: .85; }
 
     /* ── Typography ─────────────────────────────────── */
-    .gain { color: var(--G); }
-    .loss { color: var(--r); }
-    .neut { color: var(--neut); }
-    .buy  { color: var(--G); }
-    .sell { color: var(--r); }
-    .cyan { color: var(--c); }
-    .yel  { color: var(--y); }
-    .mag  { color: var(--m); }
-    .dim  { color: var(--d); }
-    small { font-size:.78em; opacity:.8; }
+    ${SHARED_TEXT_CLASSES.trim()}
 
     /* ── Layout ─────────────────────────────────────── */
     .wrap { max-width: 1380px; margin: 0 auto; }

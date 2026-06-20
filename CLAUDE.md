@@ -81,8 +81,12 @@ shannonfi/
 │   ├── package.json
 │   └── .github/workflows/ → see .github/workflows/ below (top-level, not under bot/)
 │
-├── reporting/                    # Manual/offline: monthly Markdown + LaTeX/PDF report generator
-│   └── src/{monthly-report,latex-report,strategy-deck}.ts   # Run by hand; not wired into any workflow
+├── reporting/                    # Manual/offline: monthly Markdown + investor PDF report generator
+│   └── src/{monthly-report,pdf-report,html-report,claude-commentary,strategy-deck}.ts
+│       # pdf-report.ts renders the dashboard's dark theme (shared via bot/src/publishers/theme.ts)
+│       # to PDF with Playwright; commentary comes from Claude (claude-commentary.ts), falling back
+│       # to the rule-based generateCommentary() in report-builder.ts on any API failure.
+│       # Run by hand; not wired into any workflow.
 │
 ├── backtest/                     # Historical analysis (Python), offline, manual
 │   ├── shannon_backtest_real.py  # Real exchange price data
@@ -701,8 +705,17 @@ If `|estWeight − 0.5| ≤ τ`, the balance fetch is skipped for this cycle. Th
 - Validates strategy parameters before deploying
 
 ### 4. Reporting (manual, offline)
-- `reporting/` — generates monthly Markdown + LaTeX/PDF performance reports against an instance's SQLite DB
-- Not wired into any workflow; run by hand (`scripts/compile-report-pdf.sh` helps with the PDF step)
+- `reporting/` — generates monthly Markdown (`npm run report`) and an investor-facing dark-theme PDF
+  (`npm run report:pdf`) against an instance's SQLite DB
+- PDF pipeline: `report-builder.ts` assembles a `ReportPayload` → `claude-commentary.ts` asks Claude
+  (Anthropic Messages API, model `claude-sonnet-4-6`) to write the executive-summary prose from that
+  payload, falling back to the rule-based `generateCommentary()` on any API error or missing
+  `ANTHROPIC_API_KEY` → `html-report.ts` renders the dashboard's dark theme (palette/fonts shared via
+  `bot/src/publishers/theme.ts`, so the two never drift) as a static HTML document → `pdf-report.ts`
+  rasterizes it with Playwright (`page.pdf()`) to `bot/data/reports/<YYYY-MM>.pdf`
+- One-time setup: `cd reporting && npm run playwright:install` (downloads the Chromium binary)
+- Not wired into any workflow; run by hand. `strategy-deck.ts`/`latex-strategy.ts` (a separate,
+  occasional investor pitch-deck PDF, not the monthly cycle) still use LaTeX/Beamer and are untouched
 
 ---
 

@@ -1,7 +1,7 @@
 {
   "name": "@shannonfi/reporting",
   "version": "1.0.0",
-  "description": "Report generation library for Shannon's Demon - generates Markdown and LaTeX/Beamer PDF reports",
+  "description": "Report generation library for Shannon's Demon - generates Markdown reports and a dark-themed investor PDF report (HTML + Playwright), with Claude-generated commentary",
   "private": true,
   "main": "dist/report-builder.js",
   "exports": {
@@ -17,9 +17,11 @@
   "scripts": {
     "build": "tsc",
     "report": "ts-node src/monthly-report.ts",
-    "report:pdf": "ts-node src/latex-report.ts"
+    "report:pdf": "ts-node src/pdf-report.ts",
+    "playwright:install": "playwright install --with-deps chromium"
   },
   "dependencies": {
+    "playwright": "^1.48.0"
   },
   "devDependencies": {
     "typescript": "5.4.5",

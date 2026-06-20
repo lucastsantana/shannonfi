@@ -1,6 +1,6 @@
 /**
  * Shared report data builder and commentary generator.
- * Used by both monthly-report.ts (Markdown) and latex-report.ts (PDF).
+ * Used by both monthly-report.ts (Markdown) and pdf-report.ts (PDF).
  */
 
 import { TradeHistoryService } from '../../bot/src/core/tracker/history';
@@ -200,20 +200,23 @@ export async function buildReportPayload(
   monthBRT: string,
   dbPath?: string,
 ): Promise<ReportPayload | null> {
-  // Init services
-  const history = new TradeHistoryService(dbPath);
-  const tax = new TaxService(dbPath);
-  const costBasis = new CostBasisService(dbPath);
-  const metrics = new MetricsService(history);
-  const benchmarks = new BenchmarksService();
-
-  // Derive base asset from config symbol (e.g. "HYPE-BRL" → "HYPE")
+  // Derive base asset + JSON retention from config (e.g. "HYPE-BRL" → "HYPE").
+  // Needed up front since CostBasisService requires the asset symbol at construction.
   let baseAsset = 'BASE';
+  let jsonRetentionDays = 15;
   try {
     const { loadConfig } = await import('../../bot/src/config');
     const cfg = loadConfig();
     baseAsset = cfg.symbol.split('-')[0] ?? 'BASE';
+    jsonRetentionDays = cfg.jsonRetentionDays ?? 15;
   } catch { /* config may not be present in all environments */ }
+
+  // Init services
+  const history = new TradeHistoryService(dbPath, jsonRetentionDays);
+  const tax = new TaxService(dbPath, jsonRetentionDays);
+  const costBasis = new CostBasisService(dbPath, jsonRetentionDays, baseAsset);
+  const metrics = new MetricsService(history);
+  const benchmarks = new BenchmarksService();
 
   const allSnapshots = history.readSnapshots();
   const allTrades = history.readTrades();

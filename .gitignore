@@ -57,6 +57,10 @@ data/reports/*.toc
 data/reports/*.fls
 data/reports/*.fdb_latexmk
 
+# reporting/ should never hold live data — running its scripts from the wrong
+# cwd (anything but bot/) has accidentally created stray DB/PDF files here before.
+reporting/data/
+
 # Stray SQLite files from in-memory test URIs
 bot/:memory:*
 
