@@ -78,6 +78,20 @@ interface BenchmarkRow {
 
 interface MonthData { sales: number; gain: number; exempt: boolean; }
 
+interface StrategyStats {
+  windowReturn: number;
+  annualizedReturn: number;
+  annualizedVol: number;
+  sharpe: number;
+  sortino: number;
+}
+
+interface BenchmarkStats {
+  shannon: StrategyStats;
+  bh50: StrategyStats;
+  allIn: StrategyStats;
+}
+
 interface DashboardData {
   symbol: string;
   baseAsset: string;
@@ -87,6 +101,7 @@ interface DashboardData {
   currentPrice: number | null;
   generatedAt: string;
   benchmark: BenchmarkRow[];
+  benchmarkStats: BenchmarkStats;
   initialTotal: number;
   totalRealizedGain: number;
   totalFees: number;
@@ -143,6 +158,47 @@ function gainCls(n: number): string {
   return 'neut';
 }
 
+function fmtRatio(n: number): string {
+  if (!Number.isFinite(n)) return '—';
+  const v = n.toFixed(2);
+  return n >= 0 ? `+${v}` : v;
+}
+
+/**
+ * Computes window/annualized return, annualized volatility, Sharpe and
+ * Sortino (target = 0, risk-free rate assumed 0) from a series of portfolio
+ * values sampled on the given dates. Annualization scales by the actual
+ * average sampling interval rather than assuming exactly daily spacing,
+ * since a snapshot day can occasionally be missed.
+ */
+function computeStrategyStats(values: number[], dates: string[]): StrategyStats {
+  const n = values.length;
+  if (n < 2 || values[0] === 0) {
+    return { windowReturn: 0, annualizedReturn: 0, annualizedVol: 0, sharpe: 0, sortino: 0 };
+  }
+
+  const windowReturn = values[n - 1]! / values[0]! - 1;
+  const totalDays = Math.max(1, daysElapsed(dates[0]!, dates[n - 1]!));
+  const annualizedReturn = Math.pow(1 + windowReturn, 365 / totalDays) - 1;
+
+  const periodReturns: number[] = [];
+  for (let i = 1; i < n; i++) periodReturns.push(values[i]! / values[i - 1]! - 1);
+
+  const periodsPerYear = (365 * periodReturns.length) / totalDays;
+  const mean = periodReturns.reduce((s, r) => s + r, 0) / periodReturns.length;
+  const variance = periodReturns.reduce((s, r) => s + (r - mean) ** 2, 0) / periodReturns.length;
+  const annualizedVol = Math.sqrt(variance * periodsPerYear);
+
+  const downsideVariance =
+    periodReturns.reduce((s, r) => s + Math.min(r, 0) ** 2, 0) / periodReturns.length;
+  const annualizedDownsideDev = Math.sqrt(downsideVariance * periodsPerYear);
+
+  const sharpe  = annualizedVol > 0 ? annualizedReturn / annualizedVol : 0;
+  const sortino = annualizedDownsideDev > 0 ? annualizedReturn / annualizedDownsideDev : 0;
+
+  return { windowReturn, annualizedReturn, annualizedVol, sharpe, sortino };
+}
+
 // ─── HTML generator ───────────────────────────────────────────────────────────
 
 function generateHtml(d: DashboardData): string {
@@ -173,6 +229,21 @@ function generateHtml(d: DashboardData): string {
     rebalanced: row.rebalanced,
     isLive:     row.isLive ?? false,
   })));
+
+  // ── Benchmark stats rows ─────────────────────────────────────────────────────
+  const statRows = [
+    { label: "&#9878; SHANNON'S DEMON", cls: 'mag', s: d.benchmarkStats.shannon },
+    { label: '50/50 BUY-AND-HOLD',      cls: 'gain', s: d.benchmarkStats.bh50 },
+    { label: `ALL-IN ${d.baseAsset}`,   cls: 'yel', s: d.benchmarkStats.allIn },
+  ].map((row) => `
+        <tr>
+          <td class="${row.cls}">${row.label}</td>
+          <td class="num ${gainCls(row.s.windowReturn)}">${fmtPct(row.s.windowReturn)}</td>
+          <td class="num ${gainCls(row.s.annualizedReturn)}">${fmtPct(row.s.annualizedReturn)}</td>
+          <td class="num">${fmtPct(row.s.annualizedVol)}</td>
+          <td class="num ${gainCls(row.s.sharpe)}">${fmtRatio(row.s.sharpe)}</td>
+          <td class="num ${gainCls(row.s.sortino)}">${fmtRatio(row.s.sortino)}</td>
+        </tr>`).join('');
 
   // ── Trade history rows (newest first) ───────────────────────────────────────
   const tradeRows = [...d.trades].reverse().map((t, i) => {
@@ -234,17 +305,17 @@ function generateHtml(d: DashboardData): string {
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     :root {
-      --g:  #33ff33;
-      --G:  #00ff88;
-      --b:  #007700;
-      --B:  #004400;
+      --g:  #3380ff;
+      --G:  #2979ff;
+      --b:  #445166;
+      --B:  #2a323f;
       --c:  #00ffff;
       --m:  #ff00ff;
       --y:  #ffff00;
-      --r:  #ff3344;
-      --d:  #446644;
+      --r:  #ff4500;
+      --d:  #445166;
       --bg: #000000;
-      --p:  #010801;
+      --p:  #010108;
       --fn: 'Share Tech Mono', 'Courier New', monospace;
       --ft: 'VT323', monospace;
     }
@@ -321,7 +392,7 @@ function generateHtml(d: DashboardData): string {
       padding: 22px 12px 16px;
       margin-bottom: 16px;
       background: var(--p);
-      box-shadow: 0 0 24px rgba(0,136,0,.25), inset 0 0 32px rgba(0,48,0,.3);
+      box-shadow: 0 0 24px rgba(0,51,136,.25), inset 0 0 32px rgba(0,18,48,.3);
     }
     .hdr-title {
       font-family: var(--ft);
@@ -330,15 +401,21 @@ function generateHtml(d: DashboardData): string {
       color: var(--m);
       animation: pulse-m 4s ease-in-out infinite;
     }
+    .hdr-emoji {
+      display: block;
+      color: var(--y);
+      text-shadow: 0 0 10px var(--y), 0 0 22px var(--y);
+      animation: none;
+    }
     .hdr-sub {
       font-family: var(--ft);
-      font-size: 1.55em;
+      font-size: 1.05em;
       letter-spacing: 9px;
       color: var(--c);
       animation: pulse-c 5s ease-in-out infinite;
       margin: 6px 0 4px;
     }
-    .hdr-meta { color: var(--c); letter-spacing: 5px; font-size: .9em; opacity: .8; }
+    .hdr-meta { color: var(--y); letter-spacing: 5px; font-size: .9em; opacity: .9; }
     .hdr-gen  { color: var(--d); font-size: .78em; margin-top: 6px; }
 
     /* ── Score bar ──────────────────────────────────── */
@@ -360,7 +437,7 @@ function generateHtml(d: DashboardData): string {
       border: 1px solid var(--b);
       background: var(--p);
       padding: 14px 16px;
-      box-shadow: inset 0 0 12px rgba(0,60,0,.15);
+      box-shadow: inset 0 0 12px rgba(0,23,60,.15);
     }
     .panel-hdr {
       font-family: var(--ft);
@@ -372,7 +449,7 @@ function generateHtml(d: DashboardData): string {
       padding-bottom: 7px;
       margin-bottom: 10px;
     }
-    .sr  { display:flex; justify-content:space-between; padding:3px 0; border-bottom:1px solid rgba(0,80,0,.28); }
+    .sr  { display:flex; justify-content:space-between; padding:3px 0; border-bottom:1px solid rgba(68,81,102,.28); }
     .sl  { color: var(--d); }
     .sv  { color: var(--c); }
     .sv.gain { color: var(--G); }
@@ -391,7 +468,7 @@ function generateHtml(d: DashboardData): string {
       border: 1px solid var(--b);
       border-bottom: none;
       padding: 7px 14px;
-      background: #010201;
+      background: #010102;
     }
     .sec-sub { color:var(--d); font-size:.7em; margin-left:6px; letter-spacing:1px; }
 
@@ -409,23 +486,23 @@ function generateHtml(d: DashboardData): string {
     table { width: 100%; border-collapse: collapse; min-width: 560px; }
     .tbl  { border: 1px solid var(--b); background: var(--p); }
     .tbl thead th {
-      background: #010e01;
+      background: #01010e;
       color: var(--y);
       text-transform: uppercase;
       font-size: .72em;
       letter-spacing: 2px;
       padding: 7px 9px;
       border-bottom: 1px solid var(--b);
-      border-right: 1px solid rgba(0,80,0,.35);
+      border-right: 1px solid rgba(68,81,102,.35);
       text-align: left;
     }
     .tbl thead th.num { text-align: right; }
     .tbl thead th.ctr { text-align: center; }
-    .tbl tbody tr     { border-bottom: 1px solid rgba(0,60,0,.32); }
-    .tbl tbody tr:hover { background: rgba(0,255,0,.04); }
+    .tbl tbody tr     { border-bottom: 1px solid rgba(68,81,102,.32); }
+    .tbl tbody tr:hover { background: rgba(0,96,255,.04); }
     .tbl td {
       padding: 5px 9px;
-      border-right: 1px solid rgba(0,55,0,.28);
+      border-right: 1px solid rgba(68,81,102,.28);
       vertical-align: middle;
     }
     .tbl td:last-child { border-right: none; }
@@ -457,6 +534,29 @@ function generateHtml(d: DashboardData): string {
       .scores .score:nth-child(3) { border-right: none; }
       .chart-wrap { height: 280px; }
     }
+
+    @media (max-width: 480px) {
+      body { padding: 8px; font-size: 12px; }
+      .hdr { padding: 16px 8px 12px; }
+      .hdr-title { font-size: 1.9em; letter-spacing: 3px; }
+      .hdr-sub  { font-size: .78em; letter-spacing: 4px; }
+      .hdr-meta { font-size: .72em; letter-spacing: 2px; }
+      .hdr-gen  { font-size: .68em; }
+      .scores { grid-template-columns: repeat(2, 1fr); }
+      .scores .score:nth-child(3) { border-right: 1px solid var(--b); }
+      .scores .score:nth-child(2n) { border-right: none; }
+      .score { padding: 10px 4px; }
+      .score-val { font-size: 1.5em; }
+      .score-lbl { font-size: .62em; letter-spacing: 1px; }
+      .panel { padding: 10px 12px; }
+      .panel-hdr { font-size: 1.1em; }
+      .sv.big { font-size: 1.15em; }
+      .sec-hdr { font-size: 1.1em; padding: 6px 10px; }
+      .sec-sub { display: block; margin-left: 0; margin-top: 2px; }
+      .chart-wrap { height: 230px; padding: 14px 8px 10px; }
+      table { min-width: 480px; }
+      .tbl thead th, .tbl td { padding: 5px 6px; font-size: .68em; }
+    }
   </style>
 </head>
 <body>
@@ -465,7 +565,7 @@ function generateHtml(d: DashboardData): string {
 
 <!-- ═══  TITLE  ══════════════════════════════════════════════════════════════ -->
 <header class="hdr" role="banner">
-  <div class="hdr-title" role="heading" aria-level="1">&#9878; SHANNON'S DEMON</div>
+  <div class="hdr-title" role="heading" aria-level="1"><span class="hdr-emoji" aria-hidden="true">&#9878;</span>SHANNON'S DEMON</div>
   <div class="hdr-sub" aria-hidden="true">&#9608;&#9608;&#9608; ORDER FROM ENTROPY &middot; ALPHA FROM CHAOS &#9608;&#9608;&#9608;</div>
   <div class="hdr-meta">${d.symbol} &nbsp;&#183;&nbsp; MERCADO BITCOIN &nbsp;&#183;&nbsp; EST. ${d.snapshots[0]?.date_brt ?? '—'}</div>
   <div class="hdr-gen">
@@ -528,6 +628,21 @@ function generateHtml(d: DashboardData): string {
 <section class="sec" aria-label="Strategy Scoreboard">
   <div class="sec-hdr">&#9878; STRATEGY SCOREBOARD
     <span class="sec-sub">&#9472; ${d.daysActive} DAYS &#183; &#9646;&#9646; SHANNON &nbsp; &#9646;&#9646; 50/50 HOLD &nbsp; &#9646;&#9646; ALL-IN ${d.baseAsset} &nbsp; &#9673; REBALANCE</span>
+  </div>
+  <div class="tbl-wrap">
+    <table class="tbl">
+      <thead>
+        <tr>
+          <th scope="col">STRATEGY</th>
+          <th scope="col" class="num">RETURN (WINDOW)</th>
+          <th scope="col" class="num">ANN. RETURN</th>
+          <th scope="col" class="num">ANN. VOLATILITY</th>
+          <th scope="col" class="num">SHARPE</th>
+          <th scope="col" class="num">SORTINO</th>
+        </tr>
+      </thead>
+      <tbody>${statRows}</tbody>
+    </table>
   </div>
   <div class="chart-wrap">
     <canvas id="bench-chart" role="img" aria-label="Line chart comparing Shannon's Demon, 50/50 Buy-and-Hold, and All-in ${d.baseAsset} portfolio values over time"></canvas>
@@ -638,13 +753,13 @@ var API   = 'https://api.mercadobitcoin.net/api/v4/tickers?symbols=' + SYM;
         {
           label: '50/50 Buy-and-Hold',
           data: bh50,
-          borderColor: '#33ff33',
-          backgroundColor: 'rgba(51,255,51,0.04)',
+          borderColor: '#2979ff',
+          backgroundColor: 'rgba(41,121,255,0.05)',
           borderWidth: 1.5,
           fill: false,
           tension: 0.35,
           pointRadius: BENCH.map(function (r) { return r.isLive ? 4 : 2; }),
-          pointBackgroundColor: '#33ff33',
+          pointBackgroundColor: '#2979ff',
           pointHoverRadius: 5,
           order: 2,
         },
@@ -672,7 +787,7 @@ var API   = 'https://api.mercadobitcoin.net/api/v4/tickers?symbols=' + SYM;
         legend: {
           position: 'top',
           labels: {
-            color: '#33ff33',
+            color: '#3380ff',
             font: { family: mono, size: 11 },
             padding: 18,
             boxWidth: 28,
@@ -681,12 +796,12 @@ var API   = 'https://api.mercadobitcoin.net/api/v4/tickers?symbols=' + SYM;
           },
         },
         tooltip: {
-          backgroundColor: '#010801',
-          borderColor: '#007700',
+          backgroundColor: '#010108',
+          borderColor: '#002d77',
           borderWidth: 1,
           titleColor: '#ff00ff',
           titleFont: { family: mono, size: 11 },
-          bodyColor: '#33ff33',
+          bodyColor: '#3380ff',
           bodyFont: { family: mono, size: 11 },
           padding: 10,
           callbacks: {
@@ -707,18 +822,18 @@ var API   = 'https://api.mercadobitcoin.net/api/v4/tickers?symbols=' + SYM;
       },
       scales: {
         x: {
-          ticks: { color: '#446644', font: { family: mono, size: 10 }, maxRotation: 0 },
-          grid:  { color: 'rgba(0,80,0,0.22)' },
-          border:{ color: '#007700' },
+          ticks: { color: '#445166', font: { family: mono, size: 10 }, maxRotation: 0 },
+          grid:  { color: 'rgba(0,30,80,0.22)' },
+          border:{ color: '#445166' },
         },
         y: {
           ticks: {
-            color: '#446644',
+            color: '#445166',
             font: { family: mono, size: 10 },
             callback: function (v) { return 'R$' + Number(v).toFixed(0); },
           },
-          grid:  { color: 'rgba(0,80,0,0.22)' },
-          border:{ color: '#007700' },
+          grid:  { color: 'rgba(0,30,80,0.22)' },
+          border:{ color: '#445166' },
         },
       },
     },
@@ -874,6 +989,13 @@ async function main(): Promise<void> {
     if (!e.exempt) monthlySales[e.month_brt]!.exempt = false;
   }
 
+  const benchDates = benchmark.map((b) => b.date);
+  const benchmarkStats: BenchmarkStats = {
+    shannon: computeStrategyStats(benchmark.map((b) => b.shannonValue), benchDates),
+    bh50:    computeStrategyStats(benchmark.map((b) => b.bhHalfValue),  benchDates),
+    allIn:   computeStrategyStats(benchmark.map((b) => b.bhAllInValue), benchDates),
+  };
+
   const totalRealizedGain = trades
     .filter((t) => t.direction === 'SELL_BASE')
     .reduce((s, t) => s + (t.realized_gain_brl ?? 0), 0);
@@ -885,7 +1007,7 @@ async function main(): Promise<void> {
     symbol: config.symbol, baseAsset,
     trades, snapshots, costBasis: costBasis ?? null, currentPrice,
     generatedAt: toBRT(new Date().toISOString()),
-    benchmark, initialTotal, totalRealizedGain, totalFees, daysActive, monthlySales,
+    benchmark, benchmarkStats, initialTotal, totalRealizedGain, totalFees, daysActive, monthlySales,
   };
 
   const html = generateHtml(data);
