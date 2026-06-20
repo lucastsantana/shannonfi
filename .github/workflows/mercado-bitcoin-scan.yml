@@ -26,15 +26,19 @@ jobs:
           cache: 'npm'
           cache-dependency-path: 'bot/package-lock.json'
 
-      - name: Download database artifact
-        uses: dawidd6/action-download-artifact@v3
-        with:
-          name: hype-mb-database
-          path: ./bot/data/hype-mb
-          if_no_artifact_found: ignore
-
-      - name: Create data directory
-        run: mkdir -p ./bot/data/hype-mb
+      - name: Download database
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p ./bot/data/hype-mb
+          ARTIFACT_ID=$(gh api "repos/${{ github.repository }}/actions/artifacts?name=hype-mb-database&per_page=1" --jq '.artifacts[0].id // empty')
+          if [ -n "$ARTIFACT_ID" ]; then
+            gh api "repos/${{ github.repository }}/actions/artifacts/$ARTIFACT_ID/zip" > /tmp/db.zip
+            unzip -o /tmp/db.zip -d ./bot/data/hype-mb/
+            echo "Restored artifact $ARTIFACT_ID ($(du -h ./bot/data/hype-mb/shannonfi.db | cut -f1))"
+          else
+            echo "No artifact found, starting fresh"
+          fi
 
       - name: Install dependencies
         run: cd bot && npm ci

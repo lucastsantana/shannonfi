@@ -1,0 +1,35 @@
+name: Restore Database (one-time)
+
+# One-time recovery: re-uploads a merged, corrected shannonfi.db as the
+# "hype-mb-database" artifact, restoring history that was wiped by the
+# mercado-bitcoin-scan.yml dawidd6 download bug (fixed in this same commit).
+# Remove this workflow and restore-db/ after a successful run.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  restore:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Stage restored database
+        run: |
+          mkdir -p ./bot/data/hype-mb
+          cp ./restore-db/shannonfi.db ./bot/data/hype-mb/shannonfi.db
+          sqlite3 ./bot/data/hype-mb/shannonfi.db "select count(*) from trades;" || true
+
+      - name: Upload database artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: hype-mb-database
+          path: ./bot/data/hype-mb/shannonfi.db
+          retention-days: 90
+          overwrite: true
