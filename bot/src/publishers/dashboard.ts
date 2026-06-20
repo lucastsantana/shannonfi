@@ -84,6 +84,8 @@ interface StrategyStats {
   annualizedVol: number;
   sharpe: number;
   sortino: number;
+  valueAtRisk95: number;
+  maxDrawdown: number;
 }
 
 interface BenchmarkStats {
@@ -95,6 +97,7 @@ interface BenchmarkStats {
 interface DashboardData {
   symbol: string;
   baseAsset: string;
+  exchangeName: string;
   trades: TradeRow[];
   snapshots: SnapshotRow[];
   costBasis: CostBasisRow | null;
@@ -165,16 +168,47 @@ function fmtRatio(n: number): string {
 }
 
 /**
- * Computes window/annualized return, annualized volatility, Sharpe and
- * Sortino (target = 0, risk-free rate assumed 0) from a series of portfolio
- * values sampled on the given dates. Annualization scales by the actual
- * average sampling interval rather than assuming exactly daily spacing,
- * since a snapshot day can occasionally be missed.
+ * Historical (empirical) 95% Value at Risk over the given per-period
+ * returns: the loss magnitude such that 95% of observed periods did not
+ * lose more than this. Returned as a positive fraction (e.g. 0.05 = 5%);
+ * 0 if there's no observed downside at the 5th percentile.
+ */
+function computeValueAtRisk95(periodReturns: number[]): number {
+  if (periodReturns.length === 0) return 0;
+  const sorted = [...periodReturns].sort((a, b) => a - b);
+  const idx = Math.min(Math.floor(0.05 * sorted.length), sorted.length - 1);
+  return Math.max(0, -sorted[idx]!);
+}
+
+/**
+ * Maximum peak-to-trough decline in the value series, as a positive
+ * fraction (e.g. 0.123 = a 12.3% drawdown from the running peak).
+ */
+function computeMaxDrawdown(values: number[]): number {
+  let peak = values[0] ?? 0;
+  let maxDD = 0;
+  for (const v of values) {
+    if (v > peak) peak = v;
+    if (peak > 0) maxDD = Math.max(maxDD, (peak - v) / peak);
+  }
+  return maxDD;
+}
+
+/**
+ * Computes window/annualized return, annualized volatility, Sharpe,
+ * Sortino (target = 0, risk-free rate assumed 0), 95% historical VaR, and
+ * max drawdown from a series of portfolio values sampled on the given
+ * dates. Annualization scales by the actual average sampling interval
+ * rather than assuming exactly daily spacing, since a snapshot day can
+ * occasionally be missed.
  */
 function computeStrategyStats(values: number[], dates: string[]): StrategyStats {
   const n = values.length;
   if (n < 2 || values[0] === 0) {
-    return { windowReturn: 0, annualizedReturn: 0, annualizedVol: 0, sharpe: 0, sortino: 0 };
+    return {
+      windowReturn: 0, annualizedReturn: 0, annualizedVol: 0, sharpe: 0, sortino: 0,
+      valueAtRisk95: 0, maxDrawdown: 0,
+    };
   }
 
   const windowReturn = values[n - 1]! / values[0]! - 1;
@@ -196,7 +230,10 @@ function computeStrategyStats(values: number[], dates: string[]): StrategyStats 
   const sharpe  = annualizedVol > 0 ? annualizedReturn / annualizedVol : 0;
   const sortino = annualizedDownsideDev > 0 ? annualizedReturn / annualizedDownsideDev : 0;
 
-  return { windowReturn, annualizedReturn, annualizedVol, sharpe, sortino };
+  const valueAtRisk95 = computeValueAtRisk95(periodReturns);
+  const maxDrawdown   = computeMaxDrawdown(values);
+
+  return { windowReturn, annualizedReturn, annualizedVol, sharpe, sortino, valueAtRisk95, maxDrawdown };
 }
 
 // ─── HTML generator ───────────────────────────────────────────────────────────
@@ -243,6 +280,8 @@ function generateHtml(d: DashboardData): string {
           <td class="num">${fmtPct(row.s.annualizedVol)}</td>
           <td class="num ${gainCls(row.s.sharpe)}">${fmtRatio(row.s.sharpe)}</td>
           <td class="num ${gainCls(row.s.sortino)}">${fmtRatio(row.s.sortino)}</td>
+          <td class="num loss">${fmtPct(-row.s.valueAtRisk95)}</td>
+          <td class="num loss">${fmtPct(-row.s.maxDrawdown)}</td>
         </tr>`).join('');
 
   // ── Trade history rows (newest first) ───────────────────────────────────────
@@ -292,33 +331,121 @@ function generateHtml(d: DashboardData): string {
   return `<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
+  <script>
+    // Set theme before first paint to avoid a flash of the wrong mode.
+    // Dark is always the default regardless of system preference; light
+    // mode only applies once a visitor explicitly chooses it (persisted).
+    (function () {
+      try {
+        if (localStorage.getItem('shannonfi-theme') === 'light') {
+          document.documentElement.setAttribute('data-theme', 'light');
+        }
+      } catch (e) { /* ignore (e.g. storage disabled) */ }
+    })();
+  </script>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="Shannon's Demon volatility-harvesting bot · ${d.symbol} portfolio tracker on Mercado Bitcoin">
+  <title>Shannon's Demon — Volatility-Harvesting Rebalancer for ${d.symbol}</title>
+  <meta name="description" content="Live dashboard and full strategy writeup for Shannon's Demon, a volatility-harvesting rebalancing strategy run on ${d.symbol} (${d.exchangeName}). Track real performance vs. buy-and-hold benchmarks, Sharpe/Sortino ratios, trade history, and read the math behind why mechanical rebalancing captures a return from volatility alone.">
+  <meta name="keywords" content="Shannon's Demon, volatility harvesting, rebalancing strategy, portfolio rebalancing, ${d.symbol}, ${d.baseAsset}, algorithmic trading, crypto trading bot, ${d.exchangeName}, mean reversion, Sharpe ratio, Sortino ratio">
+  <meta name="author" content="Lucas Santana">
   <meta name="theme-color" content="#000000">
-  <meta name="robots" content="noindex,nofollow">
-  <title>SHANNON'S DEMON // ${d.symbol}</title>
+  <meta name="robots" content="index, follow">
+  <link rel="canonical" href="https://lucastsantana.github.io/shannonfi/">
+
+  <!-- Open Graph / Facebook -->
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://lucastsantana.github.io/shannonfi/">
+  <meta property="og:site_name" content="Shannon's Demon">
+  <meta property="og:title" content="Shannon's Demon — Volatility-Harvesting Rebalancer for ${d.symbol}">
+  <meta property="og:description" content="Live performance dashboard and full strategy writeup: how mechanical rebalancing between ${d.baseAsset} and BRL captures a return from volatility alone, with real trade history and benchmark comparisons.">
+  <meta property="og:locale" content="en_US">
+
+  <!-- Twitter -->
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="Shannon's Demon — Volatility-Harvesting Rebalancer for ${d.symbol}">
+  <meta name="twitter:description" content="Live performance dashboard and full strategy writeup for a volatility-harvesting rebalancing bot on ${d.symbol}.">
+
+  <link rel="icon" href="data:image/svg+xml,${encodeURIComponent(
+    `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' fill='#000'/><text x='50' y='68' font-size='60' text-anchor='middle'>&#9878;</text></svg>`,
+  )}">
+
+  <script type="application/ld+json">
+  ${JSON.stringify({
+    '@context': 'https://schema.org',
+    '@type': 'WebApplication',
+    name: "Shannon's Demon",
+    alternateName: `Shannon's Demon — ${d.symbol}`,
+    applicationCategory: 'FinanceApplication',
+    operatingSystem: 'Any (web-based)',
+    description: `Open-source volatility-harvesting rebalancing bot and live performance dashboard for ${d.symbol}. Educational/informational only — not financial advice.`,
+    url: 'https://lucastsantana.github.io/shannonfi/',
+    author: { '@type': 'Person', name: 'Lucas Santana', url: 'https://github.com/lucastsantana' },
+    isAccessibleForFree: true,
+  })}
+  </script>
+
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=VT323&family=Share+Tech+Mono&display=swap" rel="stylesheet">
   <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    *, *::before, *::after {
+      box-sizing: border-box; margin: 0; padding: 0;
+      transition: background-color .3s ease, color .3s ease, border-color .3s ease,
+                  box-shadow .3s ease, text-shadow .3s ease;
+    }
 
+    /* ── Theme palette ──────────────────────────────────
+       Same hue families in both modes (blue, orange-red,
+       cyan/teal, magenta, yellow/amber) — light mode darkens
+       and de-saturates them for legibility on a light page,
+       since the dark mode's neon values are unreadable on white. */
     :root {
-      --g:  #3380ff;
-      --G:  #2979ff;
-      --b:  #445166;
-      --B:  #2a323f;
-      --c:  #00ffff;
-      --m:  #ff00ff;
-      --y:  #ffff00;
-      --r:  #ff4500;
-      --d:  #445166;
-      --bg: #000000;
-      --p:  #010108;
+      --g:    #a9c9ff; --g-rgb:    169,201,255;
+      --G:    #2979ff; --G-rgb:    41,121,255;
+      --b:    #445166; --b-rgb:    68,81,102;
+      --B:    #2a323f; --B-rgb:    42,50,63;
+      --c:    #00ffff; --c-rgb:    0,255,255;
+      --m:    #ff00ff; --m-rgb:    255,0,255;
+      --y:    #ffff00; --y-rgb:    255,255,0;
+      --r:    #ff4500; --r-rgb:    255,69,0;
+      --d:    #8fa3c4; --d-rgb:    143,163,196;
+      --bg:   #000000; --bg-rgb:   0,0,0;
+      --p:    #010108; --p-rgb:    1,1,8;
+      --neut: #cccccc;
+      --ov-rgb:    0,0,0;
+      --hdr2-bg:   #010102;
+      --hdr3-bg:   #01010e;
+      --nscr-bg:   #330000;
+      --nscr-fg:   #ff6666;
       --fn: 'Share Tech Mono', 'Courier New', monospace;
       --ft: 'VT323', monospace;
     }
+
+    [data-theme="light"] {
+      --g:    #1a3a66; --g-rgb:    26,58,102;
+      --G:    #0a58d6; --G-rgb:    10,88,214;
+      --b:    #b9c2d6; --b-rgb:    185,194,214;
+      --B:    #d8deea; --B-rgb:    216,222,234;
+      --c:    #007a8a; --c-rgb:    0,122,138;
+      --m:    #b300b3; --m-rgb:    179,0,179;
+      --y:    #8a6d00; --y-rgb:    138,109,0;
+      --r:    #cc3700; --r-rgb:    204,55,0;
+      --d:    #5b6b85; --d-rgb:    91,107,133;
+      --bg:   #eef1f7; --bg-rgb:   238,241,247;
+      --p:    #ffffff; --p-rgb:    255,255,255;
+      --neut: #555555;
+      --ov-rgb:    90,100,120;
+      --hdr2-bg:   #f5f7fb;
+      --hdr3-bg:   #eef1f8;
+      --nscr-bg:   #ffe0d0;
+      --nscr-fg:   #aa2200;
+    }
+
+    /* Dark is the unconditional default — no system-preference auto-switch,
+       for JS or no-JS visitors alike. Light mode only applies once a
+       visitor explicitly toggles it (see the anti-flash script above and
+       the theme-toggle script below, both gated on an explicit choice). */
 
     body {
       background: var(--bg);
@@ -337,8 +464,15 @@ function generateHtml(d: DashboardData): string {
       z-index: 9999; pointer-events: none;
       background: repeating-linear-gradient(
         to bottom,
-        rgba(0,0,0,0) 0px, rgba(0,0,0,0) 2px,
-        rgba(0,0,0,0.18) 3px, rgba(0,0,0,0) 4px
+        rgba(var(--ov-rgb),0) 0px, rgba(var(--ov-rgb),0) 2px,
+        rgba(var(--ov-rgb),0.18) 3px, rgba(var(--ov-rgb),0) 4px
+      );
+    }
+    [data-theme="light"] body::before {
+      background: repeating-linear-gradient(
+        to bottom,
+        rgba(var(--ov-rgb),0) 0px, rgba(var(--ov-rgb),0) 2px,
+        rgba(var(--ov-rgb),0.05) 3px, rgba(var(--ov-rgb),0) 4px
       );
     }
 
@@ -347,16 +481,19 @@ function generateHtml(d: DashboardData): string {
       content: '';
       position: fixed; top: 0; left: 0; right: 0; bottom: 0;
       z-index: 9998; pointer-events: none;
-      background: radial-gradient(ellipse at center, transparent 60%, rgba(0,0,0,0.65) 100%);
+      background: radial-gradient(ellipse at center, transparent 60%, rgba(var(--ov-rgb),0.65) 100%);
+    }
+    [data-theme="light"] body::after {
+      background: radial-gradient(ellipse at center, transparent 65%, rgba(var(--ov-rgb),0.12) 100%);
     }
 
     @keyframes blink    { 0%,49%{opacity:1} 50%,100%{opacity:0} }
     @keyframes flicker  { 0%{opacity:.99} 5%{opacity:.91} 10%{opacity:1}
                           72%{opacity:.97} 78%{opacity:1} 92%{opacity:.95} 96%{opacity:1} }
     @keyframes pulse-m  { 0%,100%{text-shadow:0 0 6px var(--m),0 0 14px var(--m)}
-                          50%{text-shadow:0 0 12px var(--m),0 0 28px var(--m),0 0 50px rgba(255,0,255,.4)} }
+                          50%{text-shadow:0 0 12px var(--m),0 0 28px var(--m),0 0 50px rgba(var(--m-rgb),.4)} }
     @keyframes pulse-c  { 0%,100%{text-shadow:0 0 5px var(--c),0 0 10px var(--c)}
-                          50%{text-shadow:0 0 10px var(--c),0 0 22px var(--c),0 0 40px rgba(0,255,255,.35)} }
+                          50%{text-shadow:0 0 10px var(--c),0 0 22px var(--c),0 0 40px rgba(var(--c-rgb),.35)} }
     @keyframes pulse-live { 0%,100%{opacity:1;color:var(--G)} 50%{opacity:0.35;color:var(--g)} }
 
     .blink   { animation: blink 1.1s step-end infinite; }
@@ -373,7 +510,7 @@ function generateHtml(d: DashboardData): string {
     /* ── Typography ─────────────────────────────────── */
     .gain { color: var(--G); }
     .loss { color: var(--r); }
-    .neut { color: #cccccc; }
+    .neut { color: var(--neut); }
     .buy  { color: var(--G); }
     .sell { color: var(--r); }
     .cyan { color: var(--c); }
@@ -392,7 +529,7 @@ function generateHtml(d: DashboardData): string {
       padding: 22px 12px 16px;
       margin-bottom: 16px;
       background: var(--p);
-      box-shadow: 0 0 24px rgba(0,51,136,.25), inset 0 0 32px rgba(0,18,48,.3);
+      box-shadow: 0 0 24px rgba(var(--G-rgb),.25), inset 0 0 32px rgba(var(--G-rgb),.3);
     }
     .hdr-title {
       font-family: var(--ft);
@@ -413,7 +550,7 @@ function generateHtml(d: DashboardData): string {
       letter-spacing: 9px;
       color: var(--c);
       animation: pulse-c 5s ease-in-out infinite;
-      margin: 6px 0 4px;
+      margin: 6px 0;
     }
     .hdr-meta { color: var(--y); letter-spacing: 5px; font-size: .9em; opacity: .9; }
     .hdr-gen  { color: var(--d); font-size: .78em; margin-top: 6px; }
@@ -426,10 +563,11 @@ function generateHtml(d: DashboardData): string {
       margin-bottom: 16px;
       background: var(--p);
     }
-    .score { text-align: center; padding: 12px 6px; border-right: 1px solid var(--b); }
+    .score { text-align: center; padding: 12px 6px; border-right: 1px solid var(--b); transition: background .15s ease, border-color .3s ease; }
     .score:last-child { border-right: none; }
+    .score:hover { background: rgba(var(--G-rgb),.08); }
     .score-lbl { color: var(--d); font-size:.72em; letter-spacing:2px; text-transform:uppercase; }
-    .score-val { font-family: var(--ft); font-size: 2.1em; margin-top: 2px; }
+    .score-val { font-family: var(--ft); font-size: 2.1em; margin-top: 6px; }
 
     /* ── Two-up panels ──────────────────────────────── */
     .panels { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 16px; }
@@ -437,7 +575,7 @@ function generateHtml(d: DashboardData): string {
       border: 1px solid var(--b);
       background: var(--p);
       padding: 14px 16px;
-      box-shadow: inset 0 0 12px rgba(0,23,60,.15);
+      box-shadow: inset 0 0 12px rgba(var(--G-rgb),.15);
     }
     .panel-hdr {
       font-family: var(--ft);
@@ -449,7 +587,7 @@ function generateHtml(d: DashboardData): string {
       padding-bottom: 7px;
       margin-bottom: 10px;
     }
-    .sr  { display:flex; justify-content:space-between; padding:3px 0; border-bottom:1px solid rgba(68,81,102,.28); }
+    .sr  { display:flex; justify-content:space-between; align-items:center; padding:4px 0; border-bottom:1px solid rgba(var(--b-rgb),.28); }
     .sl  { color: var(--d); }
     .sv  { color: var(--c); }
     .sv.gain { color: var(--G); }
@@ -468,7 +606,7 @@ function generateHtml(d: DashboardData): string {
       border: 1px solid var(--b);
       border-bottom: none;
       padding: 7px 14px;
-      background: #010102;
+      background: var(--hdr2-bg);
     }
     .sec-sub { color:var(--d); font-size:.7em; margin-left:6px; letter-spacing:1px; }
 
@@ -486,23 +624,23 @@ function generateHtml(d: DashboardData): string {
     table { width: 100%; border-collapse: collapse; min-width: 560px; }
     .tbl  { border: 1px solid var(--b); background: var(--p); }
     .tbl thead th {
-      background: #01010e;
+      background: var(--hdr3-bg);
       color: var(--y);
       text-transform: uppercase;
       font-size: .72em;
       letter-spacing: 2px;
       padding: 7px 9px;
       border-bottom: 1px solid var(--b);
-      border-right: 1px solid rgba(68,81,102,.35);
+      border-right: 1px solid rgba(var(--b-rgb),.35);
       text-align: left;
     }
     .tbl thead th.num { text-align: right; }
     .tbl thead th.ctr { text-align: center; }
-    .tbl tbody tr     { border-bottom: 1px solid rgba(68,81,102,.32); }
-    .tbl tbody tr:hover { background: rgba(0,96,255,.04); }
+    .tbl tbody tr     { border-bottom: 1px solid rgba(var(--b-rgb),.32); transition: background .12s ease, border-color .3s ease; }
+    .tbl tbody tr:hover { background: rgba(var(--G-rgb),.08); }
     .tbl td {
       padding: 5px 9px;
-      border-right: 1px solid rgba(68,81,102,.28);
+      border-right: 1px solid rgba(var(--b-rgb),.28);
       vertical-align: middle;
     }
     .tbl td:last-child { border-right: none; }
@@ -528,6 +666,29 @@ function generateHtml(d: DashboardData): string {
       color: var(--d);
     }
 
+    /* ── Theme toggle ───────────────────────────────── */
+    .theme-toggle {
+      position: fixed;
+      top: 14px; right: 14px;
+      z-index: 10000;
+      width: 38px; height: 38px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid var(--b);
+      background: var(--p);
+      color: var(--y);
+      font-size: 1.2em;
+      line-height: 1;
+      padding: 0;
+      cursor: pointer;
+      box-shadow: 0 0 10px rgba(var(--ov-rgb),.3);
+    }
+    .theme-toggle:hover { color: var(--m); border-color: var(--m); }
+    @media (max-width: 480px) {
+      .theme-toggle { top: 8px; right: 8px; width: 32px; height: 32px; font-size: 1em; }
+    }
+
     /* ── Tabs ───────────────────────────────────────── */
     .tabs {
       display: flex;
@@ -547,39 +708,46 @@ function generateHtml(d: DashboardData): string {
       padding: 10px 8px;
       cursor: pointer;
       text-align: center;
-      transition: color .15s, background .15s;
+      transition: color .15s, background .15s, box-shadow .3s ease;
     }
-    .tab-btn:hover { color: var(--c); background: rgba(0,96,255,.06); }
+    .tab-btn:hover { color: var(--c); background: rgba(var(--G-rgb),.06); }
     .tab-btn[aria-selected="true"] {
       color: var(--m);
       text-shadow: 0 0 6px var(--m);
-      background: rgba(255,0,255,.06);
+      background: rgba(var(--m-rgb),.06);
       box-shadow: inset 0 -3px 0 var(--m);
     }
     .tab-panel[hidden] { display: none; }
+    .tab-panel {
+      opacity: 1;
+      transform: translateY(0);
+      transition: opacity .22s ease, transform .22s ease;
+    }
+    .tab-panel.tab-fade {
+      opacity: 0;
+      transform: translateY(6px);
+    }
 
-    /* ── Footnotes ──────────────────────────────────── */
-    .footnotes {
-      border: 1px solid var(--b);
-      background: var(--p);
-      padding: 14px 16px;
-      margin-top: 4px;
-      font-size: .78em;
+    /* ── Inline footnotes (sit directly under/inside the box they explain) ── */
+    .fn-inline {
+      margin-top: 10px;
+      padding-top: 9px;
+      border-top: 1px dashed var(--b);
+      font-size: .74em;
+      line-height: 1.55;
       color: var(--d);
     }
-    .footnotes summary {
-      cursor: pointer;
-      color: var(--c);
-      letter-spacing: 1px;
-      font-size: 1em;
-      outline: none;
+    .fn-inline p { margin-bottom: 5px; }
+    .fn-inline p:last-child { margin-bottom: 0; }
+    .fn-inline strong { color: var(--c); letter-spacing: .5px; }
+    .fn-inline-group {
+      border: 1px solid var(--b);
+      border-top: none;
+      background: var(--p);
+      padding: 10px 14px;
+      margin-top: -16px;
+      margin-bottom: 16px;
     }
-    .footnotes ol { margin: 10px 0 0 0; padding-left: 1.6em; }
-    .footnotes li { margin-bottom: 6px; line-height: 1.5; }
-    .footnotes li::marker { color: var(--c); }
-    .fn-ref { font-size: .75em; vertical-align: super; margin-left: 1px; }
-    .fn-ref a { color: var(--c); }
-    .fn-back { font-size: .85em; margin-left: 4px; }
 
     /* ── Strategy tab prose ─────────────────────────── */
     .prose { border: 1px solid var(--b); background: var(--p); padding: 18px 20px; margin-bottom: 16px; }
@@ -596,19 +764,19 @@ function generateHtml(d: DashboardData): string {
     .prose strong { color: var(--c); }
     .prose .formula {
       display: block; margin: 10px 0; padding: 10px 14px;
-      border-left: 2px solid var(--m); background: rgba(255,0,255,.04);
+      border-left: 2px solid var(--m); background: rgba(var(--m-rgb),.04);
       font-family: var(--fn); color: var(--y); overflow-x: auto; white-space: pre;
     }
 
     /* ── Disclaimer & legal ─────────────────────────── */
     .disclaimer {
       border: 1px solid var(--r);
-      background: rgba(255,69,0,.05);
+      background: rgba(var(--r-rgb),.05);
       padding: 14px 16px;
       margin-bottom: 16px;
       color: var(--g);
     }
-    .disclaimer h3 { color: var(--r); font-family: var(--ft); letter-spacing: 1px; margin-bottom: 8px; font-size: 1.15em; }
+    .disclaimer h3 { color: var(--r); font-family: var(--ft); letter-spacing: 1px; margin-bottom: 10px; font-size: 1.15em; }
     .disclaimer p { margin-bottom: 8px; font-size: .85em; line-height: 1.55; }
     .disclaimer p:last-child { margin-bottom: 0; }
 
@@ -668,7 +836,8 @@ function generateHtml(d: DashboardData): string {
   </style>
 </head>
 <body>
-<noscript><div style="background:#330000;color:#ff6666;padding:10px;text-align:center;font-family:monospace">⚠ JavaScript required for live price updates and strategy chart.</div></noscript>
+<noscript><div style="background:var(--nscr-bg);color:var(--nscr-fg);padding:10px;text-align:center;font-family:monospace">⚠ JavaScript required for live price updates, the strategy chart, and light/dark mode.</div></noscript>
+<button type="button" id="theme-toggle" class="theme-toggle" aria-label="Toggle light/dark mode" title="Toggle light/dark mode">&#127769;</button>
 <div class="wrap flicker" role="main">
 
 <!-- ═══  TITLE  ══════════════════════════════════════════════════════════════ -->
@@ -694,25 +863,31 @@ function generateHtml(d: DashboardData): string {
 <!-- ═══  SCORE BAR  ══════════════════════════════════════════════════════════ -->
 <div class="scores">
   <div class="score">
-    <div class="score-lbl">&#128176; PORTFOLIO<sup class="fn-ref">[<a href="#fn1" id="fnref1">1</a>]</sup></div>
+    <div class="score-lbl">&#128176; PORTFOLIO</div>
     <div class="score-val cyan" data-live="total">R$${liveTotal.toFixed(2)}</div>
   </div>
   <div class="score">
-    <div class="score-lbl">&#128200; NET GAIN<sup class="fn-ref">[<a href="#fn2" id="fnref2">2</a>]</sup></div>
+    <div class="score-lbl">&#128200; NET GAIN</div>
     <div class="score-val ${gainCls(netGain)}">${fmtBrl(netGain, true)}</div>
   </div>
   <div class="score">
-    <div class="score-lbl">&#127919; RETURN<sup class="fn-ref">[<a href="#fn3" id="fnref3">3</a>]</sup></div>
+    <div class="score-lbl">&#127919; RETURN</div>
     <div class="score-val ${retCls}" data-live="return" data-base-class="score-val">${fmtPct(liveReturn)}</div>
   </div>
   <div class="score">
-    <div class="score-lbl">&#9889; REBALANCES<sup class="fn-ref">[<a href="#fn4" id="fnref4">4</a>]</sup></div>
+    <div class="score-lbl">&#9889; REBALANCES</div>
     <div class="score-val">${tradeCount}</div>
   </div>
   <div class="score">
     <div class="score-lbl">&#9201; ACTIVE</div>
     <div class="score-val">${d.daysActive}&nbsp;DAYS</div>
   </div>
+</div>
+<div class="fn-inline fn-inline-group">
+  <p><strong class="cyan">PORTFOLIO</strong> &mdash; current total value: live ${d.baseAsset} balance &times; live price, plus BRL cash on hand. Recomputed every 30s from the public ticker.</p>
+  <p><strong class="cyan">NET GAIN</strong> &mdash; realized gain from closed SELL trades, minus all exchange fees paid across every trade. Does not include unrealized (mark-to-market) gains on the base asset currently held &mdash; see RETURN for that.</p>
+  <p><strong class="cyan">RETURN</strong> &mdash; (current PORTFOLIO minus INITIAL portfolio value at the first recorded snapshot) divided by INITIAL. Updates live; includes unrealized gains/losses on the held position.</p>
+  <p><strong class="cyan">REBALANCES</strong> &mdash; count of executed trades (FILLED or DRY_RUN) since the bot started tracking this instance.</p>
 </div>
 
 <!-- ═══  STATUS PANELS  ══════════════════════════════════════════════════════ -->
@@ -721,28 +896,37 @@ function generateHtml(d: DashboardData): string {
     <div class="panel-hdr">&#128176; PORTFOLIO STATUS</div>
     <div class="sr"><span class="sl">${d.baseAsset} BALANCE</span><span class="sv">${totalBase.toFixed(6)} ${d.baseAsset}</span></div>
     <div class="sr"><span class="sl">BRL BALANCE</span><span class="sv">${fmtBrl(liveBrl)}</span></div>
-    <div class="sr"><span class="sl">LIVE PRICE<sup class="fn-ref">[<a href="#fn5" id="fnref5">5</a>]</sup></span><span class="sv yel" data-live="price">R$${livePrice.toFixed(2)}</span></div>
+    <div class="sr"><span class="sl">LIVE PRICE</span><span class="sv yel" data-live="price">R$${livePrice.toFixed(2)}</span></div>
     <div class="sr"><span class="sl">BASE VALUE</span><span class="sv" data-live="base-value">${fmtBrl(liveBaseVal)}</span></div>
     <div class="sr"><span class="sl">&#9472;&#9472; TOTAL &#9472;&#9472;</span><span class="sv big" data-live="total">${fmtBrl(liveTotal)}</span></div>
     <div class="sr"><span class="sl">RETURN</span><span class="sv ${retCls}" data-live="return-detail" data-base-class="sv">${fmtPct(liveReturn)} vs R$${d.initialTotal.toFixed(2)}</span></div>
-    <div class="sr"><span class="sl">COST BASIS<sup class="fn-ref">[<a href="#fn6" id="fnref6">6</a>]</sup></span><span class="sv">R$${avgCost.toFixed(2)} / ${d.baseAsset}</span></div>
+    <div class="sr"><span class="sl">COST BASIS</span><span class="sv">R$${avgCost.toFixed(2)} / ${d.baseAsset}</span></div>
+    <div class="fn-inline">
+      <p><strong class="cyan">LIVE PRICE</strong> &mdash; fetched from the exchange's public ticker API every 30 seconds client-side; falls back to the last recorded snapshot price if the fetch fails.</p>
+      <p><strong class="cyan">COST BASIS</strong> &mdash; the AVCO (average cost) per unit of ${d.baseAsset}, updated on every BUY and used to compute realized gain/loss on every SELL.</p>
+    </div>
   </div>
   <div class="panel">
     <div class="panel-hdr">&#129302; BOT STATUS</div>
     <div class="sr"><span class="sl">STRATEGY</span><span class="sv mag">SHANNON'S DEMON</span></div>
     <div class="sr"><span class="sl">SYMBOL</span><span class="sv cyan">${d.symbol}</span></div>
-    <div class="sr"><span class="sl">DEVIATION NOW<sup class="fn-ref">[<a href="#fn7" id="fnref7">7</a>]</sup></span><span class="sv ${devCls}">${liveDev} BPS ${devLabel}</span></div>
-    <div class="sr"><span class="sl">THRESHOLD<sup class="fn-ref">[<a href="#fn8" id="fnref8">8</a>]</sup></span><span class="sv">${lastSnap?.effective_threshold_bps ?? '—'} BPS (ADAPTIVE)</span></div>
+    <div class="sr"><span class="sl">DEVIATION NOW</span><span class="sv ${devCls}">${liveDev} BPS ${devLabel}</span></div>
+    <div class="sr"><span class="sl">THRESHOLD</span><span class="sv">${lastSnap?.effective_threshold_bps ?? '—'} BPS (ADAPTIVE)</span></div>
     <div class="sr"><span class="sl">LAST TRADE</span><span class="sv">${d.trades.length > 0 ? (d.trades[d.trades.length - 1]!.trade_date_brt ?? '—') : '—'}</span></div>
     <div class="sr"><span class="sl">TOTAL FEES PAID</span><span class="sv loss">&#8722;${fmtBrl(d.totalFees)}</span></div>
     <div class="sr"><span class="sl">REALIZED GAIN</span><span class="sv ${gainCls(d.totalRealizedGain)}">${fmtBrl(d.totalRealizedGain, true)}</span></div>
-    <div class="sr"><span class="sl">TAX STATUS<sup class="fn-ref">[<a href="#fn9" id="fnref9">9</a>]</sup></span><span class="sv gain">&#10003; EXEMPT (LEI 9.250/1995)</span></div>
+    <div class="sr"><span class="sl">TAX STATUS</span><span class="sv gain">&#10003; EXEMPT (LEI 9.250/1995)</span></div>
+    <div class="fn-inline">
+      <p><strong class="cyan">DEVIATION NOW</strong> &mdash; how far the portfolio currently sits from a perfect 50/50 split, in basis points (BPS = 1/100 of 1%; 100 BPS = 1%). BALANCED / DRIFTING / ALERT are visual bands around that number.</p>
+      <p><strong class="cyan">THRESHOLD (ADAPTIVE)</strong> &mdash; how far deviation must drift before a rebalance fires. Recalculated once per day from realized volatility rather than fixed, so calm markets don't get over-traded and volatile markets aren't under-traded. Full formula in the STRATEGY tab.</p>
+      <p><strong class="cyan">TAX STATUS</strong> &mdash; under Brazilian law (Lei 9.250/1995, Art. 21), an individual's domestic crypto SELL proceeds are exempt from capital-gains tax up to R$35,000 in total sales per calendar month, across all domestic crypto sales by that person. General information, not tax advice &mdash; see the STRATEGY tab.</p>
+    </div>
   </div>
 </div>
 
 <!-- ═══  STRATEGY CHART  ═════════════════════════════════════════════════════ -->
 <section class="sec" aria-label="Strategy Scoreboard">
-  <div class="sec-hdr">&#9878; STRATEGY SCOREBOARD<sup class="fn-ref">[<a href="#fn10" id="fnref10">10</a>]</sup>
+  <div class="sec-hdr">&#9878; STRATEGY SCOREBOARD
     <span class="sec-sub">&#9472; ${d.daysActive} DAYS &#183; &#9646;&#9646; SHANNON &nbsp; &#9646;&#9646; 50/50 HOLD &nbsp; &#9646;&#9646; ALL-IN ${d.baseAsset} &nbsp; &#9673; REBALANCE</span>
   </div>
   <div class="tbl-wrap">
@@ -755,20 +939,27 @@ function generateHtml(d: DashboardData): string {
           <th scope="col" class="num">ANN. VOLATILITY</th>
           <th scope="col" class="num">SHARPE</th>
           <th scope="col" class="num">SORTINO</th>
+          <th scope="col" class="num">VaR (95%)</th>
+          <th scope="col" class="num">MAX DRAWDOWN</th>
         </tr>
       </thead>
       <tbody>${statRows}</tbody>
     </table>
   </div>
+  <div class="fn-inline">
+    <p><strong class="cyan">STRATEGY SCOREBOARD</strong> &mdash; compares this bot's actual performance against two passive benchmarks computed from the same price history: a 50/50 buy-and-hold that never rebalances, and a 100%-${d.baseAsset} buy-and-hold. ANN. = annualized (scaled to a 1-year period from the actual sampling window). Sharpe and Sortino both assume a 0% risk-free rate. <strong class="cyan">VaR (95%)</strong> is the historical (empirical) per-period loss such that 95% of observed periods did not lose more &mdash; a higher magnitude means fatter downside tails. <strong class="cyan">MAX DRAWDOWN</strong> is the worst peak-to-trough decline over the whole window. Full methodology in the STRATEGY tab.</p>
+  </div>
   <div class="chart-wrap">
     <canvas id="bench-chart" role="img" aria-label="Line chart comparing Shannon's Demon, 50/50 Buy-and-Hold, and All-in ${d.baseAsset} portfolio values over time"></canvas>
   </div>
-  <div class="sec-sub" style="margin:6px 2px 0;">Chart legend<sup class="fn-ref">[<a href="#fn12" id="fnref12">12</a>]</sup></div>
+  <div class="fn-inline">
+    <p><strong class="cyan">CHART LEGEND</strong> &mdash; solid magenta = this bot's actual value; solid blue = 50/50 buy-and-hold; dashed yellow = 100%-${d.baseAsset} buy-and-hold. A cyan dot marks a day a rebalance executed; a yellow dot marks the current live (intraday) point, not yet a closed daily snapshot.</p>
+  </div>
 </section>
 
 <!-- ═══  TRADE HISTORY  ══════════════════════════════════════════════════════ -->
 <section class="sec" aria-label="Trade History">
-  <div class="sec-hdr">&#9889; TRADE HISTORY<sup class="fn-ref">[<a href="#fn11" id="fnref11">11</a>]</sup> <span class="sec-sub">&#9472; ${tradeCount} REBALANCES EXECUTED &#183; NEWEST FIRST</span></div>
+  <div class="sec-hdr">&#9889; TRADE HISTORY <span class="sec-sub">&#9472; ${tradeCount} REBALANCES EXECUTED &#183; NEWEST FIRST</span></div>
   <div class="tbl-wrap">
     <table class="tbl">
       <thead>
@@ -787,11 +978,14 @@ function generateHtml(d: DashboardData): string {
       <tbody>${tradeRows}</tbody>
     </table>
   </div>
+  <div class="fn-inline">
+    <p><strong class="cyan">TRADE HISTORY</strong> &mdash; DEV BPS shows the deviation immediately before &#8594; immediately after each trade, i.e. how off-target the portfolio was right before it fired and how close to 50/50 it landed afterward.</p>
+  </div>
 </section>
 
 <!-- ═══  TAX LEDGER  ════════════════════════════════════════════════════════ -->
 <section class="sec" aria-label="Tax Ledger">
-  <div class="sec-hdr">&#128272; TAX LEDGER<sup class="fn-ref">[<a href="#fn9" id="fnref9b">9</a>]</sup> <span class="sec-sub">&#9472; LEI 9.250/1995 ART. 21 &#183; SELL PROCEEDS &#8804; R$35,000/MO = EXEMPT</span></div>
+  <div class="sec-hdr">&#128272; TAX LEDGER <span class="sec-sub">&#9472; LEI 9.250/1995 ART. 21 &#183; SELL PROCEEDS &#8804; R$35,000/MO = EXEMPT</span></div>
   <div class="tbl-wrap">
     <table class="tbl">
       <thead>
@@ -806,26 +1000,10 @@ function generateHtml(d: DashboardData): string {
       <tbody>${taxRows}</tbody>
     </table>
   </div>
+  <div class="fn-inline">
+    <p><strong class="cyan">TAX LEDGER</strong> &mdash; under Brazilian law (Lei 9.250/1995, Art. 21), an individual's domestic crypto SELL proceeds are exempt from capital-gains tax up to R$35,000 in total sales per calendar month, across all domestic crypto sales by that person, not per asset or per exchange. EXEMPT/TAXABLE reflects cumulative monthly SELL volume against that limit. General information, not tax advice &mdash; see the STRATEGY tab.</p>
+  </div>
 </section>
-
-<!-- ═══  FOOTNOTES  ═════════════════════════════════════════════════════════ -->
-<details class="footnotes" open>
-  <summary>&#128214; FOOTNOTES &mdash; WHAT EACH NUMBER MEANS</summary>
-  <ol>
-    <li id="fn1"><strong class="cyan">PORTFOLIO</strong> &mdash; current total value: live ${d.baseAsset} balance &times; live price, plus BRL cash on hand. Recomputed every 30s from the public ticker. <a class="fn-back" href="#fnref1">&#8617;</a></li>
-    <li id="fn2"><strong class="cyan">NET GAIN</strong> &mdash; realized gain from closed SELL trades, minus all exchange fees paid across every trade. This does <em>not</em> include unrealized (mark-to-market) gains on the base asset currently held &mdash; see RETURN for that. <a class="fn-back" href="#fnref2">&#8617;</a></li>
-    <li id="fn3"><strong class="cyan">RETURN</strong> &mdash; (current PORTFOLIO &minus; INITIAL portfolio value at the first recorded snapshot) &divide; INITIAL. Updates live; includes unrealized gains/losses on the held position. <a class="fn-back" href="#fnref3">&#8617;</a></li>
-    <li id="fn4"><strong class="cyan">REBALANCES</strong> &mdash; count of executed trades (FILLED or DRY_RUN) since the bot started tracking this instance. <a class="fn-back" href="#fnref4">&#8617;</a></li>
-    <li id="fn5"><strong class="cyan">LIVE PRICE</strong> &mdash; fetched from the exchange's public ticker API every 30 seconds client-side; falls back to the last recorded snapshot price if the fetch fails. <a class="fn-back" href="#fnref5">&#8617;</a></li>
-    <li id="fn6"><strong class="cyan">COST BASIS</strong> &mdash; the AVCO (average cost) per unit of ${d.baseAsset}, updated on every BUY and used to compute realized gain/loss on every SELL. <a class="fn-back" href="#fnref6">&#8617;</a></li>
-    <li id="fn7"><strong class="cyan">DEVIATION NOW</strong> &mdash; how far the portfolio currently sits from a perfect 50/50 split, in basis points (BPS = 1/100 of 1%; 100 BPS = 1%). BALANCED / DRIFTING / ALERT are just visual bands around that number. <a class="fn-back" href="#fnref7">&#8617;</a></li>
-    <li id="fn8"><strong class="cyan">THRESHOLD (ADAPTIVE)</strong> &mdash; how far deviation must drift before a rebalance fires. Recalculated once per day from realized volatility (mean absolute daily return &times; multiplier, clamped 50&ndash;500 BPS) rather than fixed, so calm markets don't get over-traded and volatile markets aren't under-traded. See the STRATEGY tab for the full formula. <a class="fn-back" href="#fnref8">&#8617;</a></li>
-    <li id="fn9"><strong class="cyan">TAX STATUS / TAX LEDGER</strong> &mdash; under Brazilian law (Lei 9.250/1995, Art. 21), an individual's domestic crypto SELL proceeds are exempt from capital-gains tax up to R$35,000 in total sales per calendar month; this exemption applies per person, not per asset or per exchange. EXEMPT/TAXABLE reflects cumulative monthly SELL volume against that limit. This is general information, not tax advice &mdash; see the STRATEGY tab. <a class="fn-back" href="#fnref9">&#8617;</a></li>
-    <li id="fn10"><strong class="cyan">STRATEGY SCOREBOARD</strong> &mdash; compares this bot's actual performance against two passive benchmarks computed from the same price history: a 50/50 buy-and-hold that never rebalances, and a 100%-${d.baseAsset} buy-and-hold. ANN. = annualized (scaled to a 1-year period from the actual sampling window). Sharpe and Sortino both assume a 0% risk-free rate. Full methodology in the STRATEGY tab. <a class="fn-back" href="#fnref10">&#8617;</a></li>
-    <li id="fn11"><strong class="cyan">TRADE HISTORY</strong> &mdash; DEV BPS shows the deviation immediately before &#8594; immediately after each trade, i.e. how off-target the portfolio was right before it fired and how close to 50/50 it landed afterward. <a class="fn-back" href="#fnref11">&#8617;</a></li>
-    <li id="fn12"><strong class="cyan">Chart legend</strong> &mdash; solid magenta = this bot's actual value; solid blue = 50/50 buy-and-hold; dashed yellow = 100%-${d.baseAsset} buy-and-hold. A cyan dot marks a day a rebalance executed; a yellow dot marks the current live (intraday) point, not yet a closed daily snapshot. <a class="fn-back" href="#fnref12">&#8617;</a></li>
-  </ol>
-</details>
 
 </div><!-- /panel-dashboard -->
 
@@ -918,7 +1096,27 @@ var INIT  = ${d.initialTotal};
 var BENCH = ${benchJson};
 var API   = 'https://api.mercadobitcoin.net/api/v4/tickers?symbols=' + SYM;
 
+// ── Theme-aware color reader ─────────────────────────────────────────────────
+// Chart.js draws to a <canvas>, which can't resolve CSS var() itself — colors
+// must be read as concrete strings, and re-read whenever the theme toggles.
+function cssVar(name) {
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+}
+function chartTheme() {
+  return {
+    m: cssVar('--m'), mRgb: cssVar('--m-rgb'),
+    G: cssVar('--G'), GRgb: cssVar('--G-rgb'),
+    y: cssVar('--y'), yRgb: cssVar('--y-rgb'),
+    c: cssVar('--c'),
+    g: cssVar('--g'),
+    d: cssVar('--d'),
+    p: cssVar('--p'),
+    grid: 'rgba(' + cssVar('--G-rgb') + ',0.22)',
+  };
+}
+
 // ── Strategy chart ──────────────────────────────────────────────────────────
+var benchChart = null;
 (function () {
   var labels  = BENCH.map(function (r) { return r.isLive ? r.date + ' ▶' : r.date; });
   var shannon = BENCH.map(function (r) { return r.shannon; });
@@ -926,11 +1124,13 @@ var API   = 'https://api.mercadobitcoin.net/api/v4/tickers?symbols=' + SYM;
   var bhAll   = BENCH.map(function (r) { return r.bhAll; });
 
   var ptRadius = BENCH.map(function (r) { return r.rebalanced ? 6 : r.isLive ? 5 : 2; });
-  var ptColor  = BENCH.map(function (r) { return r.rebalanced ? '#00ffff' : r.isLive ? '#ffff00' : '#ff00ff'; });
+  var liveOrDefaultRadius = BENCH.map(function (r) { return r.isLive ? 4 : 2; });
 
   var mono = "'Share Tech Mono', monospace";
+  var th = chartTheme();
+  var ptColor = BENCH.map(function (r) { return r.rebalanced ? th.c : r.isLive ? th.y : th.m; });
 
-  new Chart(document.getElementById('bench-chart'), {
+  benchChart = new Chart(document.getElementById('bench-chart'), {
     type: 'line',
     data: {
       labels: labels,
@@ -938,8 +1138,8 @@ var API   = 'https://api.mercadobitcoin.net/api/v4/tickers?symbols=' + SYM;
         {
           label: "⚖ Shannon's Demon",
           data: shannon,
-          borderColor: '#ff00ff',
-          backgroundColor: 'rgba(255,0,255,0.07)',
+          borderColor: th.m,
+          backgroundColor: 'rgba(' + th.mRgb + ',0.07)',
           borderWidth: 2.5,
           fill: true,
           tension: 0.35,
@@ -952,27 +1152,27 @@ var API   = 'https://api.mercadobitcoin.net/api/v4/tickers?symbols=' + SYM;
         {
           label: '50/50 Buy-and-Hold',
           data: bh50,
-          borderColor: '#2979ff',
-          backgroundColor: 'rgba(41,121,255,0.05)',
+          borderColor: th.G,
+          backgroundColor: 'rgba(' + th.GRgb + ',0.05)',
           borderWidth: 1.5,
           fill: false,
           tension: 0.35,
-          pointRadius: BENCH.map(function (r) { return r.isLive ? 4 : 2; }),
-          pointBackgroundColor: '#2979ff',
+          pointRadius: liveOrDefaultRadius,
+          pointBackgroundColor: th.G,
           pointHoverRadius: 5,
           order: 2,
         },
         {
           label: 'All-in ' + BASE,
           data: bhAll,
-          borderColor: '#ffff00',
-          backgroundColor: 'rgba(255,255,0,0.04)',
+          borderColor: th.y,
+          backgroundColor: 'rgba(' + th.yRgb + ',0.04)',
           borderWidth: 1.5,
           borderDash: [6, 3],
           fill: false,
           tension: 0.35,
-          pointRadius: BENCH.map(function (r) { return r.isLive ? 4 : 2; }),
-          pointBackgroundColor: '#ffff00',
+          pointRadius: liveOrDefaultRadius,
+          pointBackgroundColor: th.y,
           pointHoverRadius: 5,
           order: 3,
         },
@@ -986,7 +1186,7 @@ var API   = 'https://api.mercadobitcoin.net/api/v4/tickers?symbols=' + SYM;
         legend: {
           position: 'top',
           labels: {
-            color: '#3380ff',
+            color: th.g,
             font: { family: mono, size: 11 },
             padding: 18,
             boxWidth: 28,
@@ -995,12 +1195,12 @@ var API   = 'https://api.mercadobitcoin.net/api/v4/tickers?symbols=' + SYM;
           },
         },
         tooltip: {
-          backgroundColor: '#010108',
-          borderColor: '#002d77',
+          backgroundColor: th.p,
+          borderColor: th.d,
           borderWidth: 1,
-          titleColor: '#ff00ff',
+          titleColor: th.m,
           titleFont: { family: mono, size: 11 },
-          bodyColor: '#3380ff',
+          bodyColor: th.g,
           bodyFont: { family: mono, size: 11 },
           padding: 10,
           callbacks: {
@@ -1021,23 +1221,57 @@ var API   = 'https://api.mercadobitcoin.net/api/v4/tickers?symbols=' + SYM;
       },
       scales: {
         x: {
-          ticks: { color: '#445166', font: { family: mono, size: 10 }, maxRotation: 0 },
-          grid:  { color: 'rgba(0,30,80,0.22)' },
-          border:{ color: '#445166' },
+          ticks: { color: th.d, font: { family: mono, size: 10 }, maxRotation: 0 },
+          grid:  { color: th.grid },
+          border:{ color: th.d },
         },
         y: {
           ticks: {
-            color: '#445166',
+            color: th.d,
             font: { family: mono, size: 10 },
             callback: function (v) { return 'R$' + Number(v).toFixed(0); },
           },
-          grid:  { color: 'rgba(0,30,80,0.22)' },
-          border:{ color: '#445166' },
+          grid:  { color: th.grid },
+          border:{ color: th.d },
         },
       },
     },
   });
 })();
+
+// Re-colors the chart in place when the theme toggles, without recreating it.
+function repaintChartForTheme() {
+  if (!benchChart) return;
+  var th = chartTheme();
+  var ptColor = BENCH.map(function (r) { return r.rebalanced ? th.c : r.isLive ? th.y : th.m; });
+
+  var ds = benchChart.data.datasets;
+  ds[0].borderColor = th.m;
+  ds[0].backgroundColor = 'rgba(' + th.mRgb + ',0.07)';
+  ds[0].pointBackgroundColor = ptColor;
+  ds[0].pointBorderColor = ptColor;
+  ds[1].borderColor = th.G;
+  ds[1].backgroundColor = 'rgba(' + th.GRgb + ',0.05)';
+  ds[1].pointBackgroundColor = th.G;
+  ds[2].borderColor = th.y;
+  ds[2].backgroundColor = 'rgba(' + th.yRgb + ',0.04)';
+  ds[2].pointBackgroundColor = th.y;
+
+  var o = benchChart.options;
+  o.plugins.legend.labels.color = th.g;
+  o.plugins.tooltip.backgroundColor = th.p;
+  o.plugins.tooltip.borderColor = th.d;
+  o.plugins.tooltip.titleColor = th.m;
+  o.plugins.tooltip.bodyColor = th.g;
+  o.scales.x.ticks.color = th.d;
+  o.scales.x.grid.color = th.grid;
+  o.scales.x.border.color = th.d;
+  o.scales.y.ticks.color = th.d;
+  o.scales.y.grid.color = th.grid;
+  o.scales.y.border.color = th.d;
+
+  benchChart.update();
+}
 
 // ── Live price updates (every 30 s) ─────────────────────────────────────────
 (function () {
@@ -1088,30 +1322,75 @@ var API   = 'https://api.mercadobitcoin.net/api/v4/tickers?symbols=' + SYM;
   setInterval(refresh, 30000);
 })();
 
-// ── Tab switching ────────────────────────────────────────────────────────────
+// ── Tab switching (cross-fade rather than an instant cut) ───────────────────
 (function () {
   var tabs = {
     dashboard: { btn: document.getElementById('tab-dashboard'), panel: document.getElementById('panel-dashboard') },
     strategy:  { btn: document.getElementById('tab-strategy'),  panel: document.getElementById('panel-strategy') },
   };
+  var reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var FADE_MS = reduceMotion ? 0 : 220;
+  var current = tabs.strategy.panel.hasAttribute('hidden') ? 'dashboard' : 'strategy';
 
   function activate(name) {
-    Object.keys(tabs).forEach(function (key) {
-      var t = tabs[key];
-      var active = key === name;
-      t.btn.setAttribute('aria-selected', active ? 'true' : 'false');
-      if (active) {
-        t.panel.removeAttribute('hidden');
-      } else {
-        t.panel.setAttribute('hidden', '');
-      }
-    });
+    if (name === current || !tabs[name]) return;
+    var from = tabs[current];
+    var to = tabs[name];
+    current = name;
+
+    tabs.dashboard.btn.setAttribute('aria-selected', name === 'dashboard' ? 'true' : 'false');
+    tabs.strategy.btn.setAttribute('aria-selected', name === 'strategy' ? 'true' : 'false');
+
+    from.panel.classList.add('tab-fade');
+    setTimeout(function () {
+      from.panel.setAttribute('hidden', '');
+      from.panel.classList.remove('tab-fade');
+
+      to.panel.removeAttribute('hidden');
+      to.panel.classList.add('tab-fade');
+      void to.panel.offsetHeight; // force reflow so the faded-out start state registers
+      requestAnimationFrame(function () {
+        to.panel.classList.remove('tab-fade');
+      });
+    }, FADE_MS);
   }
 
   tabs.dashboard.btn.addEventListener('click', function () { activate('dashboard'); });
   tabs.strategy.btn.addEventListener('click', function () { activate('strategy'); });
 
   if (location.hash === '#strategy') activate('strategy');
+})();
+
+// ── Theme toggle ─────────────────────────────────────────────────────────────
+(function () {
+  var btn = document.getElementById('theme-toggle');
+  var metaTheme = document.querySelector('meta[name="theme-color"]');
+
+  function currentTheme() {
+    return document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark';
+  }
+
+  function applyIcon(theme) {
+    // Show the icon for the mode you'd switch TO.
+    btn.innerHTML = theme === 'light' ? '&#127769;' : '&#9728;&#65039;';
+  }
+
+  function setTheme(theme) {
+    if (theme === 'light') {
+      document.documentElement.setAttribute('data-theme', 'light');
+    } else {
+      document.documentElement.setAttribute('data-theme', 'dark');
+    }
+    try { localStorage.setItem('shannonfi-theme', theme); } catch (e) { /* ignore */ }
+    if (metaTheme) metaTheme.setAttribute('content', cssVar('--bg') || (theme === 'light' ? '#eef1f7' : '#000000'));
+    applyIcon(theme);
+    repaintChartForTheme();
+  }
+
+  applyIcon(currentTheme());
+  btn.addEventListener('click', function () {
+    setTheme(currentTheme() === 'light' ? 'dark' : 'light');
+  });
 })();
 </script>
 </body>
@@ -1228,8 +1507,10 @@ async function main(): Promise<void> {
   const todayBRT   = toDateBRT(new Date().toISOString());
   const daysActive = firstSnap ? daysElapsed(firstSnap.date_brt, todayBRT) : 0;
 
+  const exchangeName = config.exchange === 'mercadobitcoin' ? 'Mercado Bitcoin' : 'Binance';
+
   const data: DashboardData = {
-    symbol: config.symbol, baseAsset,
+    symbol: config.symbol, baseAsset, exchangeName,
     trades, snapshots, costBasis: costBasis ?? null, currentPrice,
     generatedAt: toBRT(new Date().toISOString()),
     benchmark, benchmarkStats, initialTotal, totalRealizedGain, totalFees, daysActive, monthlySales,
