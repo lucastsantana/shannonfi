@@ -2,9 +2,21 @@
 
 ## Overview
 
-This is a **Mercado Bitcoin trading bot** implementing Shannon's Demon, a volatility-harvesting strategy. The bot maintains a 50/50 SOL/BRL allocation and rebalances when drift exceeds a threshold, profiting from mean reversion in volatile markets.
+This is a **multi-exchange, multi-instance trading bot** implementing Shannon's Demon, a volatility-harvesting strategy. Each instance maintains a 50/50 base-asset/BRL allocation for one symbol on one exchange, and rebalances when drift exceeds a threshold, profiting from mean reversion in volatile markets.
 
 The repo contains **only the CEX bot** — the Solana on-chain vault implementation has been removed entirely.
+
+**Exchanges:** Mercado Bitcoin and Binance, via a shared `ExchangeAdapter` interface (see `adapters/types.ts`).
+
+**Instances:** Each instance is one `(exchange, symbol)` pair driven by its own config file under `bot/configs/`, with its own SQLite database and JSON backups under `bot/data/<instance>/`. Instances run independently — there is no shared global config or shared database.
+
+| Instance | Exchange | Symbol | Config | Deployment |
+|---|---|---|---|---|
+| `hype-mb` | Mercado Bitcoin | HYPE-BRL | `bot/configs/hype-mb.yaml` | Local PM2 **and** GitHub Actions (rebalancer, scan, dashboard) |
+| `btc-binance` | Binance | BTC-BRL | `bot/configs/btc-binance.yaml` | Local PM2 only (`ecosystem.config.cjs`) |
+| *(template)* | Binance | SOL-BRL | `bot/configs/sol-binance.yaml.template` | Not yet instantiated — copy to `.yaml` and add to `ecosystem.config.cjs` to enable |
+
+Only `hype-mb` is mirrored to GitHub Actions; other instances are local-only and not visible to CI.
 
 ---
 
@@ -12,44 +24,78 @@ The repo contains **only the CEX bot** — the Solana on-chain vault implementat
 
 ```
 shannonfi/
-├── bot/                          # Complete CEX rebalancer
+├── bot/                          # Complete CEX rebalancer (multi-exchange, multi-instance)
 │   ├── src/
 │   │   ├── index.ts              # Entry point; orchestrates rebalance cycle
-│   │   ├── config.ts             # Zod schema; loads shannonfi.config.yaml
-│   │   ├── math.ts               # Pure functions (ratios, thresholds, trades)
-│   │   ├── constants.ts          # Strategy params, Mercado Bitcoin endpoints
+│   │   ├── config.ts             # Zod discriminated union (mercadobitcoin | binance); loads --config path
+│   │   ├── math.ts               # Pure functions (ratios, thresholds, trades) — asset-agnostic ("base")
+│   │   ├── constants.ts          # Strategy params, exchange endpoints
 │   │   ├── adapters/
 │   │   │   ├── types.ts          # ExchangeAdapter interface
-│   │   │   └── mercadobitcoin/   # OAuth2 client, order execution, polling
+│   │   │   ├── mercadobitcoin/   # OAuth2 client, order execution, polling
+│   │   │   └── binance/          # HMAC-signed client, order execution, polling
+│   │   ├── publishers/           # Everything that ships output somewhere external
+│   │   │   ├── telegram.ts       # Telegram Bot API client (messages, buttons)
+│   │   │   ├── daily-digest.ts   # Daily portfolio summary → Telegram (local PM2 only)
+│   │   │   ├── scan-reporter.ts  # Formats scanner results → Telegram
+│   │   │   └── dashboard.ts      # Renders retro HTML dashboard from SQLite (CLI + GitHub Pages)
+│   │   ├── scanner/              # Cross-pair volatility scanner (candidate-asset ranking)
+│   │   │   ├── scan.ts           # CLI entry (`npm run scan`)
+│   │   │   ├── scanner.ts        # Ranking logic
+│   │   │   └── types.ts
+│   │   ├── scripts/              # One-off / maintenance CLIs
+│   │   │   ├── setup-check.ts        # Validates exchange credentials
+│   │   │   ├── liquidate.ts          # Emergency: sell entire base position to BRL
+│   │   │   ├── reconcile-orders.ts   # Rebuild trade history from exchange order history (MB only)
+│   │   │   ├── recover-orders.ts     # Diagnostic: lists known trades for manual repair
+│   │   │   └── migrate-json-to-db.ts # One-time JSON→SQLite migration (legacy DBs)
 │   │   └── core/
+│   │       ├── keyring.ts        # Credential loading from GNOME Keyring
 │   │       ├── rebalancer.ts     # Decision logic & trade execution
 │   │       └── tracker/
 │   │           ├── db.ts         # SQLite singleton, schema migrations, getDb()
 │   │           ├── tax.ts        # Brazilian tax event tracking (Lei 9.250/1995)
-│   │           ├── cost-basis.ts # AVCO for capital gains
-│   │           └── history.ts    # Trade history & snapshot persistence
-│   ├── tests/                    # 65+ unit tests (vitest)
-│   ├── data/                     # Persistent local state
-│   │   ├── shannonfi.db          # Primary SQLite store (trades, snapshots, tax, cost basis)
-│   │   ├── shannonfi.db-shm      # WAL shared memory index (auto-managed by SQLite)
-│   │   ├── shannonfi.db-wal      # WAL journal (auto-managed by SQLite)
-│   │   ├── trade_history.json    # Rolling 15-day JSON backup of trades
-│   │   ├── cost_basis.json       # JSON backup of current AVCO state
-│   │   ├── tax_events.json       # Rolling 15-day JSON backup of tax events
-│   │   └── portfolio_snapshots.json  # Rolling 15-day JSON backup of daily snapshots
+│   │           ├── costbasis.ts  # AVCO for capital gains
+│   │           ├── history.ts    # Trade history & snapshot persistence
+│   │           ├── volatility.ts # Adaptive threshold (cached daily MAD)
+│   │           ├── pnl.ts        # Realized/unrealized P&L helpers
+│   │           ├── metrics.ts    # Track-record metrics (returns, drawdown, etc.)
+│   │           └── logger.ts
+│   ├── configs/                  # One YAML per instance — exchange + symbol fixed per file
+│   │   ├── hype-mb.yaml          # HYPE-BRL on Mercado Bitcoin (live: PM2 + GitHub Actions)
+│   │   ├── btc-binance.yaml      # BTC-BRL on Binance (live: PM2 only)
+│   │   └── sol-binance.yaml.template  # Scaffold for a third instance
+│   ├── tests/                    # vitest unit tests
+│   ├── data/                     # Persistent local state, gitignored
+│   │   └── <instance>/           # e.g. hype-mb/, btc-binance/ — one dir per instance, fully isolated
+│   │       ├── shannonfi.db          # Primary SQLite store (trades, snapshots, tax, cost basis)
+│   │       ├── shannonfi.db-shm/-wal # WAL companion files (auto-managed by SQLite)
+│   │       ├── trade_history.json    # Rolling 15-day JSON backup of trades
+│   │       ├── cost_basis.json       # JSON backup of current AVCO state
+│   │       ├── tax_events.json       # Rolling 15-day JSON backup of tax events
+│   │       ├── portfolio_snapshots.json  # Rolling 15-day JSON backup of daily snapshots
+│   │       └── dashboard.html        # Generated by publishers/dashboard.ts
 │   ├── README.md                 # Full bot setup & tuning guide
-│   ├── shannonfi.config.yaml.example
-│   ├── start.sh                  # Wrapper: loads creds from GNOME Keyring
+│   ├── ecosystem.config.cjs      # PM2: defines all local instances (hype-mb, btc-binance, ...)
+│   ├── start-instance.sh         # Wrapper: loads creds from GNOME Keyring, launches one instance
 │   ├── package.json
-│   └── .github/workflows/rebalancer.yml
+│   └── .github/workflows/ → see .github/workflows/ below (top-level, not under bot/)
 │
-├── backtest/                     # Historical analysis (Python)
-│   ├── shannon_backtest_real.py  # Real MB price data
+├── reporting/                    # Manual/offline: monthly Markdown + LaTeX/PDF report generator
+│   └── src/{monthly-report,latex-report,strategy-deck}.ts   # Run by hand; not wired into any workflow
+│
+├── backtest/                     # Historical analysis (Python), offline, manual
+│   ├── shannon_backtest_real.py  # Real exchange price data
 │   ├── shannon_backtest_coingecko.py
 │   ├── shannon_full_history.py
+│   ├── shannon_historical_analysis.py
+│   ├── shannon_since_inception.py
+│   ├── generate_charts.py        # PNG charts for reporting/strategy-deck
 │   ├── README.md                 # Backtest guide
 │   └── *.json, *.md              # Results & reports
 │
+├── .github/workflows/             # rebalancer.yml, mercado-bitcoin-scan.yml, dashboard.yml, monthly-db-backup.yml
+│                                   # All four currently target the hype-mb instance only
 ├── README.md                     # Quick start + deployment
 ├── CLAUDE.md                     # This file
 ├── package.json                  # Minimal (Node 20 TS setup)
@@ -61,6 +107,7 @@ Deleted (won't exist):
 - Anchor.toml, Cargo.toml, Cargo.lock
 - PRICING_GUIDE.md (Solana deployment costs)
 - tsconfig.json (root, orphaned)
+- switch-asset.sh, bot/shannonfi.config.yaml(.example) — removed; predated per-instance configs
 ```
 
 ---
@@ -70,13 +117,13 @@ Deleted (won't exist):
 **File:** `bot/src/index.ts`
 
 ```
-1. Load config (exchange: 'mercadobitcoin' only)
+1. Load config for one instance (--config path; exchange + symbol fixed by that file)
 2. Poll loop (every 15 min or pollIntervalSeconds)
-   a. Get SOL price from MB (1 API call, cached per cycle)
+   a. Get base-asset price from the exchange (1 API call, cached per cycle)
    b. Compute portfolio ratio
    c. Check rebalance threshold (cached daily volatility → adaptive)
-   d. Check cooldown (min time between rebalances)
-   e. Get balances (SOL value + BRL balance)
+   d. Check cooldown (min time since last rebalance, tracked in-memory on the RebalancerBot instance)
+   e. Get balances (base-asset value + BRL balance)
    f. Execute trade if needed
    g. Record trade + tax event
    h. Sleep for next cycle
@@ -90,19 +137,18 @@ Deleted (won't exist):
 ## Key Modules
 
 ### `config.ts`
-- **Zod schema** validates `shannonfi.config.yaml`
-- **Single exchange:** `z.literal('mercadobitcoin')`
-- **Fields:** MB client ID/secret, rebalance threshold, slippage max, dry-run flag, tax settings
-- **Loads from:** `--config` arg or default `./shannonfi.config.yaml`
+- **Zod discriminated union** on `exchange`: `mercadobitcoin` | `binance` — each variant has its own credential fields
+- **Fields:** exchange credentials, rebalance threshold, slippage max, dry-run flag, tax settings, `dbPath` (per-instance)
+- **Loads from:** `--config <path>` (required in practice — points at one file under `bot/configs/`)
 
 ### `math.ts`
-Pure functions (no side effects):
-- `computeSolRatioBps()` — SOL allocation as basis points
+Pure functions (no side effects), asset-agnostic ("base" = whatever symbol the instance trades):
+- `computeBaseRatioBps()` — base-asset allocation as basis points
 - `computeDeviationBps()` — distance from 50% target
 - `shouldRebalance()` — drift > threshold?
-- `computeRebalanceTrade()` — BRL amount & direction (BUY_SOL or SELL_SOL)
-- `brlToSol()` — convert BRL to SOL quantity, floored at 8 decimals
-- `computeAdaptiveThresholdBps()` — MAD × multiplier, clamped to [50, 500] BPS
+- `computeRebalanceTrade()` — BRL amount & direction (`BUY_BASE` or `SELL_BASE`)
+- `brlToBase()` — convert BRL to base-asset quantity, floored at 8 decimals
+- `computeMeanAbsoluteDailyReturn()` / `computeAdaptiveThresholdBps()` — MAD × multiplier, clamped to [50, 500] BPS
 - `isSlippageAcceptable()` — fill price within tolerance?
 
 ### `ExchangeAdapter` Interface
@@ -110,14 +156,16 @@ Pure functions (no side effects):
 
 ```typescript
 interface ExchangeAdapter {
-  getPrice(): Promise<number>;  // SOL/BRL
+  getPrice(): Promise<number>;  // base-asset/BRL
   getPortfolio(knownPrice?: number): Promise<Portfolio>;
   executeTrade(trade: TradeRequest): Promise<ExecutedTrade>;
   getCandles(limit: number): Promise<Candle[]>;
 }
 ```
 
-Only implementation: `adapters/mercadobitcoin/adapter.ts`
+Two implementations, selected by `config.exchange` in `bot/src/index.ts`:
+- `adapters/mercadobitcoin/adapter.ts`
+- `adapters/binance/adapter.ts`
 
 ### Mercado Bitcoin Adapter
 **Files:**
@@ -128,10 +176,28 @@ Only implementation: `adapters/mercadobitcoin/adapter.ts`
 **OAuth Flow:** Client credentials → access token (cached 59 min) → requests
 
 **Order Execution:**
-1. Place market order (SOL→BRL or BRL→SOL)
+1. Place market order (base→BRL or BRL→base)
 2. Poll order status every 3s, max 10 attempts (30s total)
 3. Return executed trade with fill price & fee
 4. Per-attempt try-catch: transient 400s don't abort, only final retry throws
+
+### Binance Adapter
+**Files:**
+- `adapter.ts` — Main interface impl, dry-run logic
+- `client.ts` — HMAC-SHA256 signed request client
+- `endpoints.ts` — REST API calls (price, balances, place/get orders)
+
+Same `ExchangeAdapter` contract as Mercado Bitcoin; the rebalancer, tax tracker, and cost-basis tracker are exchange-agnostic and work unmodified against either adapter. Note: `scripts/reconcile-orders.ts` is currently Mercado Bitcoin–only (hard-codes `MbClient`/`MbEndpoints`) — there is no Binance equivalent yet.
+
+### Publishers (`bot/src/publishers/`)
+Everything that ships output to somewhere external to the bot, mirroring the `adapters/` pattern (one concern per file, no forced shared interface since the four publishers don't share a natural call signature):
+- `telegram.ts` — Telegram Bot API client (messages, interactive buttons)
+- `daily-digest.ts` — Builds and sends a daily portfolio summary via `telegram.ts`; runs on the rebalancer's poll loop, so it only fires in the **local PM2 process** (GitHub Actions runs `--once` and exits, never reaching the scheduled-digest check)
+- `scan-reporter.ts` — Formats scanner output and sends it via `telegram.ts`
+- `dashboard.ts` — Reads the SQLite DB, renders the retro HTML dashboard; dual-purpose as a library and CLI (`npm run dashboard -- --config <path>`), invoked by `dashboard.yml` to publish to GitHub Pages
+
+### Scanner (`bot/src/scanner/`)
+Cross-pair volatility scanner — ranks candidate symbols on an exchange by recent volatility to help pick what to trade next. `scan.ts` is the CLI entry (`npm run scan`); used by `mercado-bitcoin-scan.yml` (daily) and locally via cron scripts (`bot/scan-mb-daily.sh`, `bot/scan-binance-daily.sh`).
 
 ### Tax Tracker
 **File:** `core/tracker/tax.ts`
@@ -207,9 +273,9 @@ Every rebalance (real or dry-run) is a single row with 31 columns capturing the 
 | `exchange_order_id` | TEXT | MB's order ID (null until filled) |
 | `exchange` | TEXT | Default `'mercadobitcoin'` |
 | `timestamp` | TEXT | ISO 8601 execution time |
-| `direction` | TEXT | `'BUY_SOL'` or `'SELL_SOL'` |
+| `direction` | TEXT | `'BUY_BASE'` or `'SELL_BASE'` |
 | `brl_amount_target` | REAL | BRL amount computed by `computeRebalanceTrade()` before order |
-| `sol_amount_filled` | REAL | Actual SOL quantity exchanged |
+| `base_amount_filled` | REAL | Actual SOL quantity exchanged |
 | `brl_amount_filled` | REAL | Actual BRL quantity exchanged |
 | `fill_price` | REAL | Execution price (BRL/SOL) |
 | `fee_brl` | REAL | MB taker fee |
@@ -217,20 +283,20 @@ Every rebalance (real or dry-run) is a single row with 31 columns capturing the 
 | `dry_run` | INTEGER | Boolean `0`/`1` |
 | `realized_gain_brl` | REAL | SELL only: gross proceeds − AVCO cost basis |
 | `trade_date_brt` | TEXT | `YYYY-MM-DD` in Brasília timezone |
-| `before_sol_balance` | REAL | SOL holdings before trade |
+| `before_base_balance` | REAL | SOL holdings before trade |
 | `before_brl_balance` | REAL | BRL cash before trade |
-| `before_sol_price` | REAL | SOL/BRL spot price before trade |
-| `before_sol_value` | REAL | `before_sol_balance × before_sol_price` |
-| `before_total_value` | REAL | `before_sol_value + before_brl_balance` |
-| `before_sol_ratio_bps` | INTEGER | SOL weight in BPS (0–10,000) before trade |
-| `before_deviation_bps` | INTEGER | `|before_sol_ratio_bps − 5,000|` |
+| `before_base_price` | REAL | SOL/BRL spot price before trade |
+| `before_base_value` | REAL | `before_base_balance × before_base_price` |
+| `before_total_value` | REAL | `before_base_value + before_brl_balance` |
+| `before_base_ratio_bps` | INTEGER | SOL weight in BPS (0–10,000) before trade |
+| `before_deviation_bps` | INTEGER | `|before_base_ratio_bps − 5,000|` |
 | `before_timestamp` | TEXT | ISO 8601 time of before-snapshot |
-| `after_sol_balance` | REAL | SOL holdings after fill (null if pending/failed) |
+| `after_base_balance` | REAL | SOL holdings after fill (null if pending/failed) |
 | `after_brl_balance` | REAL | BRL cash after fill |
-| `after_sol_price` | REAL | SOL/BRL price at fill confirmation |
-| `after_sol_value` | REAL | `after_sol_balance × after_sol_price` |
-| `after_total_value` | REAL | `after_sol_value + after_brl_balance` |
-| `after_sol_ratio_bps` | INTEGER | SOL weight post-trade |
+| `after_base_price` | REAL | SOL/BRL price at fill confirmation |
+| `after_base_value` | REAL | `after_base_balance × after_base_price` |
+| `after_total_value` | REAL | `after_base_value + after_brl_balance` |
+| `after_base_ratio_bps` | INTEGER | SOL weight post-trade |
 | `after_deviation_bps` | INTEGER | Residual deviation post-trade |
 | `after_timestamp` | TEXT | ISO 8601 fill confirmation time |
 
@@ -247,10 +313,10 @@ One row per calendar day (BRT). The primary key is `date_brt`, so `INSERT OR REP
 | `date_brt` | TEXT PK | `YYYY-MM-DD` in Brasília timezone |
 | `timestamp` | TEXT | ISO 8601 snapshot time |
 | `total_value_brl` | REAL | SOL value + BRL balance |
-| `sol_balance` | REAL | SOL holdings |
+| `base_balance` | REAL | SOL holdings |
 | `brl_balance` | REAL | BRL balance |
-| `sol_price` | REAL | SOL/BRL price |
-| `sol_ratio_bps` | INTEGER | SOL weight in BPS |
+| `base_price` | REAL | Base-asset/BRL price |
+| `base_ratio_bps` | INTEGER | SOL weight in BPS |
 | `effective_threshold_bps` | INTEGER | Adaptive or static threshold active that day |
 | `rebalanced_today` | INTEGER | `1` if at least one trade executed today |
 | `exchange` | TEXT | Default `'mercadobitcoin'` |
@@ -268,7 +334,7 @@ One row per trade. Foreign key links back to `trades(id)`. Tracks Brazilian capi
 | `trade_id` | TEXT PK → `trades(id)` | One-to-one with trade record |
 | `trade_date_brt` | TEXT | `YYYY-MM-DD` |
 | `month_brt` | TEXT | `YYYY-MM` — used for monthly aggregation queries |
-| `direction` | TEXT | `'BUY_SOL'` or `'SELL_SOL'` |
+| `direction` | TEXT | `'BUY_BASE'` or `'SELL_BASE'` |
 | `traded_volume_brl` | REAL | Gross SELL proceeds in BRL (0 for BUY) |
 | `gross_proceeds_brl` | REAL | Same as `traded_volume_brl` |
 | `cost_basis_brl` | REAL | AVCO cost of SOL sold (0 for BUY) |
@@ -320,38 +386,37 @@ Tests pass `:memory:` as `dbPath`. `closeDb()` / `resetDb()` drop the singleton 
 
 ## Configuration
 
-**File:** `bot/shannonfi.config.yaml`
+**One file per instance**, under `bot/configs/` (e.g. `hype-mb.yaml`). No global/default config — `--config <path>` is required. Credentials are **not** stored in the YAML; they're loaded at runtime from GNOME Keyring (local) or environment variables (GitHub Actions) via `core/keyring.ts`.
 
 ```yaml
 exchange: mercadobitcoin
-
-mercadobitcoin:
-  clientId: "PLACEHOLDER"       # from GNOME Keyring
-  clientSecret: "PLACEHOLDER"   # from GNOME Keyring
+symbol: HYPE-BRL
 
 rebalanceThresholdBps: 100      # 1% drift default
 maxSlippageBps: 100             # 1% fill tolerance
-minPortfolioValueBrl: 200       # Skip if < R$200 balance
-minTradeSizeBrl: 20             # Skip tiny trades
+minPortfolioValueBrl: 10        # Skip if below this BRL balance
+minTradeSizeBrl: 1              # Skip tiny trades
 
 useAdaptiveThreshold: true      # Use volatility-based threshold
-thresholdVolatilityMultiplier: 1.5
+thresholdVolatilityMultiplier: 1.25
 volatilityWindowDays: 30
 
-neverExceedExemptionLimit: false  # Enforce Lei 9.250 R$35k monthly limit
+enableDayTradeSafeguard: true     # Block same-day opposite-direction trades (BRT)
+neverExceedExemptionLimit: true   # Enforce Lei 9.250 R$35k monthly limit (mercadobitcoin only)
 dryRun: false                     # Simulation mode (no real orders)
 logLevel: info
 
-tradeHistoryPath: ./data/trade_history.json
-costBasisPath: ./data/cost_basis.json
-taxEventsPath: ./data/tax_events.json
-portfolioSnapshotsPath: ./data/portfolio_snapshots.json
+dbPath: ./data/hype-mb/shannonfi.db   # Per-instance SQLite path; JSON backups live alongside it
+jsonRetentionDays: 15
+
+telegram:
+  chatId: "..."                  # Optional; bot token comes from keyring/env, not config
 ```
 
 **Via Environment:**
-- `DRY_RUN=true node dist/index.js --once` — test without orders
-- `--config <path>` — custom config file
-- `--once` — run single cycle then exit (vs. continuous polling)
+- `DRY_RUN=true node dist/index.js --config <path> --once` — test without orders
+- `--config <path>` — required; selects which instance to run
+- `--once` — run single cycle then exit (used by GitHub Actions; local PM2 runs the continuous poll loop)
 
 ---
 
@@ -359,24 +424,24 @@ portfolioSnapshotsPath: ./data/portfolio_snapshots.json
 
 ### Local (PM2)
 
-Uses **GNOME Keyring** (`secret-tool`):
+Uses **GNOME Keyring** (`secret-tool`), loaded directly by `core/keyring.ts` — never written to disk or passed through config files:
 ```bash
-secret-tool store service mercadobitcoin key clientId <ID>
-secret-tool store service mercadobitcoin key clientSecret <SECRET>
+secret-tool store --label="..." service mercadobitcoin key clientId
+secret-tool store --label="..." service mercadobitcoin key clientSecret
+secret-tool store --label="..." service binance key apiKey
+secret-tool store --label="..." service binance key apiSecret
+secret-tool store --label="..." service telegram key botToken
 ```
 
-**`start.sh`:** Reads keyring, injects into config YAML, passes to bot.
-
-**Why not directly in config?** Never commit secrets. Keyring is encrypted, survives restarts, and is WSL2/Linux standard.
+`bot/start-instance.sh <instance-name> [args...]` launches one PM2-managed instance; `ecosystem.config.cjs` (repo root) defines all local instances.
 
 ### GitHub Actions (Scheduled)
 
 Secrets stored in GitHub repo settings:
-- `MB_CLIENT_ID`
-- `MB_CLIENT_SECRET`
-- `SLACK_WEBHOOK_URL` (optional)
+- `MB_CLIENT_ID`, `MB_CLIENT_SECRET`
+- `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` (optional)
 
-Workflow injects them into `shannonfi.config.yaml` at runtime.
+`core/keyring.ts`'s `getTelegramCredentials()` checks `process.env.TELEGRAM_BOT_TOKEN` first, falling back to keyring — so the same code path works in both environments. Each workflow step passes the relevant secrets as env vars (see `.github/workflows/rebalancer.yml`, `mercado-bitcoin-scan.yml`).
 
 ---
 
@@ -397,7 +462,7 @@ Workflow injects them into `shannonfi.config.yaml` at runtime.
 cd bot
 npm test                    # vitest
 npm run build               # tsc
-npm run setup-check         # validate MB credentials
+npm run setup-check         # validate exchange credentials (mercadobitcoin or binance)
 ```
 
 ---
@@ -410,7 +475,7 @@ Define the portfolio at any moment after the last rebalance:
 
 | Symbol | Meaning |
 |--------|---------|
-| `V_s` | SOL value in BRL (`sol_balance × sol_price`) |
+| `V_s` | Base-asset value in BRL (`base_balance × base_price`); shown here as SOL for illustration |
 | `V_b` | BRL cash balance |
 | `V = V_s + V_b` | Total portfolio value |
 | `w = V_s / V` | SOL weight (fraction, 0–1) |
@@ -420,10 +485,10 @@ Define the portfolio at any moment after the last rebalance:
 
 **Rebalance trigger fires when:** `δ > τ`
 
-In integer basis-point arithmetic (as implemented in `math.ts`):
+In integer basis-point arithmetic (as implemented in `math.ts`'s `computeBaseRatioBps()` / `computeDeviationBps()` / `shouldRebalance()`):
 ```
-solRatioBps  = round(V_s / V × 10,000)
-deviationBps = |solRatioBps − 5,000|
+baseRatioBps = round(V_s / V × 10,000)
+deviationBps = |baseRatioBps − 5,000|
 trigger      ← deviationBps > thresholdBps
 ```
 
@@ -497,8 +562,8 @@ When the trigger fires, `computeRebalanceTrade()` solves for the BRL amount that
 ```
 target = V / 2
 
-SELL_SOL (w > 0.5):  brlAmount = V_s − target = V × (w − 0.5) = V × δ
-BUY_SOL  (w < 0.5):  brlAmount = target − V_s = V × (0.5 − w) = V × δ
+SELL_BASE (w > 0.5):  brlAmount = V_s − target = V × (w − 0.5) = V × δ
+BUY_BASE  (w < 0.5):  brlAmount = target − V_s = V × (0.5 − w) = V × δ
 ```
 
 Both cases: **trade size = total portfolio value × drift from target (as a fraction).**
@@ -507,7 +572,7 @@ Both cases: **trade size = total portfolio value × drift from target (as a frac
 ```
 V = R$10,000   V_s = R$5,100   V_b = R$4,900
 δ = 0.51 − 0.50 = 0.01
-brlAmount = R$10,000 × 0.01 = R$100    direction = SELL_SOL
+brlAmount = R$10,000 × 0.01 = R$100    direction = SELL_BASE
 ```
 
 After execution, `V_s ≈ target = R$5,000`, restoring exact 50/50.
@@ -621,16 +686,23 @@ If `|estWeight − 0.5| ≤ τ`, the balance fetch is skipped for this cycle. Th
 - Data files stay local (`.gitignore`d)
 - Manual restart on failure (or PM2 auto-restart)
 
-### 2. GitHub Actions
-- Runs every 15 minutes on schedule
-- Credentials from GitHub Secrets
-- Caches data files between runs
-- Slack notifications on failure
+### 2. GitHub Actions (hype-mb instance only)
+- `rebalancer.yml` — hourly (`0 * * * *`), single cycle (`--once`) then exits
+- `mercado-bitcoin-scan.yml` — daily at 20:00 UTC, runs the volatility scanner
+- `dashboard.yml` — after each rebalancer run + every 6h fallback; deploys to GitHub Pages
+- `monthly-db-backup.yml` — 1st of each month; archives the SQLite DB as a GitHub Release
+- Credentials from GitHub Secrets; the SQLite DB persists between runs as a GitHub Actions artifact (`hype-mb-database`), downloaded/re-uploaded each run — see "Database Architecture" → artifact-sharing caveats in git history if debugging data loss
+- Telegram notifications on failure (`appleboy/telegram-action`)
+- Other local instances (`btc-binance`, ...) are **not** mirrored to GitHub Actions
 
 ### 3. Backtest (Python, offline)
-- `shannon_backtest_real.py` — uses public MB candle API
+- `shannon_backtest_real.py` — uses public exchange candle API
 - No OAuth needed, no live trading
 - Validates strategy parameters before deploying
+
+### 4. Reporting (manual, offline)
+- `reporting/` — generates monthly Markdown + LaTeX/PDF performance reports against an instance's SQLite DB
+- Not wired into any workflow; run by hand (`scripts/compile-report-pdf.sh` helps with the PDF step)
 
 ---
 
@@ -642,7 +714,7 @@ If `|estWeight − 0.5| ≤ τ`, the balance fetch is skipped for this cycle. Th
 
 3. **Tax Threshold Boundary:** `neverExceedExemptionLimit: true` will skip a SELL if it would push monthly total over R$35,000. This may leave you with 51% SOL allocation; next cycle will rebalance when threshold permits.
 
-4. **API Rate Limit:** MB allows 60 req/60s per token. Bot uses ~1 req/poll cycle; 15-min schedule = 4 req/h, well within limits.
+4. **API Rate Limit:** MB allows 60 req/60s per token. Bot uses ~1 req/poll cycle; the GitHub Actions hourly schedule and local 5-min poll interval are both well within limits.
 
 5. **Slippage on Market Orders:** Real market orders fill at slightly worse prices than displayed price. `maxSlippageBps` is checked post-fill; if exceeded, trade is recorded but flagged as risky in logs.
 
@@ -656,7 +728,7 @@ If `|estWeight − 0.5| ≤ τ`, the balance fetch is skipped for this cycle. Th
 | 400 Bad Request | Order status poll error? Logs show attempt count; usually transient |
 | Threshold not triggering | Is volatility very low? Check `volatilityWindowDays` and `thresholdVolatilityMultiplier` |
 | Trade recorded as pending | Bot crashed during polling? Run `recover-orders.ts` to inspect |
-| Tax events empty | No SELL trades yet? Tax events only on SELL_SOL direction |
+| Tax events empty | No SELL trades yet? Tax events only on SELL_BASE direction |
 | GitHub Actions timeout | Single cycle > 4 min? Increase `timeout-minutes` in workflow |
 
 ---
@@ -680,4 +752,4 @@ If `|estWeight − 0.5| ≤ τ`, the balance fetch is skipped for this cycle. Th
 
 ---
 
-**Last Updated:** 2026-05-27
+**Last Updated:** 2026-06-20

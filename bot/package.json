@@ -1,7 +1,7 @@
 {
   "name": "@shannonfi/bot",
   "version": "1.0.0",
-  "description": "Shannon's Demon rebalancing bot for Mercado Bitcoin",
+  "description": "Shannon's Demon rebalancing bot (Mercado Bitcoin, Binance)",
   "private": true,
   "main": "dist/index.js",
   "scripts": {
@@ -22,8 +22,8 @@
     "migrate": "ts-node src/scripts/migrate-json-to-db.ts",
     "reconcile": "ts-node src/scripts/reconcile-orders.ts",
     "reconcile:built": "node dist/scripts/reconcile-orders.js",
-    "dashboard": "ts-node src/scripts/generate-dashboard.ts",
-    "dashboard:built": "node dist/scripts/generate-dashboard.js"
+    "dashboard": "ts-node src/publishers/dashboard.ts",
+    "dashboard:built": "node dist/publishers/dashboard.js"
   },
   "dependencies": {
     "axios": "^1.16.1",

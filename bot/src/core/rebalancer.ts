@@ -9,8 +9,8 @@ import { logger } from './tracker/logger';
 import { shouldRebalance, computeRebalanceTrade, computeBaseRatioBps } from '../math';
 import { Config } from '../config';
 import { BR_EFFECTIVE_LIMIT_BRL } from '../constants';
-import { TelegramService } from './notifier/telegram';
-import { DailyDigestService } from './notifier/daily-digest';
+import { TelegramService } from '../publishers/telegram';
+import { DailyDigestService } from '../publishers/daily-digest';
 import { getDb } from './tracker/db';
 
 // Small delay between sequential API calls during a rebalance execution,

@@ -67,7 +67,7 @@ jobs:
 
       - name: Generate dashboard
         working-directory: ./bot
-        run: node dist/scripts/generate-dashboard.js --config configs/hype-mb.yaml
+        run: node dist/publishers/dashboard.js --config configs/hype-mb.yaml
 
       - name: Prepare Pages artifact
         run: |

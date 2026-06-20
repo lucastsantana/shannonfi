@@ -29,8 +29,12 @@ export class CostBasisService {
     this.db = getDb(dbPath);
     this.asset = asset;
     this.retentionDays = retentionDays;
-    // Derive data directory from dbPath to ensure isolation per instance
-    const resolvedDbPath = dbPath ?? path.resolve(__dirname, '../../../data/shannonfi.db');
+    // Derive data directory from dbPath to ensure isolation per instance.
+    // In-memory paths (":memory:" or ":memory:?...") have no real directory —
+    // path.dirname() would resolve them to the process cwd, spilling JSON
+    // backups into the repo working tree during tests.
+    const isInMemory = !dbPath || dbPath.startsWith(':memory:');
+    const resolvedDbPath = isInMemory ? path.resolve(__dirname, '../../../data/shannonfi.db') : dbPath;
     this.dataDir = path.dirname(resolvedDbPath);
     // Ensure a row exists for this asset on first use
     this.db.prepare('INSERT OR IGNORE INTO cost_basis (asset) VALUES (?)').run(this.asset);

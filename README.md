@@ -32,10 +32,6 @@ exchange: mercadobitcoin
 symbol: HYPE-BRL
 dbPath: ./data/hype-mb/shannonfi.db
 
-mercadobitcoin:
-  clientId: ""        # loaded from keyring at runtime
-  clientSecret: ""
-
 rebalanceThresholdBps: 100
 maxSlippageBps: 100
 minPortfolioValueBrl: 200
@@ -56,11 +52,12 @@ telegram:
 ### 3. Start with PM2
 
 ```bash
-cd bot
-npm install && npm run build
-pm2 start start.sh --name hype-mb
+npm install && cd bot && npm install && npm run build && cd ..
+pm2 start ecosystem.config.cjs --only hype-mb
 pm2 save
 ```
+
+(`ecosystem.config.cjs`, at the repo root, defines every local instance — `hype-mb`, `btc-binance`, etc. — each running `bot/start-instance.sh <name>`, which loads that instance's credentials from GNOME Keyring.)
 
 ### 4. Useful PM2 commands
 
@@ -75,11 +72,13 @@ pm2 status                # all instances
 
 ## GitHub Actions Setup
 
-Two workflows run in the cloud:
+Four workflows run in the cloud, all against the `hype-mb` instance only (other local instances aren't mirrored to GitHub Actions):
 
 | Workflow | Schedule | Purpose |
 |---|---|---|
+| `rebalancer.yml` | Hourly | Runs a single rebalance cycle (`--once`) |
 | `mercado-bitcoin-scan.yml` | Daily 20:00 UTC | Scans all MB pairs, ranks by volatility score, sends results to Telegram |
+| `dashboard.yml` | After each rebalancer run + every 6h | Regenerates and deploys the GitHub Pages dashboard |
 | `monthly-db-backup.yml` | 1st of month 00:00 UTC | Creates a GitHub Release with a DB snapshot |
 
 ### Required secrets

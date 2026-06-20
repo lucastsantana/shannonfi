@@ -1,8 +1,8 @@
 import axios from 'axios';
-import { logger } from '../tracker/logger';
-import { TradeRecord } from '../../adapters/types';
-import { TelegramConfig } from '../../config';
-import { getTelegramCredentials } from '../keyring';
+import { logger } from '../core/tracker/logger';
+import { TradeRecord } from '../adapters/types';
+import { TelegramConfig } from '../config';
+import { getTelegramCredentials } from '../core/keyring';
 
 interface PortfolioState {
   baseBalance: number;

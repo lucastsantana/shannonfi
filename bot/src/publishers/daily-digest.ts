@@ -1,5 +1,5 @@
-import { logger } from '../tracker/logger';
-import { TradeHistoryService } from '../tracker/history';
+import { logger } from '../core/tracker/logger';
+import { TradeHistoryService } from '../core/tracker/history';
 import { TelegramService } from './telegram';
 
 interface DailyDigestData {

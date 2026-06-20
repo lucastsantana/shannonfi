@@ -1,6 +1,6 @@
 import Database from 'better-sqlite3';
-import { TelegramService } from '../core/notifier/telegram';
-import { AssetCandidate, ScanResult } from './types';
+import { TelegramService } from './telegram';
+import { AssetCandidate, ScanResult } from '../scanner/types';
 import { logger } from '../core/tracker/logger';
 
 export class ScanReporter {

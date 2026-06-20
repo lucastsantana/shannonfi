@@ -18,9 +18,9 @@ import { loadConfig } from '../config';
 import { getDb, getDbConfig, setDbConfig } from '../core/tracker/db';
 import { MercadoBitcoinAdapter } from '../adapters/mercadobitcoin/adapter';
 import { BinanceAdapter } from '../adapters/binance/adapter';
-import { TelegramService } from '../core/notifier/telegram';
+import { TelegramService } from '../publishers/telegram';
 import { AssetScanner } from './scanner';
-import { ScanReporter } from './reporter';
+import { ScanReporter } from '../publishers/scan-reporter';
 import { ScanOptions } from './types';
 import { logger } from '../core/tracker/logger';
 

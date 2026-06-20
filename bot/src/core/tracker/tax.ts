@@ -50,8 +50,12 @@ export class TaxService {
   constructor(dbPath?: string, retentionDays: number = 15) {
     this.db = getDb(dbPath);
     this.retentionDays = retentionDays;
-    // Derive data directory from dbPath to ensure isolation per instance
-    const resolvedDbPath = dbPath ?? path.resolve(__dirname, '../../../data/shannonfi.db');
+    // Derive data directory from dbPath to ensure isolation per instance.
+    // In-memory paths (":memory:" or ":memory:?...") have no real directory —
+    // path.dirname() would resolve them to the process cwd, spilling JSON
+    // backups into the repo working tree during tests.
+    const isInMemory = !dbPath || dbPath.startsWith(':memory:');
+    const resolvedDbPath = isInMemory ? path.resolve(__dirname, '../../../data/shannonfi.db') : dbPath;
     this.dataDir = path.dirname(resolvedDbPath);
 
     // Warn if BR_HOLIDAYS coverage has expired

@@ -5,7 +5,7 @@
  * retro-style HTML portfolio dashboard with a live strategy chart and
  * client-side 30-second price updates via MB's public tickers API.
  *
- * Usage: ts-node src/scripts/generate-dashboard.ts --config configs/hype-mb.yaml
+ * Usage: ts-node src/publishers/dashboard.ts --config configs/hype-mb.yaml
  * Output: <dbDir>/dashboard.html
  */
 
@@ -528,6 +528,108 @@ function generateHtml(d: DashboardData): string {
       color: var(--d);
     }
 
+    /* ── Tabs ───────────────────────────────────────── */
+    .tabs {
+      display: flex;
+      gap: 2px;
+      margin-bottom: 16px;
+      border: 1px solid var(--b);
+      background: var(--p);
+    }
+    .tab-btn {
+      flex: 1;
+      font-family: var(--ft);
+      font-size: 1.25em;
+      letter-spacing: 2px;
+      color: var(--d);
+      background: transparent;
+      border: none;
+      padding: 10px 8px;
+      cursor: pointer;
+      text-align: center;
+      transition: color .15s, background .15s;
+    }
+    .tab-btn:hover { color: var(--c); background: rgba(0,96,255,.06); }
+    .tab-btn[aria-selected="true"] {
+      color: var(--m);
+      text-shadow: 0 0 6px var(--m);
+      background: rgba(255,0,255,.06);
+      box-shadow: inset 0 -3px 0 var(--m);
+    }
+    .tab-panel[hidden] { display: none; }
+
+    /* ── Footnotes ──────────────────────────────────── */
+    .footnotes {
+      border: 1px solid var(--b);
+      background: var(--p);
+      padding: 14px 16px;
+      margin-top: 4px;
+      font-size: .78em;
+      color: var(--d);
+    }
+    .footnotes summary {
+      cursor: pointer;
+      color: var(--c);
+      letter-spacing: 1px;
+      font-size: 1em;
+      outline: none;
+    }
+    .footnotes ol { margin: 10px 0 0 0; padding-left: 1.6em; }
+    .footnotes li { margin-bottom: 6px; line-height: 1.5; }
+    .footnotes li::marker { color: var(--c); }
+    .fn-ref { font-size: .75em; vertical-align: super; margin-left: 1px; }
+    .fn-ref a { color: var(--c); }
+    .fn-back { font-size: .85em; margin-left: 4px; }
+
+    /* ── Strategy tab prose ─────────────────────────── */
+    .prose { border: 1px solid var(--b); background: var(--p); padding: 18px 20px; margin-bottom: 16px; }
+    .prose h2 {
+      font-family: var(--ft); font-size: 1.5em; letter-spacing: 2px; color: var(--m);
+      text-shadow: 0 0 6px var(--m); margin-bottom: 10px;
+    }
+    .prose h2:not(:first-child) { margin-top: 22px; }
+    .prose h3 { font-family: var(--ft); font-size: 1.15em; letter-spacing: 1px; color: var(--c); margin: 14px 0 6px; }
+    .prose p  { margin-bottom: 10px; color: var(--g); }
+    .prose ul, .prose ol { margin: 8px 0 12px 1.4em; color: var(--g); }
+    .prose li { margin-bottom: 6px; line-height: 1.55; }
+    .prose code { color: var(--y); font-family: var(--fn); }
+    .prose strong { color: var(--c); }
+    .prose .formula {
+      display: block; margin: 10px 0; padding: 10px 14px;
+      border-left: 2px solid var(--m); background: rgba(255,0,255,.04);
+      font-family: var(--fn); color: var(--y); overflow-x: auto; white-space: pre;
+    }
+
+    /* ── Disclaimer & legal ─────────────────────────── */
+    .disclaimer {
+      border: 1px solid var(--r);
+      background: rgba(255,69,0,.05);
+      padding: 14px 16px;
+      margin-bottom: 16px;
+      color: var(--g);
+    }
+    .disclaimer h3 { color: var(--r); font-family: var(--ft); letter-spacing: 1px; margin-bottom: 8px; font-size: 1.15em; }
+    .disclaimer p { margin-bottom: 8px; font-size: .85em; line-height: 1.55; }
+    .disclaimer p:last-child { margin-bottom: 0; }
+
+    .legal-bar {
+      text-align: center;
+      color: var(--d);
+      font-size: .68em;
+      line-height: 1.6;
+      margin-top: 14px;
+      padding: 12px 10px;
+      border-top: 1px solid var(--B);
+    }
+    .legal-bar strong { color: var(--r); }
+    .copyright {
+      text-align: center;
+      color: var(--d);
+      font-size: .7em;
+      margin-top: 8px;
+      padding-bottom: 4px;
+    }
+
     @media (max-width: 900px) {
       .panels { grid-template-columns: 1fr; }
       .scores { grid-template-columns: repeat(3, 1fr); }
@@ -556,6 +658,12 @@ function generateHtml(d: DashboardData): string {
       .chart-wrap { height: 230px; padding: 14px 8px 10px; }
       table { min-width: 480px; }
       .tbl thead th, .tbl td { padding: 5px 6px; font-size: .68em; }
+      .tab-btn { font-size: .95em; letter-spacing: 1px; padding: 8px 4px; }
+      .prose { padding: 12px 14px; }
+      .prose h2 { font-size: 1.2em; }
+      .prose h3 { font-size: 1em; }
+      .prose .formula { font-size: .85em; }
+      .disclaimer { padding: 10px 12px; }
     }
   </style>
 </head>
@@ -575,22 +683,30 @@ function generateHtml(d: DashboardData): string {
   </div>
 </header>
 
+<!-- ═══  TABS  ═══════════════════════════════════════════════════════════════ -->
+<div class="tabs" role="tablist" aria-label="Dashboard sections">
+  <button type="button" id="tab-dashboard" class="tab-btn" role="tab" aria-selected="true" aria-controls="panel-dashboard">&#128202; DASHBOARD</button>
+  <button type="button" id="tab-strategy" class="tab-btn" role="tab" aria-selected="false" aria-controls="panel-strategy">&#128214; STRATEGY &amp; DISCLAIMERS</button>
+</div>
+
+<div id="panel-dashboard" class="tab-panel" role="tabpanel" aria-labelledby="tab-dashboard">
+
 <!-- ═══  SCORE BAR  ══════════════════════════════════════════════════════════ -->
 <div class="scores">
   <div class="score">
-    <div class="score-lbl">&#128176; PORTFOLIO</div>
+    <div class="score-lbl">&#128176; PORTFOLIO<sup class="fn-ref">[<a href="#fn1" id="fnref1">1</a>]</sup></div>
     <div class="score-val cyan" data-live="total">R$${liveTotal.toFixed(2)}</div>
   </div>
   <div class="score">
-    <div class="score-lbl">&#128200; NET GAIN</div>
+    <div class="score-lbl">&#128200; NET GAIN<sup class="fn-ref">[<a href="#fn2" id="fnref2">2</a>]</sup></div>
     <div class="score-val ${gainCls(netGain)}">${fmtBrl(netGain, true)}</div>
   </div>
   <div class="score">
-    <div class="score-lbl">&#127919; RETURN</div>
+    <div class="score-lbl">&#127919; RETURN<sup class="fn-ref">[<a href="#fn3" id="fnref3">3</a>]</sup></div>
     <div class="score-val ${retCls}" data-live="return" data-base-class="score-val">${fmtPct(liveReturn)}</div>
   </div>
   <div class="score">
-    <div class="score-lbl">&#9889; REBALANCES</div>
+    <div class="score-lbl">&#9889; REBALANCES<sup class="fn-ref">[<a href="#fn4" id="fnref4">4</a>]</sup></div>
     <div class="score-val">${tradeCount}</div>
   </div>
   <div class="score">
@@ -605,28 +721,28 @@ function generateHtml(d: DashboardData): string {
     <div class="panel-hdr">&#128176; PORTFOLIO STATUS</div>
     <div class="sr"><span class="sl">${d.baseAsset} BALANCE</span><span class="sv">${totalBase.toFixed(6)} ${d.baseAsset}</span></div>
     <div class="sr"><span class="sl">BRL BALANCE</span><span class="sv">${fmtBrl(liveBrl)}</span></div>
-    <div class="sr"><span class="sl">LIVE PRICE</span><span class="sv yel" data-live="price">R$${livePrice.toFixed(2)}</span></div>
+    <div class="sr"><span class="sl">LIVE PRICE<sup class="fn-ref">[<a href="#fn5" id="fnref5">5</a>]</sup></span><span class="sv yel" data-live="price">R$${livePrice.toFixed(2)}</span></div>
     <div class="sr"><span class="sl">BASE VALUE</span><span class="sv" data-live="base-value">${fmtBrl(liveBaseVal)}</span></div>
     <div class="sr"><span class="sl">&#9472;&#9472; TOTAL &#9472;&#9472;</span><span class="sv big" data-live="total">${fmtBrl(liveTotal)}</span></div>
     <div class="sr"><span class="sl">RETURN</span><span class="sv ${retCls}" data-live="return-detail" data-base-class="sv">${fmtPct(liveReturn)} vs R$${d.initialTotal.toFixed(2)}</span></div>
-    <div class="sr"><span class="sl">COST BASIS</span><span class="sv">R$${avgCost.toFixed(2)} / ${d.baseAsset}</span></div>
+    <div class="sr"><span class="sl">COST BASIS<sup class="fn-ref">[<a href="#fn6" id="fnref6">6</a>]</sup></span><span class="sv">R$${avgCost.toFixed(2)} / ${d.baseAsset}</span></div>
   </div>
   <div class="panel">
     <div class="panel-hdr">&#129302; BOT STATUS</div>
     <div class="sr"><span class="sl">STRATEGY</span><span class="sv mag">SHANNON'S DEMON</span></div>
     <div class="sr"><span class="sl">SYMBOL</span><span class="sv cyan">${d.symbol}</span></div>
-    <div class="sr"><span class="sl">DEVIATION NOW</span><span class="sv ${devCls}">${liveDev} BPS ${devLabel}</span></div>
-    <div class="sr"><span class="sl">THRESHOLD</span><span class="sv">${lastSnap?.effective_threshold_bps ?? '—'} BPS (ADAPTIVE)</span></div>
+    <div class="sr"><span class="sl">DEVIATION NOW<sup class="fn-ref">[<a href="#fn7" id="fnref7">7</a>]</sup></span><span class="sv ${devCls}">${liveDev} BPS ${devLabel}</span></div>
+    <div class="sr"><span class="sl">THRESHOLD<sup class="fn-ref">[<a href="#fn8" id="fnref8">8</a>]</sup></span><span class="sv">${lastSnap?.effective_threshold_bps ?? '—'} BPS (ADAPTIVE)</span></div>
     <div class="sr"><span class="sl">LAST TRADE</span><span class="sv">${d.trades.length > 0 ? (d.trades[d.trades.length - 1]!.trade_date_brt ?? '—') : '—'}</span></div>
     <div class="sr"><span class="sl">TOTAL FEES PAID</span><span class="sv loss">&#8722;${fmtBrl(d.totalFees)}</span></div>
     <div class="sr"><span class="sl">REALIZED GAIN</span><span class="sv ${gainCls(d.totalRealizedGain)}">${fmtBrl(d.totalRealizedGain, true)}</span></div>
-    <div class="sr"><span class="sl">TAX STATUS</span><span class="sv gain">&#10003; EXEMPT (LEI 9.250/1995)</span></div>
+    <div class="sr"><span class="sl">TAX STATUS<sup class="fn-ref">[<a href="#fn9" id="fnref9">9</a>]</sup></span><span class="sv gain">&#10003; EXEMPT (LEI 9.250/1995)</span></div>
   </div>
 </div>
 
 <!-- ═══  STRATEGY CHART  ═════════════════════════════════════════════════════ -->
 <section class="sec" aria-label="Strategy Scoreboard">
-  <div class="sec-hdr">&#9878; STRATEGY SCOREBOARD
+  <div class="sec-hdr">&#9878; STRATEGY SCOREBOARD<sup class="fn-ref">[<a href="#fn10" id="fnref10">10</a>]</sup>
     <span class="sec-sub">&#9472; ${d.daysActive} DAYS &#183; &#9646;&#9646; SHANNON &nbsp; &#9646;&#9646; 50/50 HOLD &nbsp; &#9646;&#9646; ALL-IN ${d.baseAsset} &nbsp; &#9673; REBALANCE</span>
   </div>
   <div class="tbl-wrap">
@@ -647,11 +763,12 @@ function generateHtml(d: DashboardData): string {
   <div class="chart-wrap">
     <canvas id="bench-chart" role="img" aria-label="Line chart comparing Shannon's Demon, 50/50 Buy-and-Hold, and All-in ${d.baseAsset} portfolio values over time"></canvas>
   </div>
+  <div class="sec-sub" style="margin:6px 2px 0;">Chart legend<sup class="fn-ref">[<a href="#fn12" id="fnref12">12</a>]</sup></div>
 </section>
 
 <!-- ═══  TRADE HISTORY  ══════════════════════════════════════════════════════ -->
 <section class="sec" aria-label="Trade History">
-  <div class="sec-hdr">&#9889; TRADE HISTORY <span class="sec-sub">&#9472; ${tradeCount} REBALANCES EXECUTED &#183; NEWEST FIRST</span></div>
+  <div class="sec-hdr">&#9889; TRADE HISTORY<sup class="fn-ref">[<a href="#fn11" id="fnref11">11</a>]</sup> <span class="sec-sub">&#9472; ${tradeCount} REBALANCES EXECUTED &#183; NEWEST FIRST</span></div>
   <div class="tbl-wrap">
     <table class="tbl">
       <thead>
@@ -674,7 +791,7 @@ function generateHtml(d: DashboardData): string {
 
 <!-- ═══  TAX LEDGER  ════════════════════════════════════════════════════════ -->
 <section class="sec" aria-label="Tax Ledger">
-  <div class="sec-hdr">&#128272; TAX LEDGER <span class="sec-sub">&#9472; LEI 9.250/1995 ART. 21 &#183; SELL PROCEEDS &#8804; R$35,000/MO = EXEMPT</span></div>
+  <div class="sec-hdr">&#128272; TAX LEDGER<sup class="fn-ref">[<a href="#fn9" id="fnref9b">9</a>]</sup> <span class="sec-sub">&#9472; LEI 9.250/1995 ART. 21 &#183; SELL PROCEEDS &#8804; R$35,000/MO = EXEMPT</span></div>
   <div class="tbl-wrap">
     <table class="tbl">
       <thead>
@@ -691,6 +808,79 @@ function generateHtml(d: DashboardData): string {
   </div>
 </section>
 
+<!-- ═══  FOOTNOTES  ═════════════════════════════════════════════════════════ -->
+<details class="footnotes" open>
+  <summary>&#128214; FOOTNOTES &mdash; WHAT EACH NUMBER MEANS</summary>
+  <ol>
+    <li id="fn1"><strong class="cyan">PORTFOLIO</strong> &mdash; current total value: live ${d.baseAsset} balance &times; live price, plus BRL cash on hand. Recomputed every 30s from the public ticker. <a class="fn-back" href="#fnref1">&#8617;</a></li>
+    <li id="fn2"><strong class="cyan">NET GAIN</strong> &mdash; realized gain from closed SELL trades, minus all exchange fees paid across every trade. This does <em>not</em> include unrealized (mark-to-market) gains on the base asset currently held &mdash; see RETURN for that. <a class="fn-back" href="#fnref2">&#8617;</a></li>
+    <li id="fn3"><strong class="cyan">RETURN</strong> &mdash; (current PORTFOLIO &minus; INITIAL portfolio value at the first recorded snapshot) &divide; INITIAL. Updates live; includes unrealized gains/losses on the held position. <a class="fn-back" href="#fnref3">&#8617;</a></li>
+    <li id="fn4"><strong class="cyan">REBALANCES</strong> &mdash; count of executed trades (FILLED or DRY_RUN) since the bot started tracking this instance. <a class="fn-back" href="#fnref4">&#8617;</a></li>
+    <li id="fn5"><strong class="cyan">LIVE PRICE</strong> &mdash; fetched from the exchange's public ticker API every 30 seconds client-side; falls back to the last recorded snapshot price if the fetch fails. <a class="fn-back" href="#fnref5">&#8617;</a></li>
+    <li id="fn6"><strong class="cyan">COST BASIS</strong> &mdash; the AVCO (average cost) per unit of ${d.baseAsset}, updated on every BUY and used to compute realized gain/loss on every SELL. <a class="fn-back" href="#fnref6">&#8617;</a></li>
+    <li id="fn7"><strong class="cyan">DEVIATION NOW</strong> &mdash; how far the portfolio currently sits from a perfect 50/50 split, in basis points (BPS = 1/100 of 1%; 100 BPS = 1%). BALANCED / DRIFTING / ALERT are just visual bands around that number. <a class="fn-back" href="#fnref7">&#8617;</a></li>
+    <li id="fn8"><strong class="cyan">THRESHOLD (ADAPTIVE)</strong> &mdash; how far deviation must drift before a rebalance fires. Recalculated once per day from realized volatility (mean absolute daily return &times; multiplier, clamped 50&ndash;500 BPS) rather than fixed, so calm markets don't get over-traded and volatile markets aren't under-traded. See the STRATEGY tab for the full formula. <a class="fn-back" href="#fnref8">&#8617;</a></li>
+    <li id="fn9"><strong class="cyan">TAX STATUS / TAX LEDGER</strong> &mdash; under Brazilian law (Lei 9.250/1995, Art. 21), an individual's domestic crypto SELL proceeds are exempt from capital-gains tax up to R$35,000 in total sales per calendar month; this exemption applies per person, not per asset or per exchange. EXEMPT/TAXABLE reflects cumulative monthly SELL volume against that limit. This is general information, not tax advice &mdash; see the STRATEGY tab. <a class="fn-back" href="#fnref9">&#8617;</a></li>
+    <li id="fn10"><strong class="cyan">STRATEGY SCOREBOARD</strong> &mdash; compares this bot's actual performance against two passive benchmarks computed from the same price history: a 50/50 buy-and-hold that never rebalances, and a 100%-${d.baseAsset} buy-and-hold. ANN. = annualized (scaled to a 1-year period from the actual sampling window). Sharpe and Sortino both assume a 0% risk-free rate. Full methodology in the STRATEGY tab. <a class="fn-back" href="#fnref10">&#8617;</a></li>
+    <li id="fn11"><strong class="cyan">TRADE HISTORY</strong> &mdash; DEV BPS shows the deviation immediately before &#8594; immediately after each trade, i.e. how off-target the portfolio was right before it fired and how close to 50/50 it landed afterward. <a class="fn-back" href="#fnref11">&#8617;</a></li>
+    <li id="fn12"><strong class="cyan">Chart legend</strong> &mdash; solid magenta = this bot's actual value; solid blue = 50/50 buy-and-hold; dashed yellow = 100%-${d.baseAsset} buy-and-hold. A cyan dot marks a day a rebalance executed; a yellow dot marks the current live (intraday) point, not yet a closed daily snapshot. <a class="fn-back" href="#fnref12">&#8617;</a></li>
+  </ol>
+</details>
+
+</div><!-- /panel-dashboard -->
+
+<!-- ═══  STRATEGY & DISCLAIMERS TAB  ════════════════════════════════════════ -->
+<div id="panel-strategy" class="tab-panel" role="tabpanel" aria-labelledby="tab-strategy" hidden>
+
+  <article class="prose">
+    <h2>&#9878; What Is Shannon's Demon?</h2>
+    <p>Shannon's Demon is a volatility-harvesting technique named after Claude Shannon, the founder of information theory, who reportedly used it as a thought experiment about how mechanical rebalancing between a risky asset and cash can produce a positive expected return even when the risky asset itself has <strong>zero</strong> expected return &mdash; purely from variance, with no directional forecast required.</p>
+    <p>This bot maintains a fixed <strong>50% ${d.baseAsset} / 50% BRL</strong> split. Whenever price moves push that split away from 50/50 by more than a threshold, it sells the outperforming side and buys the underperforming side, mechanically restoring the target ratio. Each round-trip oscillation (price up then back down, or down then back up) that triggers a rebalance tends to bank a small profit, because the bot is structurally buying dips and selling rallies relative to its own prior rebalance point.</p>
+
+    <h3>The Math Intuition</h3>
+    <p>Starting from a balanced 50/50 portfolio of value <code>V</code>, if the base asset's price moves by factor <code>f</code> and then fully reverts back to where it started, a buy-and-hold portfolio ends exactly where it began (zero net return). A portfolio that rebalances at the top of the move, however, captures a small excess return on top of that round trip:</p>
+    <span class="formula">Excess gain &thickapprox; V &times; r&sup2; / 4&nbsp;&nbsp;(for a small price move of return r)</span>
+    <p>The gain is <strong>quadratic in the size of the price swing</strong> &mdash; bigger oscillations produce disproportionately more profit per cycle. A worked example: ${d.baseAsset} doubles then halves back to its starting price. Buy-and-hold nets 0%. Rebalancing once at the top nets roughly <strong>+12.5%</strong> on the same round trip. This is why the strategy specifically wants a <em>volatile, mean-reverting</em> market &mdash; it has nothing to do with predicting direction.</p>
+
+    <h3>Why the Adaptive Threshold?</h3>
+    <p>A fixed rebalance threshold is wrong in either regime: too tight in calm markets (fees eat the tiny gains from noise-level rebalances), too loose in volatile markets (real opportunities get missed waiting for an oversized move). The bot instead computes the mean absolute daily return over a rolling 30-day window and scales the threshold to it:</p>
+    <span class="formula">threshold_bps = clamp(round(MAD &times; 10,000 &times; multiplier), 50, 500)</span>
+    <p>The 50 BPS floor exists because below roughly 0.5% drift, market-order spreads and exchange fees consume the entire expected volatility premium &mdash; rebalancing that often would be a net loser even in a perfectly mean-reverting market. The 500 BPS ceiling exists so an extreme-volatility regime can't push the threshold so high that the bot stops rebalancing altogether.</p>
+
+    <h3>Other Built-In Safeguards</h3>
+    <ul>
+      <li><strong>Cooldown</strong> &mdash; a minimum time must pass between rebalances, even if drift would otherwise justify one, to avoid over-trading on noisy intraday ticks.</li>
+      <li><strong>Day-trade guard</strong> &mdash; blocks a same-BRT-day trade in the opposite direction of an earlier trade that day, preventing whipsaw round-trips that mostly just generate fees.</li>
+      <li><strong>Minimum trade/portfolio size</strong> &mdash; skips trades too small to be worth the fixed cost of a market order, and skips rebalancing altogether below a minimum portfolio value.</li>
+      <li><strong>Monthly tax exemption cap</strong> (optional, Mercado Bitcoin only) &mdash; can cap SELL volume to stay under the R$35,000/month Lei 9.250 exemption threshold, at the cost of leaving the portfolio temporarily off-target.</li>
+    </ul>
+
+    <h3>Why Track Cost Basis &amp; Taxes?</h3>
+    <p>Every SELL realizes a gain or loss versus the AVCO (average cost) of the position, which matters for Brazilian capital-gains reporting. Brazilian individuals get a monthly exemption (Lei 9.250/1995, Art. 21) on domestic crypto sales up to R$35,000/month in aggregate &mdash; across <em>all</em> domestic crypto sales by that person, not per bot or per asset. The bot tracks this per-instance only; if you trade the same exchange account elsewhere, you are responsible for combining totals yourself.</p>
+
+    <h2>&#9888; Risks &amp; Limitations</h2>
+    <ul>
+      <li><strong>Requires volatility, not direction.</strong> In a market that trends strongly in one direction without reverting, this strategy underperforms a simple buy-and-hold of the winning asset &mdash; see the ALL-IN ${d.baseAsset} benchmark on the Dashboard tab, which can and does outperform Shannon's Demon during sustained rallies.</li>
+      <li><strong>Fees and slippage are real costs.</strong> Every rebalance pays a taker fee and may fill slightly worse than the displayed price. In sufficiently calm or choppy-but-not-volatile conditions, accumulated fees can exceed the volatility premium captured.</li>
+      <li><strong>Single-asset concentration risk.</strong> Half the portfolio is, at all times, exposed to one base asset's price going to zero (project failure, exchange delisting, etc.). Shannon's Demon does not protect against permanent loss of value in the asset itself.</li>
+      <li><strong>Counterparty / exchange risk.</strong> Funds sit on a centralized exchange account. Exchange insolvency, account freezes, API outages, or security breaches are not mitigated by this strategy.</li>
+      <li><strong>Credential and operational risk.</strong> API keys are loaded from a local keyring or CI secrets; a compromised key could be used to trade or withdraw, depending on the permissions granted to it.</li>
+      <li><strong>Backtests and past performance are not predictive.</strong> The Strategy Scoreboard reflects what already happened in this specific historical window for this specific symbol. Different time windows, different assets, or the same asset's future behavior can produce materially different (including negative) results.</li>
+      <li><strong>Software risk.</strong> This is a small, actively-developed personal project, not an audited financial product. Bugs in threshold calculation, order execution, or tax/cost-basis tracking are possible despite test coverage.</li>
+    </ul>
+  </article>
+
+  <div class="disclaimer">
+    <h3>&#9888; LEGAL DISCLAIMER &mdash; READ BEFORE RELYING ON ANYTHING ON THIS PAGE</h3>
+    <p>This dashboard and the strategy it describes are provided <strong>for informational and educational purposes only</strong>. Nothing on this page constitutes financial, investment, tax, legal, or accounting advice, nor a recommendation or solicitation to buy, sell, or hold any asset. The operator of this bot is an individual, not a registered investment advisor, broker-dealer, or financial institution in any jurisdiction.</p>
+    <p>Cryptocurrency trading involves substantial risk of loss, including the possible loss of the entire amount invested, and is not suitable for all individuals. Past performance &mdash; including every figure shown on the Dashboard tab (returns, Sharpe, Sortino, backtests) &mdash; is not indicative of future results. Markets can and do behave in ways that make this strategy lose money, including but not limited to sustained one-directional trends, extreme low-volatility regimes, exchange outages, and flash crashes.</p>
+    <p>All data shown is generated automatically from this bot's own trade and price history and is provided "as is", without warranty of any kind, express or implied, including without limitation accuracy, completeness, or fitness for a particular purpose. The operator and any contributors disclaim all liability for any direct, indirect, incidental, or consequential loss or damage arising from the use of, or reliance on, this page or the underlying software.</p>
+    <p>Tax information referencing Lei 9.250/1995 Art. 21 is a general, non-exhaustive summary of one provision of Brazilian tax law as understood at the time this dashboard was built, may be incomplete or outdated, and does not account for your individual circumstances. Consult a licensed accountant or tax professional in your jurisdiction before making any tax filing decisions.</p>
+    <p><strong>Use this software, and act on anything shown here, entirely at your own risk.</strong></p>
+  </div>
+
+</div><!-- /panel-strategy -->
+
 <!-- ═══  FOOTER  ════════════════════════════════════════════════════════════ -->
 <footer class="ftr" role="contentinfo">
   SHANNON'S DEMON &#9612; ${d.symbol} &#9612; MERCADO BITCOIN &nbsp;&#183;&nbsp;
@@ -702,6 +892,15 @@ function generateHtml(d: DashboardData): string {
   <a class="cyan" href="https://github.com/lucastsantana" target="_blank" rel="noopener noreferrer">LUCAS SANTANA</a>
   <span class="dim">&nbsp;&amp;&nbsp;</span>
   <a class="mag" href="https://claude.ai" target="_blank" rel="noopener noreferrer">CLAUDE (ANTHROPIC)</a>
+</div>
+
+<div class="legal-bar">
+  <strong>&#9888; NOT FINANCIAL ADVICE.</strong> Informational/educational only &mdash; not a recommendation to buy, sell, or hold any asset.
+  Cryptocurrency trading risks total loss of capital. Past performance does not guarantee future results.
+  See the &#128214; STRATEGY &amp; DISCLAIMERS tab above for full risk disclosures before relying on anything shown here.
+</div>
+<div class="copyright">
+  &copy; ${new Date().getFullYear()} Lucas Santana. All rights reserved. Dashboard generation co-authored with Claude (Anthropic).
 </div>
 
 </div><!-- /.wrap -->
@@ -887,6 +1086,32 @@ var API   = 'https://api.mercadobitcoin.net/api/v4/tickers?symbols=' + SYM;
 
   refresh();
   setInterval(refresh, 30000);
+})();
+
+// ── Tab switching ────────────────────────────────────────────────────────────
+(function () {
+  var tabs = {
+    dashboard: { btn: document.getElementById('tab-dashboard'), panel: document.getElementById('panel-dashboard') },
+    strategy:  { btn: document.getElementById('tab-strategy'),  panel: document.getElementById('panel-strategy') },
+  };
+
+  function activate(name) {
+    Object.keys(tabs).forEach(function (key) {
+      var t = tabs[key];
+      var active = key === name;
+      t.btn.setAttribute('aria-selected', active ? 'true' : 'false');
+      if (active) {
+        t.panel.removeAttribute('hidden');
+      } else {
+        t.panel.setAttribute('hidden', '');
+      }
+    });
+  }
+
+  tabs.dashboard.btn.addEventListener('click', function () { activate('dashboard'); });
+  tabs.strategy.btn.addEventListener('click', function () { activate('strategy'); });
+
+  if (location.hash === '#strategy') activate('strategy');
 })();
 </script>
 </body>
