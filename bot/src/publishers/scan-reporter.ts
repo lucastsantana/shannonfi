@@ -105,8 +105,24 @@ export class ScanReporter {
 
     const message = lines.join('\n');
 
-    // Send message as text (no interactive buttons for now)
-    await this.telegram!.sendMessage(message);
+    // Attach the per-candidate selection buttons so a tap can trigger
+    // onCandidateSelected() below — without this, the approve/reject flow that
+    // follows can never actually be reached.
+    const buttons = this.buildCandidateButtons(candidates, scanResult.id!);
+    await this.telegram!.sendMessageWithButtons(message, buttons);
+  }
+
+  /** Per-candidate "pick this one" button list, shared between the initial report and the "back to list" view. */
+  private buildCandidateButtons(
+    candidates: AssetCandidate[],
+    scanId: number,
+  ): Array<Array<{ text: string; callbackData: string }>> {
+    return candidates.slice(0, 10).map((c) => [
+      {
+        text: `${c.rank}️⃣ ${c.symbol}`,
+        callbackData: `select:${scanId}:${c.symbol}`,
+      },
+    ]);
   }
 
   private async onCallbackQuery(query: any, scanId: number): Promise<void> {
@@ -247,12 +263,7 @@ export class ScanReporter {
       );
     }
 
-    const buttons = candidates.slice(0, 10).map((c) => [
-      {
-        text: `${c.rank}️⃣ ${c.symbol}`,
-        callbackData: `select:${scanId}:${c.symbol}`,
-      },
-    ]);
+    const buttons = this.buildCandidateButtons(candidates, scanId);
 
     await this.telegram!.editMessageWithButtons(messageId, lines.join('\n'), buttons);
     await this.telegram!.answerCallbackQuery(callbackQueryId);

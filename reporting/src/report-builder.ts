@@ -45,6 +45,26 @@ export function fmtBrl(n: number): string {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(n);
 }
 
+/**
+ * Walks backward from `endIdx` to find the start of the contiguous run of snapshots
+ * sharing the same base asset as the snapshot at `endIdx` — i.e. the start of the
+ * current "asset epoch." Snapshots with a null baseAsset (pre-rotation-support
+ * history) are treated as `fallbackAsset`, so instances that have never rotated get
+ * back the full original range (snapshots[0]), unchanged from before this existed.
+ */
+function findAssetEpochStart(
+  snapshots: { baseAsset: string | null }[],
+  endIdx: number,
+  fallbackAsset: string,
+): number {
+  const endAsset = snapshots[endIdx]!.baseAsset ?? fallbackAsset;
+  let startIdx = endIdx;
+  while (startIdx > 0 && (snapshots[startIdx - 1]!.baseAsset ?? fallbackAsset) === endAsset) {
+    startIdx--;
+  }
+  return startIdx;
+}
+
 export function computeMaxDrawdown(values: number[]): number {
   if (values.length === 0) return 0;
   let peak = values[0]!;
@@ -243,7 +263,17 @@ export async function buildReportPayload(
   const startValueBrl = firstSnap.totalValueBrl;
   const endValueBrl = lastSnap.totalValueBrl;
   const monthlyReturnPct = startValueBrl > 0 ? ((endValueBrl - startValueBrl) / startValueBrl) * 100 : 0;
-  const baseOnlyReturnPct = firstSnap.basePrice > 0 ? ((lastSnap.basePrice - firstSnap.basePrice) / firstSnap.basePrice) * 100 : 0;
+
+  // If a rotation happened mid-month, only compare the asset active at month-end's price
+  // movement since the rotation — diffing across a rotation boundary would otherwise
+  // produce a meaningless "return" mixing two different assets' prices.
+  const lastSnapIdxInAll = allSnapshots.indexOf(lastSnap);
+  const epochStartIdx = findAssetEpochStart(allSnapshots, lastSnapIdxInAll, baseAsset);
+  const epochStart = allSnapshots[epochStartIdx]!;
+  const baseCompareStart = epochStart.dateBRT > firstSnap.dateBRT ? epochStart : firstSnap;
+  const baseOnlyReturnPct = baseCompareStart.basePrice > 0
+    ? ((lastSnap.basePrice - baseCompareStart.basePrice) / baseCompareStart.basePrice) * 100
+    : 0;
   const monthDrawdown = computeMaxDrawdown(monthSnapshots.map(s => s.totalValueBrl));
 
   const monthTrades = allTrades.filter(t => {
@@ -273,8 +303,14 @@ export async function buildReportPayload(
   const m = metrics.computeMetrics(allSnapshots);
   const inceptionSnap = allSnapshots[0]!;
   const currentSnap = allSnapshots[allSnapshots.length - 1]!;
-  const baseOnlyCumulative = inceptionSnap.basePrice > 0
-    ? ((currentSnap.basePrice - inceptionSnap.basePrice) / inceptionSnap.basePrice) * 100
+
+  // Same asset-epoch logic as the monthly figure above: if the instance has ever
+  // rotated, "cumulative base-asset-only return" only makes sense since the most
+  // recent rotation, not from inception across a different asset's price.
+  const cumulativeEpochStartIdx = findAssetEpochStart(allSnapshots, allSnapshots.length - 1, baseAsset);
+  const cumulativeEpochStart = allSnapshots[cumulativeEpochStartIdx]!;
+  const baseOnlyCumulative = cumulativeEpochStart.basePrice > 0
+    ? ((currentSnap.basePrice - cumulativeEpochStart.basePrice) / cumulativeEpochStart.basePrice) * 100
     : 0;
 
   const cumulative: CumulativeMetrics = {

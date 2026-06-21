@@ -15,7 +15,7 @@
 
 import path from 'path';
 import { loadConfig } from '../config';
-import { getDb, getDbConfig, setDbConfig } from '../core/tracker/db';
+import { getDb, getDbConfig, setDbConfig, backfillBaseAsset } from '../core/tracker/db';
 import { MercadoBitcoinAdapter } from '../adapters/mercadobitcoin/adapter';
 import { BinanceAdapter } from '../adapters/binance/adapter';
 import { TelegramService } from '../publishers/telegram';
@@ -95,12 +95,13 @@ async function main(): Promise<void> {
   const dbPath = config.dbPath || './data/shannonfi.db';
   const db = getDb(dbPath);
 
-  // Initialize config table with current symbol if not set
-  const currentSymbol = getDbConfig('current_symbol', undefined, dbPath);
-  if (!currentSymbol) {
-    setDbConfig('current_symbol', config.symbol, dbPath);
-    logger.info('Initialized config with symbol', { symbol: config.symbol });
-  }
+  // The DB, not the YAML file, is the source of truth for "what symbol is this instance
+  // trading right now" once asset rotation is in play — seed it from YAML on first run,
+  // then always prefer the DB value (same resolution index.ts uses) so the scanner's own
+  // adapter/reporting never drifts back to a stale YAML symbol after a rotation.
+  const activeSymbol = getDbConfig('current_symbol', config.symbol, dbPath) ?? config.symbol;
+  setDbConfig('current_symbol', activeSymbol, dbPath);
+  backfillBaseAsset(activeSymbol.split('-')[0]!, dbPath);
 
   // Set up adapter based on exchange type
   let adapter: any;
@@ -110,7 +111,7 @@ async function main(): Promise<void> {
         config.mercadobitcoin || {},
         config.dryRun || false,
         config.maxSlippageBps || 100,
-        config.symbol,
+        activeSymbol,
       );
       logger.info('Initialized Mercado Bitcoin adapter');
     } else if (config.exchange === 'binance') {
@@ -118,7 +119,7 @@ async function main(): Promise<void> {
         config.binance || {},
         config.dryRun || false,
         config.maxSlippageBps || 100,
-        config.symbol,
+        activeSymbol,
       );
       logger.info('Initialized Binance adapter');
     } else {
@@ -146,12 +147,9 @@ async function main(): Promise<void> {
   }
 
   try {
-    // Get current symbol from DB
-    const activeSymbol = getDbConfig('current_symbol', config.symbol, dbPath);
-
     try {
     // Set up reporter
-    const reporter = new ScanReporter(telegram, activeSymbol!, db, config.exchange);
+    const reporter = new ScanReporter(telegram, activeSymbol, db, config.exchange);
 
     if (cliArgs.reloadScan !== undefined) {
       // Replay a cached scan
@@ -169,7 +167,7 @@ async function main(): Promise<void> {
       };
 
       const scanResult = await scanner.scan(options);
-      scanResult.currentSymbol = activeSymbol!;
+      scanResult.currentSymbol = activeSymbol;
       await reporter.report(scanResult, cliArgs.dryRun);
     }
   } catch (err) {

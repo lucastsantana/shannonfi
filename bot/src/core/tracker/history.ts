@@ -33,7 +33,7 @@ export class TradeHistoryService {
       INSERT INTO trades (
         id, client_order_id, exchange_order_id, exchange, timestamp, direction,
         brl_amount_target, base_amount_filled, brl_amount_filled, fill_price, fee_brl,
-        status, dry_run, realized_gain_brl, trade_date_brt,
+        status, dry_run, realized_gain_brl, trade_date_brt, base_asset,
         before_base_balance, before_brl_balance, before_base_price, before_base_value,
         before_total_value, before_base_ratio_bps, before_deviation_bps, before_timestamp,
         after_base_balance, after_brl_balance, after_base_price, after_base_value,
@@ -41,7 +41,7 @@ export class TradeHistoryService {
       ) VALUES (
         ?, ?, ?, ?, ?, ?,
         ?, ?, ?, ?, ?,
-        ?, ?, ?, ?,
+        ?, ?, ?, ?, ?,
         ?, ?, ?, ?,
         ?, ?, ?, ?,
         ?, ?, ?, ?,
@@ -68,6 +68,7 @@ export class TradeHistoryService {
       record.dryRun ? 1 : 0,
       record.realizedGainBrl ?? null,
       record.tradeDateBRT ?? null,
+      record.baseAsset ?? null,
       before.baseBalance,
       before.brlBalance,
       before.basePrice,
@@ -133,6 +134,7 @@ export class TradeHistoryService {
       dryRun: row.dry_run === 1,
       realizedGainBrl: row.realized_gain_brl,
       tradeDateBRT: row.trade_date_brt,
+      baseAsset: row.base_asset ?? null,
       portfolioBefore: {
         baseBalance: row.before_base_balance,
         brlBalance: row.before_brl_balance,
@@ -200,8 +202,8 @@ export class TradeHistoryService {
     const stmt = this.db.prepare(`
       INSERT OR REPLACE INTO portfolio_snapshots (
         date_brt, timestamp, total_value_brl, base_balance, brl_balance,
-        base_price, base_ratio_bps, effective_threshold_bps, rebalanced_today, exchange
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        base_price, base_ratio_bps, effective_threshold_bps, rebalanced_today, exchange, base_asset
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     stmt.run(
@@ -215,6 +217,7 @@ export class TradeHistoryService {
       snapshot.effectiveThresholdBps,
       snapshot.rebalancedToday ? 1 : 0,
       snapshot.exchange,
+      snapshot.baseAsset ?? null,
     );
 
     logger.debug('Portfolio snapshot persisted', { date: snapshot.dateBRT });
@@ -257,6 +260,7 @@ export class TradeHistoryService {
       effectiveThresholdBps: row.effective_threshold_bps,
       rebalancedToday: row.rebalanced_today === 1,
       exchange: row.exchange,
+      baseAsset: row.base_asset ?? null,
     } as PortfolioSnapshot));
   }
 }

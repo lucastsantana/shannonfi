@@ -45,6 +45,7 @@ interface SnapshotRow {
   base_ratio_bps: number;
   effective_threshold_bps: number;
   rebalanced_today: number;
+  base_asset: string | null;
 }
 
 interface CostBasisRow {
@@ -75,6 +76,8 @@ interface BenchmarkRow {
   vsAllIn: number;
   rebalanced: boolean;
   isLive?: boolean;
+  baseAsset: string | null;
+  rotatedHere?: boolean; // true on the first row of a new asset epoch (base_asset changed from the prior row)
 }
 
 interface MonthData { sales: number; gain: number; exempt: boolean; }
@@ -99,6 +102,8 @@ interface DashboardData {
   symbol: string;
   baseAsset: string;
   exchangeName: string;
+  hasRotated: boolean;     // true if this instance's history spans more than one base asset
+  allInLabel: string;      // "ALL-IN ${baseAsset}" normally; a rotation-aware label once hasRotated
   trades: TradeRow[];
   snapshots: SnapshotRow[];
   costBasis: CostBasisRow | null;
@@ -266,13 +271,14 @@ function generateHtml(d: DashboardData): string {
     bhAll:      parseFloat(row.bhAllInValue.toFixed(2)),
     rebalanced: row.rebalanced,
     isLive:     row.isLive ?? false,
+    baseAsset:  row.baseAsset,
   })));
 
   // ── Benchmark stats rows ─────────────────────────────────────────────────────
   const statRows = [
     { label: "&#9878; SHANNON'S DEMON", cls: 'mag', s: d.benchmarkStats.shannon },
     { label: '50/50 BUY-AND-HOLD',      cls: 'gain', s: d.benchmarkStats.bh50 },
-    { label: `ALL-IN ${d.baseAsset}`,   cls: 'yel', s: d.benchmarkStats.allIn },
+    { label: d.allInLabel,   cls: 'yel', s: d.benchmarkStats.allIn },
   ].map((row) => `
         <tr>
           <td class="${row.cls}">${row.label}</td>
@@ -919,7 +925,7 @@ function generateHtml(d: DashboardData): string {
 <!-- ═══  STRATEGY CHART  ═════════════════════════════════════════════════════ -->
 <section class="sec" aria-label="Strategy Scoreboard">
   <div class="sec-hdr">&#9878; STRATEGY SCOREBOARD
-    <span class="sec-sub">&#9472; ${d.daysActive} DAYS &#183; &#9646;&#9646; SHANNON &nbsp; &#9646;&#9646; 50/50 HOLD &nbsp; &#9646;&#9646; ALL-IN ${d.baseAsset} &nbsp; &#9673; REBALANCE</span>
+    <span class="sec-sub">&#9472; ${d.daysActive} DAYS &#183; &#9646;&#9646; SHANNON &nbsp; &#9646;&#9646; 50/50 HOLD &nbsp; &#9646;&#9646; ${d.allInLabel} &nbsp; &#9673; REBALANCE</span>
   </div>
   <div class="tbl-wrap">
     <table class="tbl">
@@ -942,7 +948,7 @@ function generateHtml(d: DashboardData): string {
     <p><strong class="cyan">STRATEGY SCOREBOARD</strong> &mdash; compares this bot's actual performance against two passive benchmarks computed from the same price history: a 50/50 buy-and-hold that never rebalances, and a 100%-${d.baseAsset} buy-and-hold. ANN. = annualized (scaled to a 1-year period from the actual sampling window). Sharpe and Sortino both assume a 0% risk-free rate. <strong class="cyan">VaR (95%)</strong> is the historical (empirical) per-period loss such that 95% of observed periods did not lose more &mdash; a higher magnitude means fatter downside tails. <strong class="cyan">MAX DRAWDOWN</strong> is the worst peak-to-trough decline over the whole window. Full methodology in the STRATEGY tab.</p>
   </div>
   <div class="chart-wrap">
-    <canvas id="bench-chart" role="img" aria-label="Line chart comparing Shannon's Demon, 50/50 Buy-and-Hold, and All-in ${d.baseAsset} portfolio values over time"></canvas>
+    <canvas id="bench-chart" role="img" aria-label="Line chart comparing Shannon's Demon, 50/50 Buy-and-Hold, and ${d.allInLabel} portfolio values over time"></canvas>
   </div>
   <div class="fn-inline">
     <p><strong class="cyan">CHART LEGEND</strong> &mdash; solid magenta = this bot's actual value; solid blue = 50/50 buy-and-hold; dashed yellow = 100%-${d.baseAsset} buy-and-hold. A cyan dot marks a day a rebalance executed; a yellow dot marks the current live (intraday) point, not yet a closed daily snapshot.</p>
@@ -1030,7 +1036,7 @@ function generateHtml(d: DashboardData): string {
 
     <h2>&#9888; Risks &amp; Limitations</h2>
     <ul>
-      <li><strong>Requires volatility, not direction.</strong> In a market that trends strongly in one direction without reverting, this strategy underperforms a simple buy-and-hold of the winning asset &mdash; see the ALL-IN ${d.baseAsset} benchmark on the Dashboard tab, which can and does outperform Shannon's Demon during sustained rallies.</li>
+      <li><strong>Requires volatility, not direction.</strong> In a market that trends strongly in one direction without reverting, this strategy underperforms a simple buy-and-hold of the winning asset &mdash; see the ${d.allInLabel} benchmark on the Dashboard tab, which can and does outperform Shannon's Demon during sustained rallies.</li>
       <li><strong>Fees and slippage are real costs.</strong> Every rebalance pays a taker fee and may fill slightly worse than the displayed price. In sufficiently calm or choppy-but-not-volatile conditions, accumulated fees can exceed the volatility premium captured.</li>
       <li><strong>Single-asset concentration risk.</strong> Half the portfolio is, at all times, exposed to one base asset's price going to zero (project failure, exchange delisting, etc.). Shannon's Demon does not protect against permanent loss of value in the asset itself.</li>
       <li><strong>Counterparty / exchange risk.</strong> Funds sit on a centralized exchange account. Exchange insolvency, account freezes, API outages, or security breaches are not mitigated by this strategy.</li>
@@ -1082,6 +1088,7 @@ function generateHtml(d: DashboardData): string {
 // ── Baked-in constants ──────────────────────────────────────────────────────
 var SYM   = '${d.symbol}';
 var BASE  = SYM.split('-')[0];
+var ALLIN_LABEL = '${d.allInLabel}';
 var BBAL  = ${liveBase};
 var QBAL  = ${liveBrl};
 var INIT  = ${d.initialTotal};
@@ -1155,7 +1162,7 @@ var benchChart = null;
           order: 2,
         },
         {
-          label: 'All-in ' + BASE,
+          label: ALLIN_LABEL,
           data: bhAll,
           borderColor: th.y,
           backgroundColor: 'rgba(' + th.yRgb + ',0.04)',
@@ -1198,7 +1205,7 @@ var benchChart = null;
           callbacks: {
             title: function (items) {
               var b = BENCH[items[0].dataIndex];
-              return (items[0].label || '') + (b ? '  ·  HYPE R$' + b.price.toFixed(2) : '');
+              return (items[0].label || '') + (b ? '  ·  ' + (b.baseAsset || BASE) + ' R$' + b.price.toFixed(2) : '');
             },
             label: function (ctx) {
               var val  = ' R$' + ctx.parsed.y.toFixed(2);
@@ -1415,7 +1422,7 @@ async function main(): Promise<void> {
 
   const snapshots = db.prepare(`
     SELECT date_brt, timestamp, total_value_brl, base_balance, brl_balance, base_price,
-           base_ratio_bps, effective_threshold_bps, rebalanced_today
+           base_ratio_bps, effective_threshold_bps, rebalanced_today, base_asset
     FROM portfolio_snapshots ORDER BY date_brt ASC
   `).all() as SnapshotRow[];
 
@@ -1439,39 +1446,73 @@ async function main(): Promise<void> {
     : `(unavailable — using last snapshot R$${lastSnap?.base_price.toFixed(2) ?? '—'})`);
 
   // ── Benchmark ─────────────────────────────────────────────────────────────
+  // The 50/50 buy-and-hold and All-in benchmarks both assume one continuous asset
+  // by default. If this instance's history spans more than one base asset (a
+  // rotation happened), both benchmarks are "rolled forward" at each rotation
+  // boundary instead: each benchmark re-splits according to its own rule (50/50,
+  // or 100%) using its OWN accumulated value at that point, converted into the new
+  // asset at that day's price — so a rotation doesn't reset or mix two assets'
+  // price series together, and each benchmark keeps compounding through it.
   const firstSnap    = snapshots[0];
   const initialTotal = firstSnap?.total_value_brl ?? 0;
-  const initialHype  = firstSnap?.base_balance    ?? 0;
-  const initialBrl   = firstSnap?.brl_balance     ?? 0;
   const initialPrice = firstSnap?.base_price      ?? 1;
-  const allInQty     = initialTotal / initialPrice;
+
+  const distinctAssets = new Set(snapshots.map((s) => s.base_asset).filter((a): a is string => !!a));
+  const hasRotated = distinctAssets.size > 1;
 
   const rebalancedDates = new Set(
     trades.map((t) => t.trade_date_brt).filter(Boolean),
   );
 
-  const benchmark: BenchmarkRow[] = snapshots.map((s) => {
-    const shannon = s.total_value_brl;
-    const bhHalf  = initialHype * s.base_price + initialBrl;
-    const bhAllIn = allInQty * s.base_price;
+  let runningHalfQty  = (firstSnap?.base_balance ?? 0);
+  let runningHalfBrl  = (firstSnap?.brl_balance ?? 0);
+  let runningAllInQty = initialPrice > 0 ? initialTotal / initialPrice : 0;
+  let prevAsset       = firstSnap?.base_asset ?? baseAsset;
+  let prevPrice       = initialPrice;
+
+  const benchmark: BenchmarkRow[] = snapshots.map((s, i) => {
+    const shannon       = s.total_value_brl;
+    const currentAsset  = s.base_asset ?? baseAsset;
+    const rotatedHere   = i > 0 && currentAsset !== prevAsset;
+
+    if (rotatedHere) {
+      // Re-split each passive benchmark's accumulated value at this row's price,
+      // per that benchmark's own rule, before computing this row's values below.
+      // Value the OLD position at its last known (old-asset) price — prevPrice —
+      // then convert that value into the NEW asset at this row's (new-asset) price.
+      const priorHalfValue  = runningHalfQty * prevPrice + runningHalfBrl;
+      const priorAllInValue = runningAllInQty * prevPrice;
+      runningHalfQty  = (priorHalfValue / 2) / s.base_price;
+      runningHalfBrl  = priorHalfValue / 2;
+      runningAllInQty = priorAllInValue / s.base_price;
+    }
+    prevAsset = currentAsset;
+    prevPrice = s.base_price;
+
+    const bhHalf  = runningHalfQty * s.base_price + runningHalfBrl;
+    const bhAllIn = runningAllInQty * s.base_price;
+
     return {
       date: s.date_brt, price: s.base_price,
       shannonValue: shannon, bhHalfValue: bhHalf, bhAllInValue: bhAllIn,
       excess: shannon - bhHalf, vsAllIn: shannon - bhAllIn,
       rebalanced: rebalancedDates.has(s.date_brt),
+      baseAsset: currentAsset,
+      rotatedHere,
     };
   });
 
   if (currentPrice && lastSnap && Math.abs(currentPrice - lastSnap.base_price) > 0.005) {
     const shannon = lastSnap.base_balance * currentPrice + lastSnap.brl_balance;
-    const bhHalf  = initialHype * currentPrice + initialBrl;
-    const bhAllIn = allInQty   * currentPrice;
+    const bhHalf  = runningHalfQty * currentPrice + runningHalfBrl;
+    const bhAllIn = runningAllInQty * currentPrice;
     benchmark.push({
       date: toDateBRT(new Date().toISOString()),
       price: currentPrice,
       shannonValue: shannon, bhHalfValue: bhHalf, bhAllInValue: bhAllIn,
       excess: shannon - bhHalf, vsAllIn: shannon - bhAllIn,
       rebalanced: false, isLive: true,
+      baseAsset: lastSnap.base_asset ?? baseAsset,
     });
   }
 
@@ -1501,8 +1542,10 @@ async function main(): Promise<void> {
 
   const exchangeName = config.exchange === 'mercadobitcoin' ? 'Mercado Bitcoin' : 'Binance';
 
+  const allInLabel = hasRotated ? 'ALL-IN (ROLLING)' : `ALL-IN ${baseAsset}`;
+
   const data: DashboardData = {
-    symbol: config.symbol, baseAsset, exchangeName,
+    symbol: config.symbol, baseAsset, exchangeName, hasRotated, allInLabel,
     trades, snapshots, costBasis: costBasis ?? null, currentPrice,
     generatedAt: toBRT(new Date().toISOString()),
     benchmark, benchmarkStats, initialTotal, totalRealizedGain, totalFees, daysActive, monthlySales,

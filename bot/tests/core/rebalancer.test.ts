@@ -8,6 +8,11 @@ import { TaxService } from '../../src/core/tracker/tax';
 import { VolatilityService } from '../../src/core/tracker/volatility';
 import { MetricsService } from '../../src/core/tracker/metrics';
 import { Config } from '../../src/config';
+import { getDb, getDbConfig } from '../../src/core/tracker/db';
+
+function uniqueMemDbPath(): string {
+  return `:memory:?mode=memory&cache=shared&hash=${Math.random()}`;
+}
 
 const testConfig: Config = {
   exchange: 'mercadobitcoin',
@@ -71,7 +76,11 @@ function makeTradeRecord(overrides: Partial<TradeRecord> = {}): TradeRecord {
   };
 }
 
-function makeBot(historyOverrides = {}, configOverrides: Partial<Config> = {}) {
+function makeBot(
+  historyOverrides = {},
+  configOverrides: Partial<Config> = {},
+  adapterFactory?: (symbol: string) => ExchangeAdapter,
+) {
   const portfolio = makePortfolio();
 
   const adapter = {
@@ -135,8 +144,8 @@ function makeBot(historyOverrides = {}, configOverrides: Partial<Config> = {}) {
   } as unknown as MetricsService;
 
   const config = { ...testConfig, ...configOverrides };
-  const bot = new RebalancerBot(adapter, history, pnl, costBasis, tax, volatility, metrics, config);
-  return { bot, adapter, history, pnl, costBasis, tax };
+  const bot = new RebalancerBot(adapter, history, pnl, costBasis, tax, volatility, metrics, config, adapterFactory);
+  return { bot, adapter, history, pnl, costBasis, tax, config };
 }
 
 describe('RebalancerBot', () => {
@@ -335,5 +344,141 @@ describe('RebalancerBot', () => {
     vi.mocked(adapter.executeTrade).mockResolvedValue(makeTradeRecord());
     await bot.checkAndRebalance();
     expect(adapter.executeTrade).toHaveBeenCalled();
+  });
+});
+
+describe('RebalancerBot — asset rotation', () => {
+  it('liquidates the old asset, swaps to the new adapter, and rebalances into the new asset the same cycle', async () => {
+    // Real history/tax/cost-basis services against a real in-memory DB — rotation is a
+    // genuinely multi-service transactional flow (it writes trades, tax events, and the
+    // pending_rotation row's FK-checked liquidation_trade_id together), so this is
+    // deliberately closer to an integration test than the mocked-services tests above.
+    // Only the two ExchangeAdapters (the real network boundary) are mocked.
+    const dbPath = uniqueMemDbPath();
+    const db = getDb(dbPath);
+    db.prepare(
+      `INSERT INTO pending_rotation (from_symbol, to_symbol, approved_at, status) VALUES (?, ?, ?, 'APPROVED')`,
+    ).run('SOL-BRL', 'BTC-BRL', new Date().toISOString());
+
+    // Old adapter: holds 10 SOL @ R$400 (R$4000), about to be fully liquidated.
+    const oldPortfolio = makePortfolio({ baseBalance: 10, basePrice: 400, baseValueBrl: 4000, brlBalance: 0, totalValueBrl: 4000 });
+    const liquidationTrade = makeTradeRecord({
+      id: 'liquidation-trade', direction: 'SELL_BASE', status: 'DRY_RUN', baseAmountFilled: 10, brlAmountFilled: 4000, fillPrice: 400,
+    });
+
+    // New adapter: starts 100% BRL post-liquidation (R$4000), far outside 50/50 — should trigger an
+    // immediate BUY_BASE into the new asset on the same cycle.
+    const newPortfolioBefore = makePortfolio({ baseBalance: 0, basePrice: 100, baseValueBrl: 0, brlBalance: 4000, totalValueBrl: 4000, baseRatioBps: 0, deviationBps: 10000 });
+    const acquisitionTrade = makeTradeRecord({
+      id: 'acquisition-trade', direction: 'BUY_BASE', status: 'DRY_RUN', baseAmountFilled: 20, brlAmountFilled: 2000, fillPrice: 100,
+    });
+
+    const newAdapter = {
+      getPrice: vi.fn().mockResolvedValue(100),
+      getPortfolio: vi.fn().mockResolvedValue(newPortfolioBefore),
+      executeTrade: vi.fn().mockResolvedValue(acquisitionTrade),
+      getCandles: vi.fn().mockResolvedValue([]),
+    } as unknown as ExchangeAdapter;
+    const adapterFactory = vi.fn().mockReturnValue(newAdapter);
+
+    const oldAdapter = {
+      getPrice: vi.fn().mockResolvedValue(400),
+      getPortfolio: vi.fn().mockResolvedValue(oldPortfolio),
+      executeTrade: vi.fn().mockResolvedValue(liquidationTrade),
+      getCandles: vi.fn().mockResolvedValue([]),
+    } as unknown as ExchangeAdapter;
+
+    const history = new TradeHistoryService(dbPath, 0);
+    const pnl = { logRebalance: vi.fn(), printReport: vi.fn() } as unknown as PnlService;
+    const costBasis = new CostBasisService(dbPath, 0, 'SOL');
+    const tax = new TaxService(dbPath, 0);
+    const volatility = { computeAdaptiveThresholdBps: vi.fn().mockResolvedValue(100) } as unknown as VolatilityService;
+    const metrics = { computeMetrics: vi.fn().mockReturnValue({}), printReport: vi.fn() } as unknown as MetricsService;
+    const config: Config = { ...testConfig, dbPath, symbol: 'SOL-BRL', useAdaptiveThreshold: false };
+
+    const bot = new RebalancerBot(oldAdapter, history, pnl, costBasis, tax, volatility, metrics, config, adapterFactory);
+
+    await bot.checkAndRebalance();
+
+    // Liquidation happened on the OLD adapter.
+    expect(oldAdapter.executeTrade).toHaveBeenCalledWith('SELL_BASE', 4000, oldPortfolio);
+    // The factory was asked to build an adapter for the new symbol, and that new
+    // adapter — not the old one — was used for the rest of this cycle.
+    expect(adapterFactory).toHaveBeenCalledWith('BTC-BRL');
+    expect(newAdapter.getPrice).toHaveBeenCalled();
+    expect(newAdapter.getPortfolio).toHaveBeenCalled();
+    expect(newAdapter.executeTrade).toHaveBeenCalledWith('BUY_BASE', expect.any(Number), newPortfolioBefore);
+
+    // Both the liquidation SELL and the re-acquisition BUY were actually persisted.
+    const trades = history.readTrades();
+    expect(trades).toHaveLength(2);
+    expect(trades.map((t) => t.direction).sort()).toEqual(['BUY_BASE', 'SELL_BASE']);
+    expect(trades.find((t) => t.direction === 'SELL_BASE')?.baseAsset).toBe('SOL');
+    expect(trades.find((t) => t.direction === 'BUY_BASE')?.baseAsset).toBe('BTC');
+
+    // pending_rotation marked COMPLETED with the liquidation trade linked, and
+    // current_symbol updated so any other process reading this DB agrees on the active symbol.
+    const row = db.prepare('SELECT * FROM pending_rotation').get() as any;
+    expect(row.status).toBe('COMPLETED');
+    expect(row.liquidation_trade_id).toBe(liquidationTrade.id);
+    expect(getDbConfig('current_symbol', undefined, dbPath)).toBe('BTC-BRL');
+  });
+
+  it('does nothing when no rotation is pending', async () => {
+    const dbPath = uniqueMemDbPath();
+    const adapterFactory = vi.fn();
+    const { bot, adapter } = makeBot({}, { dbPath }, adapterFactory);
+    vi.mocked(adapter.getPortfolio).mockResolvedValue(makePortfolio({ baseValueBrl: 3000, brlBalance: 3000, totalValueBrl: 6000, baseRatioBps: 5000, deviationBps: 0 }));
+
+    await bot.checkAndRebalance();
+
+    expect(adapterFactory).not.toHaveBeenCalled();
+  });
+
+  it('marks the rotation FAILED (without crashing the cycle) when no adapterFactory is configured', async () => {
+    const dbPath = uniqueMemDbPath();
+    const db = getDb(dbPath);
+    db.prepare(
+      `INSERT INTO pending_rotation (from_symbol, to_symbol, approved_at, status) VALUES (?, ?, ?, 'APPROVED')`,
+    ).run('SOL-BRL', 'BTC-BRL', new Date().toISOString());
+
+    // No adapterFactory passed — makeBot's default is undefined.
+    const { bot } = makeBot({}, { dbPath });
+
+    await expect(bot.checkAndRebalance()).resolves.not.toThrow();
+
+    const row = db.prepare('SELECT * FROM pending_rotation').get() as any;
+    expect(row.status).toBe('FAILED');
+    expect(row.execution_error).toMatch(/adapterFactory/);
+  });
+
+  it('skips the liquidation trade (symbol swap only) when there is nothing to sell', async () => {
+    const dbPath = uniqueMemDbPath();
+    const db = getDb(dbPath);
+    db.prepare(
+      `INSERT INTO pending_rotation (from_symbol, to_symbol, approved_at, status) VALUES (?, ?, ?, 'APPROVED')`,
+    ).run('SOL-BRL', 'BTC-BRL', new Date().toISOString());
+
+    const newAdapter = {
+      getPrice: vi.fn().mockResolvedValue(100),
+      getPortfolio: vi.fn().mockResolvedValue(makePortfolio({ baseBalance: 0, brlBalance: 0, baseValueBrl: 0, totalValueBrl: 0 })),
+      executeTrade: vi.fn(),
+      getCandles: vi.fn().mockResolvedValue([]),
+    } as unknown as ExchangeAdapter;
+    const adapterFactory = vi.fn().mockReturnValue(newAdapter);
+
+    const { bot, adapter } = makeBot({}, { dbPath, symbol: 'SOL-BRL', minPortfolioValueBrl: 1_000_000 }, adapterFactory);
+    // Already 100% BRL, nothing to liquidate.
+    vi.mocked(adapter.getPortfolio).mockResolvedValue(
+      makePortfolio({ baseBalance: 0, brlBalance: 500, baseValueBrl: 0, totalValueBrl: 500 }),
+    );
+
+    await bot.checkAndRebalance();
+
+    expect(adapter.executeTrade).not.toHaveBeenCalled();
+    expect(adapterFactory).toHaveBeenCalledWith('BTC-BRL');
+    const row = db.prepare('SELECT * FROM pending_rotation').get() as any;
+    expect(row.status).toBe('COMPLETED');
+    expect(row.liquidation_trade_id).toBeNull();
   });
 });

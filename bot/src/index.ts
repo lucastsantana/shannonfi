@@ -20,6 +20,7 @@ import { TaxService } from './core/tracker/tax';
 import { VolatilityService } from './core/tracker/volatility';
 import { MetricsService } from './core/tracker/metrics';
 import { logger } from './core/tracker/logger';
+import { getDbConfig, setDbConfig, backfillBaseAsset } from './core/tracker/db';
 
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
@@ -31,27 +32,41 @@ async function main(): Promise<void> {
   const config = loadConfig(configPath);
   logger.level = config.logLevel;
 
+  // The DB, not the YAML file, is the source of truth for "what symbol is this
+  // instance trading right now" — it's what asset rotation (approved via the daily
+  // scanner's Telegram flow) updates. Falls back to and seeds from the YAML value
+  // on first run, exactly like scan.ts already does, so both the PM2 process and the
+  // hourly --once GitHub Actions run always agree on the active symbol.
+  const activeSymbol = getDbConfig('current_symbol', config.symbol, config.dbPath) ?? config.symbol;
+  if (activeSymbol !== config.symbol) {
+    logger.info('Active symbol differs from YAML default — using DB-resolved symbol (rotation occurred)', {
+      yamlSymbol: config.symbol,
+      activeSymbol,
+    });
+  }
+  setDbConfig('current_symbol', activeSymbol, config.dbPath);
+  config.symbol = activeSymbol;
+  backfillBaseAsset(activeSymbol.split('-')[0]!, config.dbPath);
+
   const baseAsset = config.symbol.split('-')[0]!;
 
   // ── Build adapter ──────────────────────────────────────────────────────────
-  let adapter: ExchangeAdapter;
-  if (config.exchange === 'mercadobitcoin') {
-    adapter = new MercadoBitcoinAdapter(
-      config.mercadobitcoin,
-      config.dryRun,
-      config.maxSlippageBps,
-      config.symbol,
-    );
-    logger.info(`Using Mercado Bitcoin adapter (${config.symbol}, Lei 9.250/1995)`);
-  } else {
-    adapter = new BinanceAdapter(
-      config.binance,
-      config.dryRun,
-      config.maxSlippageBps,
-      config.symbol,
-    );
-    logger.info(`Using Binance adapter (${config.symbol})`);
-  }
+  // Kept as a factory (not just a one-off instance) so RebalancerBot can rebuild a
+  // fresh adapter for a new symbol mid-process if an asset rotation is approved,
+  // without RebalancerBot needing to import either adapter class itself.
+  const buildAdapter = (symbol: string): ExchangeAdapter => {
+    if (config.exchange === 'mercadobitcoin') {
+      return new MercadoBitcoinAdapter(config.mercadobitcoin, config.dryRun, config.maxSlippageBps, symbol);
+    }
+    return new BinanceAdapter(config.binance, config.dryRun, config.maxSlippageBps, symbol);
+  };
+
+  const adapter = buildAdapter(config.symbol);
+  logger.info(
+    config.exchange === 'mercadobitcoin'
+      ? `Using Mercado Bitcoin adapter (${config.symbol}, Lei 9.250/1995)`
+      : `Using Binance adapter (${config.symbol})`,
+  );
 
   // ── Build services ─────────────────────────────────────────────────────────
   const retentionDays = config.jsonRetentionDays ?? 15;
@@ -79,6 +94,7 @@ async function main(): Promise<void> {
     volatility,
     metrics,
     config,
+    buildAdapter,
   );
 
   if (once) {

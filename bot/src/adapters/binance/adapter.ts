@@ -139,6 +139,7 @@ export class BinanceAdapter implements ExchangeAdapter {
       dryRun: this.dryRun,
       realizedGainBrl: null,
       tradeDateBRT: null,
+      baseAsset: this.baseAsset,
     };
 
     if (this.dryRun) {

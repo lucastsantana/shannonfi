@@ -11,11 +11,20 @@ import { Config } from '../config';
 import { BR_EFFECTIVE_LIMIT_BRL } from '../constants';
 import { TelegramService } from '../publishers/telegram';
 import { DailyDigestService } from '../publishers/daily-digest';
-import { getDb } from './tracker/db';
+import { getDb, setDbConfig } from './tracker/db';
 
 // Small delay between sequential API calls during a rebalance execution,
 // to avoid hitting MB's 60 req/60s limit when multiple calls fire back-to-back.
 const INTER_REQUEST_DELAY_MS = 500;
+
+interface PendingRotationRow {
+  id: number;
+  from_symbol: string;
+  to_symbol: string;
+  approved_at: string;
+  status: string;
+  scan_id: number | null;
+}
 
 /**
  * BRL-native rebalancing engine. Exchange differences are fully encapsulated in
@@ -60,6 +69,11 @@ export class RebalancerBot {
     private volatility: VolatilityService,
     private metrics: MetricsService,
     private config: Config,
+    // Builds a fresh ExchangeAdapter for a given symbol on this same exchange. Only needed
+    // to support live asset rotation (swapping to a new symbol mid-process, without a
+    // restart) — kept as a factory rather than importing adapter classes directly here,
+    // so RebalancerBot stays exchange-agnostic. Optional for callers that don't use rotation.
+    private adapterFactory?: (symbol: string) => ExchangeAdapter,
   ) {
     this.lastRebalanceTime = history.getLastRebalanceTime();
     const { dateBRT, direction } = history.getLastRebalanceInfo();
@@ -136,6 +150,12 @@ export class RebalancerBot {
     const todayBRT = new Date().toLocaleDateString('en-CA', {
       timeZone: 'America/Sao_Paulo',
     });
+
+    // ── Check for an approved asset rotation before anything else ────────────────
+    // Cheap (one indexed SELECT) on the common case where nothing is pending. If a
+    // rotation executes, this.adapter/this.config.symbol/etc. are swapped in place and
+    // every check below naturally proceeds against the new asset for the rest of this cycle.
+    await this.checkAndExecuteRotation();
 
     // ── Check if it's time to send daily digest ──────────────────────────────────
     if (this.dailyDigest) {
@@ -484,8 +504,248 @@ export class RebalancerBot {
       effectiveThresholdBps,
       rebalancedToday,
       exchange: this.config.exchange,
+      baseAsset: this.config.symbol.split('-')[0]!,
     };
     this.history.appendSnapshot(snapshot);
+  }
+
+  /**
+   * Checks for an APPROVED row in pending_rotation (populated by the Telegram
+   * approve flow in scan-reporter.ts) and executes it: liquidate the entire current
+   * position to BRL, then swap every per-symbol service to the new asset. Returns
+   * true if a rotation was executed this cycle.
+   */
+  private async checkAndExecuteRotation(): Promise<boolean> {
+    const db = getDb(this.config.dbPath);
+    const pending = db
+      .prepare("SELECT * FROM pending_rotation WHERE status = 'APPROVED' LIMIT 1")
+      .get() as PendingRotationRow | undefined;
+
+    if (!pending) return false;
+
+    if (!this.adapterFactory) {
+      logger.error('Rotation approved but no adapterFactory configured — cannot execute', {
+        from: pending.from_symbol,
+        to: pending.to_symbol,
+      });
+      db.prepare('UPDATE pending_rotation SET status = ?, execution_error = ? WHERE id = ?')
+        .run('FAILED', 'adapterFactory not configured', pending.id);
+      return false;
+    }
+
+    logger.info('Pending rotation found — executing liquidation', {
+      from: pending.from_symbol,
+      to: pending.to_symbol,
+      rotationId: pending.id,
+    });
+
+    try {
+      await this.executeLiquidationAndSwap(pending);
+      return true;
+    } catch (err) {
+      const error = (err as Error).message;
+      logger.error('Rotation execution failed', { error, rotationId: pending.id });
+      db.prepare('UPDATE pending_rotation SET status = ?, execution_error = ? WHERE id = ?')
+        .run('FAILED', error, pending.id);
+      return false;
+    }
+  }
+
+  private async executeLiquidationAndSwap(pending: PendingRotationRow): Promise<void> {
+    const { from_symbol: fromSymbol, to_symbol: toSymbol, id: rotationId } = pending;
+    const oldBaseAsset = fromSymbol.split('-')[0]!;
+    const newBaseAsset = toSymbol.split('-')[0]!;
+    const todayBRT = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+    const db = getDb(this.config.dbPath);
+
+    const portfolio = await this.adapter.getPortfolio();
+    let liquidationTradeId: string | null = null;
+
+    if (portfolio.baseBalance > 0.0001) {
+      const brlAmount = portfolio.baseBalance * portfolio.basePrice;
+
+      await new Promise((r) => setTimeout(r, INTER_REQUEST_DELAY_MS));
+      const tradeRecord = await this.adapter.executeTrade('SELL_BASE', brlAmount, portfolio);
+      tradeRecord.tradeDateBRT = todayBRT;
+      tradeRecord.baseAsset = oldBaseAsset;
+      liquidationTradeId = tradeRecord.id;
+
+      let pendingTaxEvent: ReturnType<TaxService['buildTaxEvent']> | null = null;
+
+      if (tradeRecord.status === 'FILLED' || tradeRecord.status === 'DRY_RUN') {
+        if (!this.config.dryRun) {
+          await new Promise((r) => setTimeout(r, INTER_REQUEST_DELAY_MS));
+          tradeRecord.portfolioAfter = await this.adapter.getPortfolio();
+        }
+
+        const baseSold = tradeRecord.baseAmountFilled ?? portfolio.baseBalance;
+        const brlReceived = tradeRecord.brlAmountFilled ?? brlAmount;
+        const ledger = this.costBasis.getLedger();
+        const costBasisBrl = ledger.base.averageCostBrl * baseSold;
+        const realizedGainBrl = this.costBasis.updateAfterSell(baseSold, brlReceived);
+        tradeRecord.realizedGainBrl = realizedGainBrl;
+
+        // A rotation liquidation always sells the full position, regardless of the
+        // monthly Lei 9.250 exemption cap (neverExceedExemptionLimit) — unlike a normal
+        // partial rebalance SELL, capping a forced full-position exit would just leave
+        // the rotation stuck indefinitely on any position larger than the remaining
+        // monthly allowance. The resulting tax event (exempt or not) is recorded and
+        // surfaced normally. See docs/dynamic-asset-rotation-plan.md, "Tax policy".
+        pendingTaxEvent = this.tax.buildTaxEvent({
+          tradeId: tradeRecord.id,
+          tradeDateBRT: todayBRT,
+          direction: 'SELL_BASE',
+          tradedVolumeBrl: brlReceived,
+          grossProceedsBrl: brlReceived,
+          costBasisBrl,
+          realizedGainBrl,
+          exchange: tradeRecord.exchange,
+        });
+      }
+
+      const txn = db.transaction(() => {
+        this.history.appendTrade(tradeRecord);
+        if (pendingTaxEvent) this.tax.appendTaxEvent(pendingTaxEvent);
+        db.prepare(
+          'UPDATE pending_rotation SET status = ?, executed_at = ?, liquidation_trade_id = ? WHERE id = ?',
+        ).run('COMPLETED', new Date().toISOString(), liquidationTradeId, rotationId);
+      });
+      txn();
+    } else {
+      logger.info('No base asset to liquidate for rotation, swapping symbol only', {
+        from: fromSymbol,
+        to: toSymbol,
+      });
+      db.prepare('UPDATE pending_rotation SET status = ?, executed_at = ? WHERE id = ?')
+        .run('COMPLETED', new Date().toISOString(), rotationId);
+    }
+
+    // ── Swap every per-symbol service to the new asset ──────────────────────────
+    this.adapter = this.adapterFactory!(toSymbol);
+    this.volatility = new VolatilityService(this.adapter, this.config.volatilityWindowDays);
+    this.costBasis = new CostBasisService(this.config.dbPath, this.config.jsonRetentionDays ?? 15, newBaseAsset);
+    this.config.symbol = toSymbol;
+    setDbConfig('current_symbol', toSymbol, this.config.dbPath);
+
+    // A rotation liquidation is not a normal rebalance — it must not leave the cooldown
+    // or day-trade guard blocking the immediate re-acquisition leg below.
+    this.lastRebalanceTime = 0;
+    this.lastRebalanceDateBRT = null;
+    this.lastRebalanceDirection = null;
+
+    logger.info('Rotation completed — now trading new symbol', { from: fromSymbol, to: toSymbol });
+
+    // ── Immediately re-acquire 50% of the new asset using the freed BRL ─────────
+    // Handled explicitly here rather than left to the normal checkAndRebalance() flow
+    // below: computeDeviationBps() treats one side being exactly zero as "no drift" (a
+    // sane default for a brand-new, never-yet-funded instance), which would otherwise
+    // make a rotation land at 100% BRL and silently never trigger a BUY — the original
+    // recovered rotation-executor.ts had this exact same latent gap, never caught
+    // because it was never actually wired up or tested end-to-end.
+    let acquisitionTradeId: string | null = null;
+    let acquisitionBrl = 0;
+    const newPortfolio = await this.adapter.getPortfolio();
+    const targetAcquisitionBrl = newPortfolio.brlBalance / 2;
+
+    if (targetAcquisitionBrl >= this.config.minTradeSizeBrl) {
+      acquisitionBrl = targetAcquisitionBrl;
+      await new Promise((r) => setTimeout(r, INTER_REQUEST_DELAY_MS));
+      const acquisitionTrade = await this.adapter.executeTrade('BUY_BASE', acquisitionBrl, newPortfolio);
+      acquisitionTrade.tradeDateBRT = todayBRT;
+      acquisitionTrade.baseAsset = newBaseAsset;
+      acquisitionTradeId = acquisitionTrade.id;
+
+      if (acquisitionTrade.status === 'FILLED' || acquisitionTrade.status === 'DRY_RUN') {
+        if (!this.config.dryRun) {
+          await new Promise((r) => setTimeout(r, INTER_REQUEST_DELAY_MS));
+          acquisitionTrade.portfolioAfter = await this.adapter.getPortfolio();
+        }
+
+        const baseAcquired = acquisitionTrade.baseAmountFilled ?? 0;
+        const brlSpent = acquisitionTrade.brlAmountFilled ?? acquisitionBrl;
+        this.costBasis.updateAfterBuy(baseAcquired, brlSpent);
+        acquisitionTrade.realizedGainBrl = 0;
+
+        const acquisitionTaxEvent = this.tax.buildTaxEvent({
+          tradeId: acquisitionTrade.id,
+          tradeDateBRT: todayBRT,
+          direction: 'BUY_BASE',
+          tradedVolumeBrl: 0,
+          grossProceedsBrl: 0,
+          costBasisBrl: 0,
+          realizedGainBrl: 0,
+          exchange: acquisitionTrade.exchange,
+        });
+
+        const txn2 = db.transaction(() => {
+          this.history.appendTrade(acquisitionTrade);
+          this.tax.appendTaxEvent(acquisitionTaxEvent);
+          db.prepare('UPDATE pending_rotation SET reacquisition_trade_id = ? WHERE id = ?')
+            .run(acquisitionTradeId, rotationId);
+        });
+        txn2();
+
+        this.lastRebalanceTime = Date.now();
+        this.lastRebalanceDateBRT = todayBRT;
+        this.lastRebalanceDirection = 'BUY_BASE';
+      }
+    } else {
+      logger.info('Skipping immediate re-acquisition — available BRL below minTradeSizeBrl', {
+        targetAcquisitionBrl: targetAcquisitionBrl.toFixed(2),
+        minTradeSizeBrl: this.config.minTradeSizeBrl,
+      });
+    }
+
+    await this.notifyRotationComplete(
+      fromSymbol, toSymbol,
+      liquidationTradeId ? portfolio : null,
+      acquisitionTradeId ? acquisitionBrl : null,
+    );
+  }
+
+  private async notifyRotationComplete(
+    fromSymbol: string,
+    toSymbol: string,
+    liquidatedPortfolio: Portfolio | null,
+    acquisitionBrl: number | null,
+  ): Promise<void> {
+    if (!this.telegram) return;
+
+    const fromAsset = fromSymbol.split('-')[0];
+    const lines: string[] = [];
+    lines.push('🔄 <b>ROTATION COMPLETED</b>');
+    lines.push('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    lines.push('');
+    lines.push(`From: <b>${fromSymbol}</b> → To: <b>${toSymbol}</b>`);
+    lines.push('');
+
+    if (liquidatedPortfolio) {
+      lines.push('<b>Liquidated</b>');
+      lines.push(`├─ Sold: ${liquidatedPortfolio.baseBalance.toFixed(6)} ${fromAsset}`);
+      lines.push(`└─ @: R$ ${liquidatedPortfolio.basePrice.toFixed(2)}/${fromAsset}`);
+      lines.push('');
+    }
+
+    const toAsset = toSymbol.split('-')[0];
+    if (acquisitionBrl != null) {
+      lines.push('<b>Re-acquired</b>');
+      lines.push(`└─ Bought: R$ ${acquisitionBrl.toFixed(2)} of ${toAsset}`);
+      lines.push('');
+      lines.push(`✅ Now trading <b>${toSymbol}</b> at ~50/50.`);
+    } else {
+      lines.push('<b>Portfolio Status</b>');
+      lines.push('└─ Base Asset: None (100% BRL — available balance was below the minimum trade size)');
+      lines.push('');
+      lines.push(`⏭️ Will rebalance into <b>${toSymbol}</b> once funded above the minimum trade size.`);
+    }
+
+    try {
+      await this.telegram.sendMessage(lines.join('\n'));
+    } catch (err) {
+      logger.warn('Failed to send rotation completion notification', {
+        error: (err as Error).message,
+      });
+    }
   }
 
   shutdown(): void {

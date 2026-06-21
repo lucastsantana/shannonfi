@@ -100,6 +100,31 @@ function renameColumnIfExists(db: Database.Database, table: string, oldName: str
 }
 
 /**
+ * Backfill legacy trades/snapshots rows (predating asset rotation support) with the
+ * given asset. Only touches rows where base_asset is still NULL, so it's safe to call
+ * on every startup — a no-op once the backfill has happened, and the right asset for
+ * an instance's pre-rotation history (which was always one fixed asset before this
+ * feature existed). Call with whatever asset is currently active for this instance.
+ */
+export function backfillBaseAsset(baseAsset: string, dbPath?: string): void {
+  const db = getDb(dbPath);
+  db.prepare('UPDATE trades SET base_asset = ? WHERE base_asset IS NULL').run(baseAsset);
+  db.prepare('UPDATE portfolio_snapshots SET base_asset = ? WHERE base_asset IS NULL').run(baseAsset);
+}
+
+/**
+ * Add a column to a table if it doesn't already exist. No-op if present
+ * (idempotent) — safe to call on every startup, same as runMigrations() itself.
+ */
+function addColumnIfMissing(db: Database.Database, table: string, column: string, definition: string): void {
+  const columns = db.pragma(`table_info(${table})`) as { name: string }[];
+  if (!columns.some((c) => c.name === column)) {
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+    logger.info('Added column', { table, column });
+  }
+}
+
+/**
  * Initialize database schema if tables don't exist.
  */
 function runMigrations(db: Database.Database): void {
@@ -121,6 +146,7 @@ function runMigrations(db: Database.Database): void {
       dry_run             INTEGER NOT NULL DEFAULT 0,
       realized_gain_brl   REAL,
       trade_date_brt      TEXT,
+      base_asset          TEXT,
 
       -- portfolioBefore (always present)
       before_base_balance  REAL NOT NULL,
@@ -153,7 +179,8 @@ function runMigrations(db: Database.Database): void {
       base_ratio_bps        INTEGER NOT NULL,
       effective_threshold_bps INTEGER NOT NULL,
       rebalanced_today      INTEGER NOT NULL DEFAULT 0,
-      exchange              TEXT NOT NULL DEFAULT 'mercadobitcoin'
+      exchange              TEXT NOT NULL DEFAULT 'mercadobitcoin',
+      base_asset            TEXT
     );
 
     CREATE TABLE IF NOT EXISTS tax_events (
@@ -203,7 +230,11 @@ function runMigrations(db: Database.Database): void {
       approved_at           TEXT NOT NULL,
       executed_at           TEXT,
       status                TEXT NOT NULL DEFAULT 'APPROVED',
-      execution_error       TEXT
+      execution_error       TEXT,
+      scan_id               INTEGER REFERENCES scans(id),
+      liquidation_trade_id  TEXT REFERENCES trades(id),
+      reacquisition_trade_id TEXT REFERENCES trades(id),
+      requested_by          TEXT NOT NULL DEFAULT 'telegram_manual'
     );
 
     -- Create indexes for common query patterns
@@ -238,6 +269,14 @@ function runMigrations(db: Database.Database): void {
   renameColumnIfExists(db, 'portfolio_snapshots', 'sol_price', 'base_price');
   renameColumnIfExists(db, 'portfolio_snapshots', 'sol_ratio_bps', 'base_ratio_bps');
   renameColumnIfExists(db, 'cost_basis', 'total_sol', 'total_base');
+
+  // Dynamic base-asset rotation: additive columns for instances that predate this feature.
+  addColumnIfMissing(db, 'trades', 'base_asset', 'TEXT');
+  addColumnIfMissing(db, 'portfolio_snapshots', 'base_asset', 'TEXT');
+  addColumnIfMissing(db, 'pending_rotation', 'scan_id', 'INTEGER');
+  addColumnIfMissing(db, 'pending_rotation', 'liquidation_trade_id', 'TEXT');
+  addColumnIfMissing(db, 'pending_rotation', 'reacquisition_trade_id', 'TEXT');
+  addColumnIfMissing(db, 'pending_rotation', 'requested_by', "TEXT NOT NULL DEFAULT 'telegram_manual'");
 
   logger.info('Database schema initialized');
 }

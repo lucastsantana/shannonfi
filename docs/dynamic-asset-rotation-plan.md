@@ -1,7 +1,9 @@
 # Dynamic Base-Asset Rotation — Implementation Plan
 
 **Branch:** `feature/dynamic-base-asset-rotation`
-**Status:** Planning only — no production code changed yet.
+**Status:** Implemented (decisions below were confirmed; see "Implementation Notes" at
+the end for what was built, one real bug the test suite caught, and what's still
+manual/out of scope).
 
 ## Context
 
@@ -275,3 +277,74 @@ Once `trades`/`portfolio_snapshots` carry `base_asset`:
   real `hype-mb` instance.
 - Re-wire and manually exercise the Telegram approve/reject flow end-to-end against a
   test chat before enabling it against the production Telegram chat.
+
+## Implementation Notes (post-build)
+
+All four open questions above were confirmed as the recommended defaults: liquidation
+always proceeds in full regardless of the monthly exemption cap; approval stays
+manual-only via Telegram (no autonomous auto-approve); the scanner's hardcoded
+15-symbol candidate list is unchanged; scope is `hype-mb` only for this pass.
+
+**A real bug was found and fixed via testing, not just a design walkthrough.** The
+original plan (and the recovered `rotation-executor.ts` it was based on) assumed that
+once a rotation lands the portfolio at 100% BRL / 0% target asset, the *existing*
+drift-threshold check would naturally fire a `BUY_BASE` into the new asset on the next
+cycle — "no restart required." Writing an actual integration test against a real
+in-memory DB caught that this is false: `computeDeviationBps()` in `math.ts` treats
+either side being exactly zero as "no drift" (a sensible existing guard for a
+brand-new, never-yet-funded instance), which means a rotation's exact zero-base-balance
+moment is invisible to the normal rebalance trigger. **`rotation-executor.ts`'s
+liquidation-only design was deleted before ever being wired up or tested, so this gap
+was never caught.** Fixed by having `RebalancerBot.executeLiquidationAndSwap()`
+execute the re-acquisition leg explicitly and immediately (50% of the freed BRL into
+the new asset) rather than depending on the generic drift check — both legs of a
+rotation are now fully deterministic and self-contained in one method, recorded as two
+separate trades (`liquidation_trade_id` / `reacquisition_trade_id` on `pending_rotation`).
+
+**What was built:**
+- DB: additive `base_asset` column on `trades`/`portfolio_snapshots`
+  (`addColumnIfMissing`, idempotent); `pending_rotation` audit columns
+  (`scan_id`, `liquidation_trade_id`, `reacquisition_trade_id`, `requested_by`);
+  `backfillBaseAsset()` helper for pre-rotation legacy history.
+- `RebalancerBot`: `checkAndExecuteRotation()` runs at the top of every cycle (one
+  cheap indexed SELECT on the common no-op case); on an approved rotation, liquidates
+  the full old position, swaps `adapter`/`volatility`/`costBasis` to fresh instances
+  for the new symbol via an injected `adapterFactory`, mutates `config.symbol` in
+  place (every existing `config.symbol.split('-')[0]` call site picks this up for
+  free), resets cooldown/day-trade-guard state, executes the re-acquisition leg, and
+  notifies Telegram.
+- `index.ts` and `scan.ts`: both now resolve `current_symbol` from the DB (seeding
+  from YAML on first run) before constructing any per-symbol service, so the local PM2
+  process, the hourly GitHub Actions `--once` run, and the scanner never disagree on
+  the active symbol. (`scan.ts` previously resolved `activeSymbol` for labeling but
+  still built its own adapter from the stale YAML `config.symbol` — fixed as part of
+  this same change.)
+- `scan-reporter.ts`: `sendTelegramReport()` now attaches the per-candidate buttons
+  (`sendMessageWithButtons` instead of `sendMessage`) — the existing
+  `onCandidateSelected` → `onConfirmYes`/`onConfirmNo` handler chain was already
+  correct but unreachable until this one-line fix.
+- `dashboard.ts` / `report-builder.ts`: benchmark/return calculations are now
+  asset-epoch aware — `findAssetEpochStart()` (report-builder) and a forward-walking
+  re-basing loop (dashboard's chart series) ensure a rotation boundary never diffs or
+  multiplies two different assets' prices together. Both are no-ops for an instance
+  that has never rotated (verified: regenerating the live `hype-mb` dashboard/report
+  produced byte-identical-in-substance output to before this change).
+- `VolatilityService` needed no code change — rotation simply constructs a fresh
+  instance for the new adapter, which trivially gives it a fresh per-day cache with no
+  need for a `(day, symbol)` compound key.
+
+**Verified:** `tsc --noEmit` clean on both `bot/` and `reporting/`; full test suite
+70/70 passing (62 pre-existing + 4 new rotation-flow tests in `rebalancer.test.ts` + 4
+new migration tests in `db.test.ts`); migration ran live against a copy of the real
+`hype-mb.db` and added the new columns without error; dashboard and PDF report both
+regenerate correctly against that same real DB. **Not verified:** a live credentialed
+`--once` run end-to-end (this sandbox has no GNOME Keyring daemon, so credential
+lookup hangs) — the rotation-flow integration test exercises the exact same code path
+against real `TradeHistoryService`/`TaxService`/`CostBasisService` instances and a real
+SQLite DB, with only the exchange adapters (the actual network boundary) mocked, which
+is the most realistic verification possible without live exchange credentials.
+
+**Still manual, by design (per the confirmed answers above):** approving a rotation is
+a human action via Telegram buttons — nothing auto-approves. No code currently
+*decides* to propose a rotation from scan results; that's the scanner's existing
+top-candidate display plus a human's judgment, unchanged by this work.

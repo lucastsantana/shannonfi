@@ -75,6 +75,7 @@ export interface TradeRecord {
   dryRun: boolean;
   realizedGainBrl: number | null;
   tradeDateBRT: string | null;    // YYYY-MM-DD BRT
+  baseAsset: string | null;       // which asset this trade was for (supports asset rotation)
 }
 
 /** Daily BRL-native portfolio snapshot for track record. */
@@ -89,4 +90,5 @@ export interface PortfolioSnapshot {
   effectiveThresholdBps: number;
   rebalancedToday: boolean;
   exchange: 'mercadobitcoin' | 'binance';
+  baseAsset: string | null;       // which asset was active at this snapshot (supports asset rotation)
 }
