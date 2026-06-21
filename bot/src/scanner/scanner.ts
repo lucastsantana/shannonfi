@@ -12,24 +12,26 @@ interface ScannerAdapter {
   ): Promise<Array<{ close: number; volume: number; timestamp: number }>>;
 }
 
-const STABLECOIN_SYMBOLS = new Set([
-  'USDC-BRL',
-  'USDT-BRL',
-  'BRZ-BRL',
-  'DAI-BRL',
-  'BUSD-BRL',
-  'PAXG-BRL',
-  'BRAX-BRL',
-  'EUR-BRL',
-  'jBRL-BRL', // wrapped BRL
+// Base assets to scan across, regardless of exchange/quote currency. Some may not
+// exist on every exchange (e.g. listed on Mercado Bitcoin but not yet on Coinbase)
+// — scoreSymbol() failures are caught per-symbol and skipped (see the catch in
+// scan() below), so an incomplete list costs a few wasted lookups, not correctness.
+const KNOWN_BASE_ASSETS = [
+  'BTC', 'ETH', 'SOL', 'HYPE', 'XRP', 'ADA',
+  'DOGE', 'LINK', 'LTC', 'BCH', 'AVAX', 'ARB',
+  'OP', 'PEPE', 'SHIB',
+];
+
+const STABLECOIN_BASE_ASSETS = new Set([
+  'USDC', 'USDT', 'BRZ', 'DAI', 'BUSD', 'PAXG', 'BRAX', 'EUR', 'jBRL',
 ]);
 
-// Symbols confirmed to NOT exist on MB (return empty from /tickers)
-const UNAVAILABLE_SYMBOLS = new Set([
-  'MATIC-BRL',
-  'BNB-BRL',
-  'AVA-BRL', // Use AVAX-BRL instead
-]);
+// Base assets confirmed to NOT exist for a given quote currency (e.g. wrong ticker,
+// delisted). Keyed by quote currency since availability differs per exchange.
+const UNAVAILABLE_BASE_ASSETS: Record<string, Set<string>> = {
+  BRL: new Set(['MATIC', 'BNB', 'AVA']), // AVA: use AVAX instead
+  USD: new Set(),
+};
 
 export class AssetScanner {
   private dbPath: string | undefined;
@@ -46,25 +48,15 @@ export class AssetScanner {
     logger.info('Asset scanner starting', { windowDays: options.windowDays });
     const startTime = Date.now();
 
-    // Discover BRL-paired symbols.
-    // NOTE: This symbol list is hardcoded for now. To make it configurable per exchange,
-    // future enhancement would need to: (1) add scanSymbols config option, (2) pass through ScanOptions,
-    // (3) fetch dynamically from exchange /tickers endpoint, or (4) read from a symbols config file.
-    // The list is not dependent on the current trading symbol (config.symbol) — it scans across all known symbols.
-    const knownSymbols = [
-      'BTC-BRL', 'ETH-BRL', 'SOL-BRL', 'HYPE-BRL', 'XRP-BRL', 'ADA-BRL',
-      'DOGE-BRL', 'LINK-BRL', 'LTC-BRL', 'BCH-BRL', 'AVAX-BRL', 'ARB-BRL',
-      'OP-BRL', 'PEPE-BRL', 'SHIB-BRL',
-      // Stablecoins (will be filtered out)
-      'USDC-BRL', 'USDT-BRL', 'DAI-BRL', 'BRZ-BRL',
-    ];
+    // Discover symbols quoted in this instance's quote currency (BRL for MB/Binance,
+    // USD for Coinbase) — the same base-asset universe, just suffixed differently.
+    const quoteCurrency = options.quoteCurrency;
+    const unavailable = UNAVAILABLE_BASE_ASSETS[quoteCurrency] ?? new Set<string>();
+    let brlSymbols = KNOWN_BASE_ASSETS
+      .filter((b) => !STABLECOIN_BASE_ASSETS.has(b) && !unavailable.has(b))
+      .map((b) => `${b}-${quoteCurrency}`);
 
-    // Filter out unavailable and stablecoin symbols
-    let brlSymbols = knownSymbols.filter(
-      (s) => !UNAVAILABLE_SYMBOLS.has(s) && !STABLECOIN_SYMBOLS.has(s),
-    );
-
-    logger.info('Symbol discovery complete', { total: brlSymbols.length });
+    logger.info('Symbol discovery complete', { total: brlSymbols.length, quoteCurrency });
 
     // Score each symbol with rate limiting (200ms between API calls)
     const candidates: Omit<AssetCandidate, 'rank'>[] = [];
@@ -109,7 +101,7 @@ export class AssetScanner {
 
     // Store in DB (use getDb() to ensure we have the right connection)
     const timestamp = new Date().toISOString();
-    const currentSymbol = 'HYPE-BRL'; // Placeholder, will be set by caller
+    const currentSymbol = `${KNOWN_BASE_ASSETS[0]}-${quoteCurrency}`; // Placeholder, overwritten by caller
     const db = getDb(this.dbPath);
 
     const result = db

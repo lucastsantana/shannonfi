@@ -12,6 +12,7 @@
 import { loadConfig } from '../config';
 import { MercadoBitcoinAdapter } from '../adapters/mercadobitcoin/adapter';
 import { BinanceAdapter } from '../adapters/binance/adapter';
+import { CoinbaseAdapter } from '../adapters/coinbase/adapter';
 import { ExchangeAdapter } from '../adapters/types';
 import { TradeHistoryService } from '../core/tracker/history';
 import { CostBasisService } from '../core/tracker/costbasis';
@@ -40,9 +41,16 @@ async function main(): Promise<void> {
       config.maxSlippageBps,
       config.symbol,
     );
-  } else {
+  } else if (config.exchange === 'binance') {
     adapter = new BinanceAdapter(
       config.binance,
+      dryRun,
+      config.maxSlippageBps,
+      config.symbol,
+    );
+  } else {
+    adapter = new CoinbaseAdapter(
+      config.coinbase,
       dryRun,
       config.maxSlippageBps,
       config.symbol,

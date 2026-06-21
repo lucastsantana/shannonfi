@@ -77,7 +77,7 @@ Four workflows run in the cloud, all against the `hype-mb` instance only (other 
 | Workflow | Schedule | Purpose |
 |---|---|---|
 | `rebalancer.yml` | Hourly | Runs a single rebalance cycle (`--once`) |
-| `mercado-bitcoin-scan.yml` | Daily 20:00 UTC | Scans all MB pairs, ranks by volatility score, sends results to Telegram |
+| `scan.yml` | Daily 20:00 UTC | Scans all MB pairs, ranks by volatility score, sends results to Telegram |
 | `dashboard.yml` | After each rebalancer run + every 6h | Regenerates and deploys the GitHub Pages dashboard |
 | `monthly-db-backup.yml` | 1st of month 00:00 UTC | Creates a GitHub Release with a DB snapshot |
 
@@ -89,6 +89,10 @@ Go to **Settings → Secrets and variables → Actions** and add:
 |---|---|
 | `MB_CLIENT_ID` | Mercado Bitcoin client ID |
 | `MB_CLIENT_SECRET` | Mercado Bitcoin client secret |
+| `BINANCE_API_KEY` | Binance API key (only if running a Binance instance via Actions) |
+| `BINANCE_API_SECRET` | Binance API secret |
+| `COINBASE_API_KEY_NAME` | Coinbase CDP API key name (only if running a Coinbase instance via Actions) |
+| `COINBASE_API_KEY_SECRET` | Coinbase CDP private key, full multi-line PEM block |
 | `TELEGRAM_BOT_TOKEN` | Token from @BotFather |
 | `TELEGRAM_CHAT_ID` | Your Telegram chat ID |
 

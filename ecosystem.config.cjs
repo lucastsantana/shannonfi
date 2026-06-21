@@ -61,6 +61,28 @@ module.exports = {
         NODE_ENV: 'production',
       },
     },
+
+    // ─── Not yet enabled: BTC-USD on Coinbase ──────────────────────────────────
+    // Uncomment once configs/coinbase-btc.yaml exists (copy from the .template)
+    // and Coinbase CDP credentials are stored in GNOME Keyring — see
+    // docs/coinbase-adapter-plan.md and configs/coinbase-btc.yaml.template.
+    // Data would be stored in: bot/data/coinbase-btc/
+    // {
+    //   name: 'coinbase-btc',
+    //   script: './start-instance.sh',
+    //   cwd: './bot',
+    //   args: 'coinbase-btc',
+    //   watch: false,
+    //   autorestart: true,
+    //   max_memory_restart: '500M',
+    //   out_file: 'logs/coinbase-btc.log',
+    //   error_file: 'logs/coinbase-btc-error.log',
+    //   log_date_format: 'YYYY-MM-DD HH:mm:ss Z',
+    //   merge_logs: true,
+    //   env: {
+    //     NODE_ENV: 'production',
+    //   },
+    // },
   ],
 
   // ─── Global settings ──────────────────────────────────────────────────────

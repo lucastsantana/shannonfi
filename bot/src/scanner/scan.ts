@@ -18,6 +18,7 @@ import { loadConfig } from '../config';
 import { getDb, getDbConfig, setDbConfig, backfillBaseAsset } from '../core/tracker/db';
 import { MercadoBitcoinAdapter } from '../adapters/mercadobitcoin/adapter';
 import { BinanceAdapter } from '../adapters/binance/adapter';
+import { CoinbaseAdapter } from '../adapters/coinbase/adapter';
 import { TelegramService } from '../publishers/telegram';
 import { AssetScanner } from './scanner';
 import { ScanReporter } from '../publishers/scan-reporter';
@@ -122,8 +123,16 @@ async function main(): Promise<void> {
         activeSymbol,
       );
       logger.info('Initialized Binance adapter');
+    } else if (config.exchange === 'coinbase') {
+      adapter = new CoinbaseAdapter(
+        config.coinbase || {},
+        config.dryRun || false,
+        config.maxSlippageBps || 100,
+        activeSymbol,
+      );
+      logger.info('Initialized Coinbase adapter');
     } else {
-      throw new Error(`Unsupported exchange: ${config.exchange}. Supported: mercadobitcoin, binance`);
+      throw new Error(`Unsupported exchange: ${config.exchange}. Supported: mercadobitcoin, binance, coinbase`);
     }
   } catch (err) {
     logger.error('Failed to initialize adapter', { error: (err as Error).message });
@@ -164,6 +173,7 @@ async function main(): Promise<void> {
         minDataPoints: cliArgs.minDataPoints,
         returnFloor: cliArgs.returnFloor,
         topN: cliArgs.top,
+        quoteCurrency: activeSymbol.split('-')[1]!,
       };
 
       const scanResult = await scanner.scan(options);

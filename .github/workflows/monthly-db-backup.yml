@@ -14,6 +14,12 @@ jobs:
   backup:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        instance:
+          - hype-mb
+          # - coinbase-btc   # uncomment once this instance is live
 
     steps:
       - name: Checkout code
@@ -24,21 +30,21 @@ jobs:
       - name: Download latest database artifact
         uses: dawidd6/action-download-artifact@v3
         with:
-          name: hype-mb-database
-          path: ./bot/data/hype-mb
+          name: ${{ matrix.instance }}-database
+          path: ./bot/data/${{ matrix.instance }}
           if_no_artifact_found: ignore
 
       - name: Create backup
         id: backup
         run: |
-          if [ ! -f ./bot/data/hype-mb/shannonfi.db ]; then
+          if [ ! -f ./bot/data/${{ matrix.instance }}/shannonfi.db ]; then
             echo "exists=false" >> $GITHUB_OUTPUT
             exit 0
           fi
           echo "exists=true" >> $GITHUB_OUTPUT
           BACKUP_DATE=$(date -u +'%Y-%m-%d')
-          BACKUP_FILE="shannonfi-db-${BACKUP_DATE}.db"
-          cp ./bot/data/hype-mb/shannonfi.db "$BACKUP_FILE"
+          BACKUP_FILE="shannonfi-db-${{ matrix.instance }}-${BACKUP_DATE}.db"
+          cp ./bot/data/${{ matrix.instance }}/shannonfi.db "$BACKUP_FILE"
           echo "file=$BACKUP_FILE" >> $GITHUB_OUTPUT
           echo "date=$BACKUP_DATE" >> $GITHUB_OUTPUT
           ls -lh "$BACKUP_FILE"
@@ -47,11 +53,11 @@ jobs:
         if: steps.backup.outputs.exists == 'true'
         uses: softprops/action-gh-release@v2
         with:
-          name: "Database Backup ${{ steps.backup.outputs.date }}"
-          tag_name: "db-backup-${{ steps.backup.outputs.date }}"
+          name: "Database Backup — ${{ matrix.instance }} — ${{ steps.backup.outputs.date }}"
+          tag_name: "db-backup-${{ matrix.instance }}-${{ steps.backup.outputs.date }}"
           files: ${{ steps.backup.outputs.file }}
           body: |
-            Monthly database backup — ${{ steps.backup.outputs.date }}
+            Monthly database backup for ${{ matrix.instance }} — ${{ steps.backup.outputs.date }}
 
             Contains trade history, tax events, cost basis, and portfolio snapshots.
 
@@ -59,7 +65,7 @@ jobs:
         if: steps.backup.outputs.exists == 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: monthly-backup-${{ steps.backup.outputs.date }}
+          name: monthly-backup-${{ matrix.instance }}-${{ steps.backup.outputs.date }}
           path: ${{ steps.backup.outputs.file }}
           retention-days: 180
 
@@ -70,6 +76,6 @@ jobs:
           to: ${{ secrets.TELEGRAM_CHAT_ID }}
           token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           message: |
-            💾 Monthly Database Backup ${{ steps.backup.outputs.exists == 'true' && '✅' || '⚠️ No DB found' }}
+            💾 Monthly Database Backup (${{ matrix.instance }}) ${{ steps.backup.outputs.exists == 'true' && '✅' || '⚠️ No DB found' }}
             📅 ${{ steps.backup.outputs.date }}
             🔗 ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}

@@ -1,12 +1,8 @@
-name: Rebalancer
+name: Asset Scanner
 
-# Runs the Shannon's Demon rebalancing bot on a 15-minute schedule, for every
-# instance listed in the matrix below.
-#
-# ⚠️  If you also run an instance locally via PM2, stop it before enabling this
-#     workflow for that instance to avoid two processes trading the same account
-#     simultaneously:
-#       pm2 stop <instance-name>
+# Daily cross-pair volatility scan, for every instance listed in the matrix below.
+# Results post to Telegram (with interactive approve/reject buttons for an asset
+# rotation — see docs/dynamic-asset-rotation-plan.md).
 #
 # Required secrets (only the ones relevant to the instances actually enabled below):
 #   Mercado Bitcoin: MB_CLIENT_ID, MB_CLIENT_SECRET
@@ -16,7 +12,8 @@ name: Rebalancer
 
 on:
   schedule:
-    - cron: '0 * * * *'
+    # Run at 20:00 UTC (17:00 BRT)
+    - cron: '0 20 * * *'
   workflow_dispatch:
 
 permissions:
@@ -24,15 +21,15 @@ permissions:
   actions: read
 
 jobs:
-  rebalance:
+  scan:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
         instance:
           - hype-mb
-          # - coinbase-btc   # uncomment once COINBASE_API_KEY_NAME/COINBASE_API_KEY_SECRET are set (see docs/coinbase-adapter-plan.md)
+          # - coinbase-btc   # uncomment once COINBASE_API_KEY_NAME/COINBASE_API_KEY_SECRET are set
     concurrency:
       group: ${{ matrix.instance }}-database
       cancel-in-progress: false
@@ -46,7 +43,7 @@ jobs:
         with:
           node-version: '20'
           cache: 'npm'
-          cache-dependency-path: bot/package-lock.json
+          cache-dependency-path: 'bot/package-lock.json'
 
       - name: Download database
         env:
@@ -65,11 +62,11 @@ jobs:
       - name: Install dependencies
         run: cd bot && npm ci
 
-      - name: Build
+      - name: Build TypeScript
         working-directory: ./bot
         run: npm run build
 
-      - name: Run rebalancer (single cycle)
+      - name: Run scan
         working-directory: ./bot
         env:
           MB_CLIENT_ID: ${{ secrets.MB_CLIENT_ID }}
@@ -79,7 +76,7 @@ jobs:
           COINBASE_API_KEY_NAME: ${{ secrets.COINBASE_API_KEY_NAME }}
           COINBASE_API_KEY_SECRET: ${{ secrets.COINBASE_API_KEY_SECRET }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-        run: node dist/index.js --config configs/${{ matrix.instance }}.yaml --once
+        run: npm run scan -- --config configs/${{ matrix.instance }}.yaml
 
       - name: Upload database artifact
         if: always()
@@ -87,16 +84,6 @@ jobs:
         with:
           name: ${{ matrix.instance }}-database
           path: ./bot/data/${{ matrix.instance }}/shannonfi.db
-          retention-days: 90
+          retention-days: 30
           overwrite: true
           if-no-files-found: ignore
-
-      - name: Notify on failure
-        if: failure()
-        uses: appleboy/telegram-action@master
-        with:
-          to: ${{ secrets.TELEGRAM_CHAT_ID }}
-          token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          message: |
-            ⚠️ Rebalancer failed (${{ matrix.instance }})
-            🔗 ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}

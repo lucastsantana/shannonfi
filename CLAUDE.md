@@ -6,17 +6,18 @@ This is a **multi-exchange, multi-instance trading bot** implementing Shannon's 
 
 The repo contains **only the CEX bot** — the Solana on-chain vault implementation has been removed entirely.
 
-**Exchanges:** Mercado Bitcoin and Binance, via a shared `ExchangeAdapter` interface (see `adapters/types.ts`).
+**Exchanges:** Mercado Bitcoin, Binance, and Coinbase, via a shared `ExchangeAdapter` interface (see `adapters/types.ts`). Coinbase has no BRL-quoted trading pairs — its adapter converts BRL<->USD at the boundary using the daily BACEN PTAX rate, so every other layer still operates on plain BRL values. See `docs/coinbase-adapter-plan.md`.
 
-**Instances:** Each instance is one `(exchange, symbol)` pair driven by its own config file under `bot/configs/`, with its own SQLite database and JSON backups under `bot/data/<instance>/`. Instances run independently — there is no shared global config or shared database.
+**Instances:** Each instance is one `(exchange, symbol)` pair driven by its own config file under `bot/configs/`, with its own SQLite database and JSON backups under `bot/data/<instance>/`. Instances run independently — there is no shared global config or shared database. The *active* symbol for an instance is resolved from its database (`current_symbol`, seeded from the YAML default on first run), not hardcoded — this is what asset rotation (see `docs/dynamic-asset-rotation-plan.md`) updates without a restart.
 
 | Instance | Exchange | Symbol | Config | Deployment |
 |---|---|---|---|---|
 | `hype-mb` | Mercado Bitcoin | HYPE-BRL | `bot/configs/hype-mb.yaml` | Local PM2 **and** GitHub Actions (rebalancer, scan, dashboard) |
 | `btc-binance` | Binance | BTC-BRL | `bot/configs/btc-binance.yaml` | Local PM2 only (`ecosystem.config.cjs`) |
 | *(template)* | Binance | SOL-BRL | `bot/configs/sol-binance.yaml.template` | Not yet instantiated — copy to `.yaml` and add to `ecosystem.config.cjs` to enable |
+| *(template)* | Coinbase | BTC-USD | `bot/configs/coinbase-btc.yaml.template` | Not yet instantiated — needs real CDP credentials; adapter not yet live-tested against a real account |
 
-Only `hype-mb` is mirrored to GitHub Actions; other instances are local-only and not visible to CI.
+Only `hype-mb` is mirrored to GitHub Actions; other instances are local-only and not visible to CI. All four workflows are matrix-based and ready to add another instance to (just uncomment its entry) — they're just not actively running anything beyond `hype-mb` yet.
 
 ---
 
@@ -27,13 +28,14 @@ shannonfi/
 ├── bot/                          # Complete CEX rebalancer (multi-exchange, multi-instance)
 │   ├── src/
 │   │   ├── index.ts              # Entry point; orchestrates rebalance cycle
-│   │   ├── config.ts             # Zod discriminated union (mercadobitcoin | binance); loads --config path
+│   │   ├── config.ts             # Zod discriminated union (mercadobitcoin | binance | coinbase); loads --config path
 │   │   ├── math.ts               # Pure functions (ratios, thresholds, trades) — asset-agnostic ("base")
 │   │   ├── constants.ts          # Strategy params, exchange endpoints
 │   │   ├── adapters/
 │   │   │   ├── types.ts          # ExchangeAdapter interface
 │   │   │   ├── mercadobitcoin/   # OAuth2 client, order execution, polling
-│   │   │   └── binance/          # HMAC-signed client, order execution, polling
+│   │   │   ├── binance/          # HMAC-signed client, order execution, polling
+│   │   │   └── coinbase/         # CDP-key JWT-signed client; converts BRL<->USD at the boundary (FxRateService)
 │   │   ├── publishers/           # Everything that ships output somewhere external
 │   │   │   ├── telegram.ts       # Telegram Bot API client (messages, buttons)
 │   │   │   ├── daily-digest.ts   # Daily portfolio summary → Telegram (local PM2 only)
@@ -98,7 +100,7 @@ shannonfi/
 │   ├── README.md                 # Backtest guide
 │   └── *.json, *.md              # Results & reports
 │
-├── .github/workflows/             # rebalancer.yml, mercado-bitcoin-scan.yml, dashboard.yml, monthly-db-backup.yml
+├── .github/workflows/             # rebalancer.yml, scan.yml, dashboard.yml, monthly-db-backup.yml
 │                                   # All four currently target the hype-mb instance only
 ├── README.md                     # Quick start + deployment
 ├── CLAUDE.md                     # This file
@@ -201,7 +203,7 @@ Everything that ships output to somewhere external to the bot, mirroring the `ad
 - `dashboard.ts` — Reads the SQLite DB, renders the retro HTML dashboard; dual-purpose as a library and CLI (`npm run dashboard -- --config <path>`), invoked by `dashboard.yml` to publish to GitHub Pages
 
 ### Scanner (`bot/src/scanner/`)
-Cross-pair volatility scanner — ranks candidate symbols on an exchange by recent volatility to help pick what to trade next. `scan.ts` is the CLI entry (`npm run scan`); used by `mercado-bitcoin-scan.yml` (daily) and locally via cron scripts (`bot/scan-mb-daily.sh`, `bot/scan-binance-daily.sh`).
+Cross-pair volatility scanner — ranks candidate symbols on an exchange by recent volatility to help pick what to trade next. `scan.ts` is the CLI entry (`npm run scan`); used by `scan.yml` (daily) and locally via cron scripts (`bot/scan-mb-daily.sh`, `bot/scan-binance-daily.sh`).
 
 ### Tax Tracker
 **File:** `core/tracker/tax.ts`
@@ -366,6 +368,18 @@ Single-row table (one row per asset; currently only `'SOL'`). Stores the running
 
 Initialized on every startup with `INSERT OR IGNORE INTO cost_basis (asset) VALUES ('SOL')`, so the row is always present even on a fresh database.
 
+#### `trades` / `portfolio_snapshots` — `base_asset` column
+
+Both tables also carry a `base_asset TEXT` column (additive migration), recording which asset each row belongs to. Needed because an instance's active symbol can change over time via asset rotation (see `docs/dynamic-asset-rotation-plan.md`) — without this, historical rows would be ambiguous about which asset's price/quantity they're recording. Legacy rows are backfilled with the instance's pre-rotation asset via `backfillBaseAsset()`, called on every startup (no-op once already populated).
+
+#### `config`, `scans`, `pending_rotation` — asset rotation
+
+- `config` — generic key/value store (`getDbConfig`/`setDbConfig` in `db.ts`). `current_symbol` is the one key actually used today: the DB, not the YAML file, is the source of truth for which symbol an instance is currently trading once rotation is in play.
+- `scans` — one row per daily scanner run, full ranked candidate list as a JSON blob (`scan_data`), plus `status` (`COMPLETED` → `APPROVED` once a human picks a candidate via Telegram).
+- `pending_rotation` — one row per rotation request/execution: `from_symbol`, `to_symbol`, `status` (`APPROVED` → `COMPLETED`/`FAILED`), `scan_id`, `liquidation_trade_id`, `reacquisition_trade_id` (links back to the two `trades` rows a rotation produces), `requested_by`.
+
+Full design rationale, the blind spots this surfaced, and what's still manual (approval is always a human tapping a Telegram button — nothing auto-approves) are in `docs/dynamic-asset-rotation-plan.md`.
+
 ---
 
 ### Dual-Write Strategy
@@ -445,7 +459,7 @@ Secrets stored in GitHub repo settings:
 - `MB_CLIENT_ID`, `MB_CLIENT_SECRET`
 - `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` (optional)
 
-`core/keyring.ts`'s `getTelegramCredentials()` checks `process.env.TELEGRAM_BOT_TOKEN` first, falling back to keyring — so the same code path works in both environments. Each workflow step passes the relevant secrets as env vars (see `.github/workflows/rebalancer.yml`, `mercado-bitcoin-scan.yml`).
+`core/keyring.ts`'s `getTelegramCredentials()` checks `process.env.TELEGRAM_BOT_TOKEN` first, falling back to keyring — so the same code path works in both environments. Each workflow step passes the relevant secrets as env vars (see `.github/workflows/rebalancer.yml`, `scan.yml`).
 
 ---
 
@@ -692,7 +706,7 @@ If `|estWeight − 0.5| ≤ τ`, the balance fetch is skipped for this cycle. Th
 
 ### 2. GitHub Actions (hype-mb instance only)
 - `rebalancer.yml` — hourly (`0 * * * *`), single cycle (`--once`) then exits
-- `mercado-bitcoin-scan.yml` — daily at 20:00 UTC, runs the volatility scanner
+- `scan.yml` — daily at 20:00 UTC, runs the volatility scanner
 - `dashboard.yml` — after each rebalancer run + every 6h fallback; deploys to GitHub Pages
 - `monthly-db-backup.yml` — 1st of each month; archives the SQLite DB as a GitHub Release
 - Credentials from GitHub Secrets; the SQLite DB persists between runs as a GitHub Actions artifact (`hype-mb-database`), downloaded/re-uploaded each run — see "Database Architecture" → artifact-sharing caveats in git history if debugging data loss

@@ -29,6 +29,7 @@
     "axios": "^1.16.1",
     "axios-retry": "4.4.1",
     "better-sqlite3": "^11.0.0",
+    "jose": "^5.9.6",
     "js-yaml": "^4.1.1",
     "uuid": "^14.0.0",
     "winston": "3.13.0",

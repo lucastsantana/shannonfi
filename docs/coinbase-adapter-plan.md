@@ -1,7 +1,9 @@
 # Coinbase Adapter — Implementation Plan
 
 **Branch:** `feature/coinbase-adapter` (branched from `feature/dynamic-base-asset-rotation`)
-**Status:** Planning only — no production code changed yet.
+**Status:** Implemented (USD quote currency, GitHub Actions generalized from day
+one — both confirmed). See "Implementation Notes" at the end for what was built,
+what's verified vs. not, and what's still required before going live.
 
 ## Context
 
@@ -205,3 +207,59 @@ identically to `hype-mb`, with no Coinbase-specific rotation code required.
   per-exchange credential check.
 - Dry-run (`DRY_RUN=true --once`) against a scratch config before any real funds are
   involved, exactly like every other instance's bring-up.
+
+## Implementation Notes (post-build)
+
+**Research resolved, not left as an open guess:** BACEN SGS série 1 ("Dólar
+americano - venda") is the PTAX rate Receita Federal guidance points to for
+converting foreign-currency gains to BRL, and was verified live against the real
+BACEN endpoint. Separately — and this changes open question 5's framing — Receita
+Federal's own guidance states the R$35k Lei 9.250 exemption covers crypto sales
+"no Brasil ou no exterior," i.e. it is **not** domestic-exchange-only as the
+existing `rebalancer.ts` comment implied. `neverExceedExemptionLimit` now also
+exists on Coinbase's config branch (defaulted `true`, unlike `mercadobitcoin`'s
+`false` default) and is honored in `rebalancer.ts`'s guard check. **Binance's
+behavior was deliberately left unchanged** — it's a real-money instance already
+running, and extending this guard to it is a separate decision for you/your
+accountant, not something to bundle into this change.
+
+**What was built:** `FxRateService` (BACEN PTAX daily cache, mirroring
+`VolatilityService`'s shape); the `coinbase` config branch (symbol regex moved
+per-exchange so Coinbase can accept `BASE-USD` while MB/Binance keep `BASE-BRL`);
+`getCoinbaseCredentials()` in `keyring.ts` (a `{keyName, privateKeyPem}` pair, not
+a simple key/secret — a genuinely different credential shape than the other two
+exchanges); `adapters/coinbase/{jwt,client,endpoints,adapter,raw-types}.ts`
+implementing the real Advanced Trade API surface (JWT/CDP-key auth, candles,
+accounts, create/get order); wiring into `index.ts`, `scan.ts`, `liquidate.ts`,
+`setup-check.ts`; `scanner.ts` generalized from a hardcoded BRL-suffixed candidate
+list to base-asset-list + quote-currency (`ScanOptions.quoteCurrency`); a
+`coinbase-btc.yaml.template` instance config; an `ecosystem.config.cjs` entry
+(commented out, pending real credentials); and all four GitHub Actions workflows
+(`rebalancer.yml`, `scan.yml` — renamed from `mercado-bitcoin-scan.yml`,
+`dashboard.yml`, `monthly-db-backup.yml`) generalized to matrix/loop over
+instances, with `coinbase-btc` present but commented out in every one so CI
+behavior is unchanged until real secrets exist.
+
+**Verified:** `tsc --noEmit` and `npm run build` clean; full test suite passing
+(85/85, up from 70 — 15 new tests: JWT signing structure/claims against
+locally-generated EC/Ed25519/RSA test keys, `FxRateService`'s cache/fallback/error
+paths against a mocked BACEN response, and `CoinbaseAdapter`'s BRL<->USD
+conversion math in `getPrice`/`getPortfolio`/`executeTrade` BUY and SELL against
+mocked endpoints — these last ones exercise the actual conversion arithmetic with
+concrete numbers, not just "does it compile"); the `coinbase-btc.yaml.template`
+parses and validates against the real Zod schema; the live BACEN PTAX endpoint
+was queried directly during research and returns sensible values.
+
+**Not verified, and cannot be from this environment:** any real HTTP call to
+Coinbase itself — there are no credentials available here, sandboxed or
+otherwise. The JWT auth scheme (header `kid`/`nonce`, claims `sub`/`iss`/`uri`,
+~120s expiry) was written from Coinbase's published docs and is structurally
+tested, but the actual signature has never been validated against Coinbase's
+server. **Run `npm run setup-check` against a real Coinbase CDP key — read-only
+account/balance/candle checks — before ever enabling live trading or even
+`DRY_RUN` cycles that place real (test-mode) orders.** The GitHub Actions
+matrix/loop changes are YAML I could not execute in this environment either
+(no Actions runner here); double-check a `workflow_dispatch` run of each
+generalized workflow against `hype-mb` (the one instance with real secrets
+already configured) before relying on them, to catch any YAML or matrix-syntax
+mistake before it matters for a second instance.

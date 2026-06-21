@@ -1,8 +1,15 @@
 name: Dashboard
 
-# Generates the portfolio dashboard and deploys it to GitHub Pages.
-# Triggers automatically after each Rebalancer run, and every 6 hours
-# as a fallback (keeps the page fresh even without a rebalance).
+# Generates the portfolio dashboard for every instance listed below and deploys
+# them all to GitHub Pages in one run. Triggers automatically after each
+# Rebalancer run, and every 6 hours as a fallback (keeps the page fresh even
+# without a rebalance).
+#
+# Single job, not a matrix: GitHub Pages allows exactly one deploy step per
+# workflow run, so every instance's dashboard is generated sequentially into its
+# own sub-path of the same `public/` tree, then deployed together. hype-mb is kept
+# at the site root (public/index.html) for URL backward-compatibility; every other
+# instance gets public/<instance>/index.html.
 #
 # One-time setup required:
 #   GitHub repo → Settings → Pages → Source: GitHub Actions
@@ -44,20 +51,6 @@ jobs:
           cache: 'npm'
           cache-dependency-path: bot/package-lock.json
 
-      - name: Download database
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          mkdir -p ./bot/data/hype-mb
-          ARTIFACT_ID=$(gh api "repos/${{ github.repository }}/actions/artifacts?name=hype-mb-database&per_page=1" --jq '.artifacts[0].id // empty')
-          if [ -n "$ARTIFACT_ID" ]; then
-            gh api "repos/${{ github.repository }}/actions/artifacts/$ARTIFACT_ID/zip" > /tmp/db.zip
-            unzip -o /tmp/db.zip -d ./bot/data/hype-mb/
-            echo "Restored artifact $ARTIFACT_ID ($(du -h ./bot/data/hype-mb/shannonfi.db | cut -f1))"
-          else
-            echo "No artifact found, generating empty dashboard"
-          fi
-
       - name: Install dependencies
         run: cd bot && npm ci
 
@@ -65,14 +58,40 @@ jobs:
         working-directory: ./bot
         run: npm run build
 
-      - name: Generate dashboard
-        working-directory: ./bot
-        run: node dist/publishers/dashboard.js --config configs/hype-mb.yaml
-
-      - name: Prepare Pages artifact
+      - name: Generate and publish each instance's dashboard
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           mkdir -p public
-          cp ./bot/data/hype-mb/dashboard.html ./public/index.html
+
+          # hype-mb: site root, for URL backward-compatibility.
+          # Add further instances here as "instance:subpath" pairs — leave
+          # subpath empty ("") for the one instance that should live at the root.
+          declare -A INSTANCES=(
+            ["hype-mb"]=""
+            # ["coinbase-btc"]="coinbase-btc"   # uncomment once this instance is live
+          )
+
+          for instance in "${!INSTANCES[@]}"; do
+            subpath="${INSTANCES[$instance]}"
+            echo "=== $instance -> public/${subpath} ==="
+
+            mkdir -p "./bot/data/${instance}"
+            ARTIFACT_ID=$(gh api "repos/${{ github.repository }}/actions/artifacts?name=${instance}-database&per_page=1" --jq '.artifacts[0].id // empty')
+            if [ -n "$ARTIFACT_ID" ]; then
+              gh api "repos/${{ github.repository }}/actions/artifacts/$ARTIFACT_ID/zip" > /tmp/db-${instance}.zip
+              unzip -o /tmp/db-${instance}.zip -d "./bot/data/${instance}/"
+              echo "Restored artifact $ARTIFACT_ID ($(du -h ./bot/data/${instance}/shannonfi.db | cut -f1))"
+            else
+              echo "No artifact found for ${instance}, generating empty dashboard"
+            fi
+
+            (cd bot && node dist/publishers/dashboard.js --config "configs/${instance}.yaml")
+
+            destdir="public/${subpath}"
+            mkdir -p "$destdir"
+            cp "./bot/data/${instance}/dashboard.html" "${destdir}/index.html"
+          done
 
       - name: Configure Pages
         uses: actions/configure-pages@v5

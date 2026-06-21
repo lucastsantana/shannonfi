@@ -16,6 +16,10 @@ export interface KeyringCredentials {
     apiKey: string;
     apiSecret: string;
   };
+  coinbase?: {
+    keyName: string;
+    privateKeyPem: string;
+  };
   telegram?: {
     botToken: string;
   };
@@ -90,6 +94,46 @@ export function getBinanceCredentials(): { apiKey: string; apiSecret: string } {
 }
 
 /**
+ * Load Coinbase credentials from GNOME Keyring.
+ * Unlike Mercado Bitcoin's clientId/clientSecret or Binance's apiKey/apiSecret, a
+ * Coinbase CDP API key is a (keyName, privateKeyPem) pair — the private key is a
+ * multi-line PEM block, used to sign a short-lived JWT per request rather than sent
+ * directly. secret-tool stores/returns arbitrary multi-line text fine; no special
+ * handling needed for the embedded newlines.
+ * Credentials must be stored with:
+ *   secret-tool store --label="..." service coinbase key keyName
+ *   secret-tool store --label="..." service coinbase key privateKeyPem
+ */
+export function getCoinbaseCredentials(): { keyName: string; privateKeyPem: string } {
+  try {
+    const keyName = execSync('secret-tool lookup service coinbase key keyName 2>/dev/null', {
+      encoding: 'utf-8',
+      stdio: ['pipe', 'pipe', 'ignore'],
+    }).trim();
+
+    const privateKeyPem = execSync('secret-tool lookup service coinbase key privateKeyPem 2>/dev/null', {
+      encoding: 'utf-8',
+      stdio: ['pipe', 'pipe', 'ignore'],
+    }).trim();
+
+    if (!keyName || !privateKeyPem) {
+      throw new Error('Credentials not found in keyring');
+    }
+
+    logger.debug('Loaded Coinbase credentials from keyring');
+    return { keyName, privateKeyPem };
+  } catch (err) {
+    throw new Error(
+      'Coinbase credentials not found in GNOME Keyring.\n' +
+      'Store them with:\n' +
+      '  secret-tool store --label="Coinbase API Key Name" service coinbase key keyName\n' +
+      '  secret-tool store --label="Coinbase API Private Key" service coinbase key privateKeyPem\n' +
+      '  (paste the full "-----BEGIN ... PRIVATE KEY-----" PEM block as the secret value, then Ctrl+D)'
+    );
+  }
+}
+
+/**
  * Load Telegram bot token from GNOME Keyring (optional).
  * Credentials must be stored with:
  *   secret-tool store --label="..." service telegram key botToken
@@ -138,6 +182,12 @@ export function getAvailableCredentials(): KeyringCredentials {
     credentials.binance = getBinanceCredentials();
   } catch (err) {
     // Binance credentials not available, skip
+  }
+
+  try {
+    credentials.coinbase = getCoinbaseCredentials();
+  } catch (err) {
+    // Coinbase credentials not available, skip
   }
 
   const telegramCreds = getTelegramCredentials();

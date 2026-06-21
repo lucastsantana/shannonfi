@@ -106,7 +106,17 @@ export class RebalancerBot {
 
   async start(): Promise<void> {
     this.isRunning = true;
-    const neverExceed = this.config.exchange === 'mercadobitcoin' ? this.config.neverExceedExemptionLimit : false;
+    // Lei 9.250/1995 Art. 21's R$35k/month exemption applies to a Brazilian tax
+    // resident's aggregate crypto sales "no Brasil ou no exterior" (regardless of
+    // exchange) — not domestic-only, despite this guard historically only existing
+    // on the mercadobitcoin branch. Extended to coinbase (defaulted true there,
+    // since it's a brand-new instance with no existing behavior to preserve).
+    // Binance is deliberately left as `false` here unchanged — that's a real-money
+    // instance already running; revisiting it is a separate decision, not bundled
+    // into this change. See docs/coinbase-adapter-plan.md, open question 5.
+    const neverExceed = this.config.exchange === 'mercadobitcoin' || this.config.exchange === 'coinbase'
+      ? this.config.neverExceedExemptionLimit
+      : false;
     const baseAsset = this.config.symbol.split('-')[0]!;
 
     logger.info("Shannon's Demon bot starting", {
@@ -312,7 +322,17 @@ export class RebalancerBot {
     // ── Guard: exemption / volume cap ─────────────────────────────────────────
     // Lei 9.250/1995 Art. 21: only SELL proceeds count toward the R$35k exemption limit
     // This guard only applies to Mercado Bitcoin (domestic exchange); Binance trades are always taxable
-    const neverExceed = this.config.exchange === 'mercadobitcoin' ? this.config.neverExceedExemptionLimit : false;
+    // Lei 9.250/1995 Art. 21's R$35k/month exemption applies to a Brazilian tax
+    // resident's aggregate crypto sales "no Brasil ou no exterior" (regardless of
+    // exchange) — not domestic-only, despite this guard historically only existing
+    // on the mercadobitcoin branch. Extended to coinbase (defaulted true there,
+    // since it's a brand-new instance with no existing behavior to preserve).
+    // Binance is deliberately left as `false` here unchanged — that's a real-money
+    // instance already running; revisiting it is a separate decision, not bundled
+    // into this change. See docs/coinbase-adapter-plan.md, open question 5.
+    const neverExceed = this.config.exchange === 'mercadobitcoin' || this.config.exchange === 'coinbase'
+      ? this.config.neverExceedExemptionLimit
+      : false;
     if (neverExceed && direction === 'SELL_BASE') {
       const monthBRT = todayBRT.slice(0, 7);
       const volumeSoFar = this.tax.getMonthlySalesBrl(monthBRT);

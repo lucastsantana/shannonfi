@@ -26,6 +26,7 @@ export interface ScanOptions {
   minDataPoints: number;    // skip assets with fewer candles than this, default 10
   returnFloor: number;      // hard filter: skip assets with return < this, default -0.20
   topN: number;             // display top N candidates, default 15
+  quoteCurrency: string;    // 'BRL' for Mercado Bitcoin/Binance, 'USD' for Coinbase
 }
 
 export interface CallbackQuery {

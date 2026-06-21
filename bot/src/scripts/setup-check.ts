@@ -13,6 +13,9 @@ import { MbClient } from '../adapters/mercadobitcoin/client';
 import { MbEndpoints } from '../adapters/mercadobitcoin/endpoints';
 import { BinanceClient } from '../adapters/binance/client';
 import { BinanceEndpoints } from '../adapters/binance/endpoints';
+import { CoinbaseClient } from '../adapters/coinbase/client';
+import { CoinbaseEndpoints } from '../adapters/coinbase/endpoints';
+import { FxRateService } from '../core/tracker/fxrate';
 import { execSync } from 'child_process';
 
 function getMbCredentialsFromKeyring(): { clientId: string; clientSecret: string } {
@@ -157,6 +160,84 @@ async function checkBinance(): Promise<void> {
   }
 }
 
+function getCoinbaseCredentialsFromKeyring(): { keyName: string; privateKeyPem: string } {
+  try {
+    const keyName = execSync('secret-tool lookup service coinbase key keyName 2>/dev/null', {
+      encoding: 'utf-8',
+      stdio: ['pipe', 'pipe', 'ignore'],
+    }).trim();
+    const privateKeyPem = execSync('secret-tool lookup service coinbase key privateKeyPem 2>/dev/null', {
+      encoding: 'utf-8',
+      stdio: ['pipe', 'pipe', 'ignore'],
+    }).trim();
+
+    if (!keyName || !privateKeyPem) {
+      throw new Error('Credentials not found in keyring');
+    }
+
+    return { keyName, privateKeyPem };
+  } catch {
+    throw new Error(
+      'Coinbase credentials not found in GNOME Keyring.\n' +
+      'Store them with:\n' +
+      '  secret-tool store service coinbase key keyName\n' +
+      '  secret-tool store service coinbase key privateKeyPem',
+    );
+  }
+}
+
+async function checkCoinbase(): Promise<void> {
+  const config = loadConfig();
+  if (config.exchange !== 'coinbase') return;
+
+  const { keyName, privateKeyPem } = getCoinbaseCredentialsFromKeyring();
+  const apiBaseUrl = config.coinbase.apiBaseUrl;
+
+  const client = new CoinbaseClient(keyName, privateKeyPem, apiBaseUrl);
+  const endpoints = new CoinbaseEndpoints(client, config.symbol);
+
+  console.log('\n2. Testing Coinbase API authentication (JWT)...');
+  const accountsResp = await endpoints.getAccounts();
+  console.log(`   OK — Authenticated. ${accountsResp.accounts.length} account(s) visible.`);
+
+  const baseAsset = config.symbol.split('-')[0]!;
+  const quoteCurrency = config.symbol.split('-')[1]!;
+
+  console.log('\n3. Fetching balances...');
+  const baseBalance = parseFloat(accountsResp.accounts.find((a) => a.currency === baseAsset)?.available_balance.value ?? '0');
+  const quoteBalance = parseFloat(accountsResp.accounts.find((a) => a.currency === quoteCurrency)?.available_balance.value ?? '0');
+  console.log(`   ${baseAsset} balance: ${baseBalance.toFixed(6)} ${baseAsset}`);
+  console.log(`   ${quoteCurrency} balance: ${quoteBalance.toFixed(2)} ${quoteCurrency}`);
+
+  if (quoteBalance + baseBalance === 0) {
+    console.warn('   WARN — All balances are zero');
+  }
+
+  console.log(`\n4. Checking ${config.symbol} market (recent candles)...`);
+  const candles = await endpoints.getCandles(7, 'ONE_DAY');
+  if (!candles.candles || candles.candles.length === 0) {
+    console.error('   FAIL — No candle data returned from Coinbase');
+    process.exit(1);
+  }
+  const lastClose = parseFloat(candles.candles[0]!.close); // Coinbase returns newest-first
+  if (!Number.isFinite(lastClose) || lastClose <= 0) {
+    console.error(`   FAIL — Invalid close price from Coinbase: ${candles.candles[0]!.close}`);
+    process.exit(1);
+  }
+  console.log(`   OK — ${candles.candles.length} daily candles. Latest close: ${lastClose.toFixed(2)} ${quoteCurrency}/${baseAsset}`);
+
+  console.log('\n5. Checking BACEN PTAX rate (USD/BRL conversion)...');
+  const fxRate = new FxRateService();
+  const ptax = await fxRate.getUsdBrlRate();
+  console.log(`   OK — PTAX rate: ${ptax.toFixed(4)} BRL/USD`);
+  console.log(`   ${baseAsset} price in BRL terms: R$${(lastClose * ptax).toFixed(2)}`);
+
+  const totalBrl = (quoteBalance + baseBalance * lastClose) * ptax;
+  if (totalBrl < loadConfig().minPortfolioValueBrl) {
+    console.warn(`   WARN — Total portfolio (~R$${totalBrl.toFixed(2)} BRL-equivalent) is below minPortfolioValueBrl (R$${loadConfig().minPortfolioValueBrl})`);
+  }
+}
+
 async function runSetupCheck(): Promise<void> {
   console.log("=== Shannon's Demon — Setup Check ===\n");
 
@@ -171,8 +252,10 @@ async function runSetupCheck(): Promise<void> {
 
   if (config.exchange === 'mercadobitcoin') {
     await checkMercadoBitcoin();
-  } else {
+  } else if (config.exchange === 'binance') {
     await checkBinance();
+  } else {
+    await checkCoinbase();
   }
 
   console.log('\n✓ All checks passed. The bot is ready to run.');

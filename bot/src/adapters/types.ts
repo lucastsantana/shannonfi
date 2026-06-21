@@ -61,7 +61,7 @@ export interface TradeRecord {
   id: string;
   clientOrderId: string;
   exchangeOrderId: string | null;
-  exchange: 'mercadobitcoin' | 'binance';
+  exchange: 'mercadobitcoin' | 'binance' | 'coinbase';
   timestamp: string;
   direction: 'BUY_BASE' | 'SELL_BASE';
   brlAmountTarget: number;
@@ -89,6 +89,6 @@ export interface PortfolioSnapshot {
   baseRatioBps: number;
   effectiveThresholdBps: number;
   rebalancedToday: boolean;
-  exchange: 'mercadobitcoin' | 'binance';
+  exchange: 'mercadobitcoin' | 'binance' | 'coinbase';
   baseAsset: string | null;       // which asset was active at this snapshot (supports asset rotation)
 }
