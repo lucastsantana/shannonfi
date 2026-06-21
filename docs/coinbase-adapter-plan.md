@@ -263,3 +263,79 @@ matrix/loop changes are YAML I could not execute in this environment either
 generalized workflow against `hype-mb` (the one instance with real secrets
 already configured) before relying on them, to catch any YAML or matrix-syntax
 mistake before it matters for a second instance.
+
+## Setup Walkthrough (first-time credential bring-up)
+
+This is the actual step-by-step to go from nothing to a passing `setup-check`.
+The `.template` file's header has a condensed version of this; this is the full
+version, including the verification steps and what good output looks like.
+
+### 1. Create the CDP API key
+
+1. Go to the [Coinbase Developer Platform](https://www.coinbase.com/developer-platform), logged into the Coinbase account the bot should trade on.
+2. Navigate to **API Keys** under Advanced Trade API / CDP API Keys — not the legacy Coinbase Pro/Exchange key page, which uses a different (unsupported) format.
+3. Create a key. **Pick Ed25519** if offered — it's Coinbase's recommended type and what `jwt.ts`'s signer auto-detects and prefers. An EC (ECDSA P-256) key also works (the code detects either).
+4. Set permissions to **View** only for initial setup. Add **Trade** only once `setup-check` passes and you're moving to a `DRY_RUN` cycle — there's no reason to grant trade permission just to test connectivity.
+5. Coinbase shows the key name and private key **once**, on creation — copy both somewhere safe (e.g. a password manager) before navigating away:
+   - Key name: `organizations/<org-id>/apiKeys/<key-id>`
+   - Private key: a PEM block, `-----BEGIN EC PRIVATE KEY-----` or `-----BEGIN PRIVATE KEY-----` through the matching `END` line.
+
+### 2. Store credentials in GNOME Keyring (local testing)
+
+```bash
+secret-tool store --label="Coinbase API Key Name" service coinbase key keyName
+# paste the key name, Enter
+
+secret-tool store --label="Coinbase API Private Key" service coinbase key privateKeyPem
+# paste the FULL PEM block, with real line breaks preserved, then Ctrl+D
+```
+
+Verify both landed intact:
+```bash
+secret-tool lookup service coinbase key keyName
+secret-tool lookup service coinbase key privateKeyPem   # should print the full multi-line PEM back out
+```
+
+### 3. Create the instance config
+
+```bash
+cd bot
+cp configs/coinbase-btc.yaml.template configs/coinbase-btc.yaml
+```
+Defaults to `dryRun: true` and `BTC-USD` — no edits needed to start testing.
+
+### 4. Run setup-check
+
+```bash
+npm run build
+npm run setup-check -- --config configs/coinbase-btc.yaml
+```
+(`setup-check.ts` now parses `--config` like every other script in this repo —
+it didn't before this was written, which would have silently ignored the flag
+and checked the wrong file. Fixed in the same change as this walkthrough.)
+
+Expected output:
+```
+2. Testing Coinbase API authentication (JWT)...
+   OK — Authenticated. N account(s) visible.
+3. Fetching balances...
+   BTC balance: 0.000000 BTC
+   USD balance: 0.00 USD
+4. Checking BTC-USD market (recent candles)...
+   OK — 7 daily candles. Latest close: ... USD/BTC
+5. Checking BACEN PTAX rate (USD/BRL conversion)...
+   OK — PTAX rate: 5.xxxx BRL/USD
+```
+If it fails at step 2: most likely a PEM pasted with line breaks lost (re-check
+`secret-tool lookup`), a View-only key missing `accounts:read` scope, or a
+stale/revoked key.
+
+### 5. Dry-run a cycle
+
+```bash
+DRY_RUN=true node dist/index.js --config configs/coinbase-btc.yaml --once
+```
+Places no real order (the adapter short-circuits before `createOrder` when
+`dryRun` is true) but exercises the full rebalance-decision path against real
+balances and a real PTAX-converted price. Only after this succeeds cleanly
+should the key get `Trade` permission and `dryRun` flip to `false`.

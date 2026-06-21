@@ -2,10 +2,11 @@
  * Pre-flight check for the Shannon's Demon bot.
  *
  * Usage:
- *   npm run setup-check
+ *   npm run setup-check                                    — uses the default config
+ *   npm run setup-check -- --config configs/hype-mb.yaml    — checks a specific instance
  *
- * Validates config, tests Mercado Bitcoin connectivity, and reports balances.
- * Reads credentials from GNOME Keyring (same as start.sh).
+ * Validates config, tests exchange connectivity, and reports balances.
+ * Reads credentials from GNOME Keyring (same as start-instance.sh).
  */
 
 import { loadConfig } from '../config';
@@ -17,6 +18,9 @@ import { CoinbaseClient } from '../adapters/coinbase/client';
 import { CoinbaseEndpoints } from '../adapters/coinbase/endpoints';
 import { FxRateService } from '../core/tracker/fxrate';
 import { execSync } from 'child_process';
+
+const configIdx = process.argv.indexOf('--config');
+const CONFIG_PATH = configIdx !== -1 ? process.argv[configIdx + 1] : undefined;
 
 function getMbCredentialsFromKeyring(): { clientId: string; clientSecret: string } {
   try {
@@ -71,7 +75,7 @@ function getBinanceCredentialsFromKeyring(): { apiKey: string; apiSecret: string
 }
 
 async function checkMercadoBitcoin(): Promise<void> {
-  const config = loadConfig();
+  const config = loadConfig(CONFIG_PATH);
   if (config.exchange !== 'mercadobitcoin') return;
 
   const { clientId, clientSecret } = getMbCredentialsFromKeyring();
@@ -104,13 +108,13 @@ async function checkMercadoBitcoin(): Promise<void> {
   console.log(`   OK — ${candles.t.length} daily candles. Latest close: R$${parseFloat(lastClose).toFixed(2)}/${baseAsset}`);
 
   const totalBrl = brlBalance + baseBalance * parseFloat(lastClose);
-  if (totalBrl < loadConfig().minPortfolioValueBrl) {
-    console.warn(`   WARN — Total portfolio R$${totalBrl.toFixed(2)} is below minPortfolioValueBrl (R$${loadConfig().minPortfolioValueBrl})`);
+  if (totalBrl < loadConfig(CONFIG_PATH).minPortfolioValueBrl) {
+    console.warn(`   WARN — Total portfolio R$${totalBrl.toFixed(2)} is below minPortfolioValueBrl (R$${loadConfig(CONFIG_PATH).minPortfolioValueBrl})`);
   }
 }
 
 async function checkBinance(): Promise<void> {
-  const config = loadConfig();
+  const config = loadConfig(CONFIG_PATH);
   if (config.exchange !== 'binance') return;
 
   const { apiKey, apiSecret } = getBinanceCredentialsFromKeyring();
@@ -155,8 +159,8 @@ async function checkBinance(): Promise<void> {
   console.log(`   OK — ${klines.length} daily candles. Latest close: R$${lastClose.toFixed(2)}/${baseAsset}`);
 
   const totalBrl = brlBalance + baseBalance * lastClose;
-  if (totalBrl < loadConfig().minPortfolioValueBrl) {
-    console.warn(`   WARN — Total portfolio R$${totalBrl.toFixed(2)} is below minPortfolioValueBrl (R$${loadConfig().minPortfolioValueBrl})`);
+  if (totalBrl < loadConfig(CONFIG_PATH).minPortfolioValueBrl) {
+    console.warn(`   WARN — Total portfolio R$${totalBrl.toFixed(2)} is below minPortfolioValueBrl (R$${loadConfig(CONFIG_PATH).minPortfolioValueBrl})`);
   }
 }
 
@@ -187,7 +191,7 @@ function getCoinbaseCredentialsFromKeyring(): { keyName: string; privateKeyPem: 
 }
 
 async function checkCoinbase(): Promise<void> {
-  const config = loadConfig();
+  const config = loadConfig(CONFIG_PATH);
   if (config.exchange !== 'coinbase') return;
 
   const { keyName, privateKeyPem } = getCoinbaseCredentialsFromKeyring();
@@ -233,8 +237,8 @@ async function checkCoinbase(): Promise<void> {
   console.log(`   ${baseAsset} price in BRL terms: R$${(lastClose * ptax).toFixed(2)}`);
 
   const totalBrl = (quoteBalance + baseBalance * lastClose) * ptax;
-  if (totalBrl < loadConfig().minPortfolioValueBrl) {
-    console.warn(`   WARN — Total portfolio (~R$${totalBrl.toFixed(2)} BRL-equivalent) is below minPortfolioValueBrl (R$${loadConfig().minPortfolioValueBrl})`);
+  if (totalBrl < loadConfig(CONFIG_PATH).minPortfolioValueBrl) {
+    console.warn(`   WARN — Total portfolio (~R$${totalBrl.toFixed(2)} BRL-equivalent) is below minPortfolioValueBrl (R$${loadConfig(CONFIG_PATH).minPortfolioValueBrl})`);
   }
 }
 
@@ -242,7 +246,7 @@ async function runSetupCheck(): Promise<void> {
   console.log("=== Shannon's Demon — Setup Check ===\n");
 
   console.log('1. Loading and validating configuration...');
-  const config = loadConfig();
+  const config = loadConfig(CONFIG_PATH);
   console.log('   OK — Config loaded');
   console.log(`   Exchange:   ${config.exchange}`);
   console.log(`   Dry Run:    ${config.dryRun}`);

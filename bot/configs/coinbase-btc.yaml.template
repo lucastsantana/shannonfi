@@ -16,8 +16,10 @@
 #      paste the whole "-----BEGIN ... PRIVATE KEY-----" block, then Ctrl+D):
 #        secret-tool store --label="Coinbase API Key Name" service coinbase key keyName
 #        secret-tool store --label="Coinbase API Private Key" service coinbase key privateKeyPem
-#   3. Run `npm run setup-check` against this config to validate auth, balances,
-#      candles, and the PTAX rate fetch BEFORE enabling live trading.
+#   3. Run `npm run setup-check -- --config configs/coinbase-btc.yaml` to validate
+#      auth, balances, candles, and the PTAX rate fetch BEFORE enabling live
+#      trading. Full walkthrough (key creation, secret-tool commands, expected
+#      output): docs/coinbase-adapter-plan.md, "Setup Walkthrough".
 #   4. Uncomment coinbase-btc in ecosystem.config.cjs (for local PM2) and/or in
 #      .github/workflows/{rebalancer,scan,dashboard,monthly-db-backup}.yml (for
 #      GitHub Actions), plus COINBASE_API_KEY_NAME/COINBASE_API_KEY_SECRET as repo secrets.
