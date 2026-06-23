@@ -15,7 +15,7 @@ function makeAdapter() {
   process.env.COINBASE_API_KEY_SECRET = '-----BEGIN PRIVATE KEY-----\ntest\n-----END PRIVATE KEY-----';
 
   const config: CoinbaseConfig = { apiBaseUrl: 'https://api.coinbase.com' };
-  const adapter = new CoinbaseAdapter(config, false, 100, 'BTC-USD');
+  const adapter = new CoinbaseAdapter(config, false, 100, 'BTC-USDC');
 
   const mockEndpoints = {
     getCandles: vi.fn(),
@@ -53,7 +53,7 @@ describe('CoinbaseAdapter — BRL<->USD conversion at the boundary', () => {
     mockEndpoints.getAccounts.mockResolvedValue({
       accounts: [
         { currency: 'BTC', available_balance: { value: '0.5', currency: 'BTC' } },
-        { currency: 'USD', available_balance: { value: '1000', currency: 'USD' } },
+        { currency: 'USDC', available_balance: { value: '1000', currency: 'USDC' } },
       ],
       has_next: false,
       cursor: '',
@@ -62,7 +62,7 @@ describe('CoinbaseAdapter — BRL<->USD conversion at the boundary', () => {
     const portfolio: Portfolio = await adapter.getPortfolio(60_000 * PTAX); // knownPrice already in BRL
 
     expect(portfolio.baseBalance).toBe(0.5);
-    expect(portfolio.brlBalance).toBe(1000 * PTAX); // USD cash leg converted to BRL
+    expect(portfolio.brlBalance).toBe(1000 * PTAX); // USDC cash leg converted to BRL
     expect(portfolio.baseValueBrl).toBe(0.5 * 60_000 * PTAX);
     expect(portfolio.totalValueBrl).toBe(portfolio.baseValueBrl + portfolio.brlBalance);
   });
@@ -71,11 +71,11 @@ describe('CoinbaseAdapter — BRL<->USD conversion at the boundary', () => {
     const { adapter, mockEndpoints } = makeAdapter();
     mockEndpoints.createOrder.mockResolvedValue({
       success: true,
-      success_response: { order_id: 'order-1', product_id: 'BTC-USD', side: 'BUY', client_order_id: 'c1' },
+      success_response: { order_id: 'order-1', product_id: 'BTC-USDC', side: 'BUY', client_order_id: 'c1' },
     });
     mockEndpoints.getOrder.mockResolvedValue({
       order: {
-        order_id: 'order-1', product_id: 'BTC-USD', status: 'FILLED',
+        order_id: 'order-1', product_id: 'BTC-USDC', status: 'FILLED',
         filled_size: '0.01', average_filled_price: '60000', total_fees: '5', filled_value: '600',
       },
     });
@@ -107,11 +107,11 @@ describe('CoinbaseAdapter — BRL<->USD conversion at the boundary', () => {
     const { adapter, mockEndpoints } = makeAdapter();
     mockEndpoints.createOrder.mockResolvedValue({
       success: true,
-      success_response: { order_id: 'order-2', product_id: 'BTC-USD', side: 'SELL', client_order_id: 'c2' },
+      success_response: { order_id: 'order-2', product_id: 'BTC-USDC', side: 'SELL', client_order_id: 'c2' },
     });
     mockEndpoints.getOrder.mockResolvedValue({
       order: {
-        order_id: 'order-2', product_id: 'BTC-USD', status: 'FILLED',
+        order_id: 'order-2', product_id: 'BTC-USDC', status: 'FILLED',
         filled_size: '0.01', average_filled_price: '60000', total_fees: '5', filled_value: '600',
       },
     });
@@ -138,7 +138,7 @@ describe('CoinbaseAdapter — BRL<->USD conversion at the boundary', () => {
     process.env.COINBASE_API_KEY_NAME = 'test-key-name';
     process.env.COINBASE_API_KEY_SECRET = '-----BEGIN PRIVATE KEY-----\ntest\n-----END PRIVATE KEY-----';
     const config: CoinbaseConfig = { apiBaseUrl: 'https://api.coinbase.com' };
-    const adapter = new CoinbaseAdapter(config, /* dryRun */ true, 100, 'BTC-USD');
+    const adapter = new CoinbaseAdapter(config, /* dryRun */ true, 100, 'BTC-USDC');
     delete process.env.COINBASE_API_KEY_NAME;
     delete process.env.COINBASE_API_KEY_SECRET;
 

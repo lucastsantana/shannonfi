@@ -1,16 +1,16 @@
 #!/usr/bin/env node
 /**
  * Unified asset scanner CLI for Shannon's Demon bot.
- * Works with Mercado Bitcoin and Binance exchanges.
+ * Works with Mercado Bitcoin, Binance, and Coinbase exchanges.
  *
  * Usage:
  *   # Mercado Bitcoin
  *   npm run scan -- --config configs/hype-mb.yaml
  *   npm run scan -- --config configs/hype-mb.yaml --window 30 --min-volume 5000
  *
- *   # Binance
- *   npm run scan -- --config configs/btc-binance.yaml
- *   npm run scan -- --config configs/btc-binance.yaml --window 60 --top 20
+ *   # Coinbase
+ *   npm run scan -- --config configs/coinbase-shannon-1.yaml
+ *   npm run scan -- --config configs/coinbase-shannon-1.yaml --window 60 --top 20
  */
 
 import path from 'path';
@@ -32,6 +32,8 @@ interface CliArgs {
   minDataPoints: number;
   returnFloor: number;
   top: number;
+  minTrendSlope: number;
+  liquidityFullWeight: number;
   reloadScan?: number;
   dryRun: boolean;
 }
@@ -45,6 +47,8 @@ function parseArgs(): CliArgs {
     minDataPoints: 10,
     returnFloor: -0.20,
     top: 15,
+    minTrendSlope: -0.0005,
+    liquidityFullWeight: 50_000,
     dryRun: false,
   };
 
@@ -63,6 +67,10 @@ function parseArgs(): CliArgs {
       result.returnFloor = parseFloat(args[++i] || '-0.20');
     } else if (arg === '--top') {
       result.top = parseInt(args[++i] || '15', 10);
+    } else if (arg === '--min-trend-slope') {
+      result.minTrendSlope = parseFloat(args[++i] || '-0.0005');
+    } else if (arg === '--liquidity-full-weight') {
+      result.liquidityFullWeight = parseFloat(args[++i] || '50000');
     } else if (arg === '--reload-scan') {
       result.reloadScan = parseInt(args[++i] || '0', 10);
     } else if (arg === '--dry-run') {
@@ -173,12 +181,18 @@ async function main(): Promise<void> {
         minDataPoints: cliArgs.minDataPoints,
         returnFloor: cliArgs.returnFloor,
         topN: cliArgs.top,
+        minTrendSlope: cliArgs.minTrendSlope,
+        liquidityFullWeightBrl: cliArgs.liquidityFullWeight,
         quoteCurrency: activeSymbol.split('-')[1]!,
       };
 
       const scanResult = await scanner.scan(options);
       scanResult.currentSymbol = activeSymbol;
-      await reporter.report(scanResult, cliArgs.dryRun);
+      // Autonomous instances (config.autonomousWeeklyRotation) decide and rotate on
+      // their own — see rebalancer.ts's checkAndRunAutonomousRotationDecision() — so
+      // this daily report is informational only for them, with no approve/reject
+      // buttons (a stray tap would otherwise race against the scheduled decision).
+      await reporter.report(scanResult, cliArgs.dryRun, !config.autonomousWeeklyRotation);
     }
   } catch (err) {
     throw err;

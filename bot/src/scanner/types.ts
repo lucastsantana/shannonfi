@@ -4,7 +4,9 @@ export interface AssetCandidate {
   mad: number;              // mean absolute daily return (fraction, e.g. 0.021 = 2.1%)
   rollingReturn: number;    // total return over window (fraction, e.g. 0.153 = 15.3%)
   avgDailyVolumeBrl: number;// average daily BRL volume
-  score: number;            // mad × (1 + rollingReturn)
+  trendSlope: number;       // normalized OLS slope, fraction-of-price per day (computeNormalizedTrendSlope); >0 uptrend, <0 downtrend
+  liquidityWeight: number;  // 0..1, dampens score for thin markets even above the hard minVolumeBrl floor
+  score: number;            // mad × (1 + rollingReturn) × liquidityWeight
   rank: number;             // 1 = best score
   dataPoints: number;       // number of daily candles used in calculation
 }
@@ -27,6 +29,8 @@ export interface ScanOptions {
   returnFloor: number;      // hard filter: skip assets with return < this, default -0.20
   topN: number;             // display top N candidates, default 15
   quoteCurrency: string;    // 'BRL' for Mercado Bitcoin/Binance, 'USD' for Coinbase
+  minTrendSlope: number;    // hard filter: reject candidates trending down past this (computeNormalizedTrendSlope units), default -0.0005 (~-1.5%/30d)
+  liquidityFullWeightBrl: number; // avgDailyVolumeBrl at which liquidityWeight saturates to 1.0, default 50_000
 }
 
 export interface CallbackQuery {

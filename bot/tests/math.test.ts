@@ -6,6 +6,7 @@ import {
   computeRebalanceTrade,
   brlToBase,
   computeMeanAbsoluteDailyReturn,
+  computeNormalizedTrendSlope,
   computeAdaptiveThresholdBps,
   isSlippageAcceptable,
 } from '../src/math';
@@ -112,6 +113,37 @@ describe('computeMeanAbsoluteDailyReturn', () => {
 
   it('handles flat prices', () => {
     expect(computeMeanAbsoluteDailyReturn([100, 100, 100])).toBe(0);
+  });
+});
+
+describe('computeNormalizedTrendSlope', () => {
+  it('returns 0 for fewer than 2 prices', () => {
+    expect(computeNormalizedTrendSlope([])).toBe(0);
+    expect(computeNormalizedTrendSlope([100])).toBe(0);
+  });
+
+  it('returns 0 for perfectly flat prices (sideways)', () => {
+    expect(computeNormalizedTrendSlope([100, 100, 100, 100])).toBe(0);
+  });
+
+  it('returns a positive slope for a clean uptrend', () => {
+    // Price rises by exactly 1 per day for 5 days starting at 100.
+    const slope = computeNormalizedTrendSlope([100, 101, 102, 103, 104]);
+    expect(slope).toBeGreaterThan(0);
+    // OLS slope of [100..104] vs [0..4] is exactly 1/day; mean price is 102.
+    expect(slope).toBeCloseTo(1 / 102, 5);
+  });
+
+  it('returns a negative slope for a clean downtrend', () => {
+    const slope = computeNormalizedTrendSlope([104, 103, 102, 101, 100]);
+    expect(slope).toBeLessThan(0);
+    expect(slope).toBeCloseTo(-1 / 102, 5);
+  });
+
+  it('is symmetric in magnitude for mirrored up/down trends', () => {
+    const up = computeNormalizedTrendSlope([100, 101, 102, 103, 104]);
+    const down = computeNormalizedTrendSlope([104, 103, 102, 101, 100]);
+    expect(up).toBeCloseTo(-down, 10);
   });
 });
 

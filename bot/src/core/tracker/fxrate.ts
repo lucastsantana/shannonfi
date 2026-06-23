@@ -1,10 +1,13 @@
 /**
- * USD/BRL exchange rate service, for adapters whose exchange quotes in USD instead
- * of BRL (e.g. Coinbase). Converts at the adapter boundary so every other layer
- * (math.ts, costbasis.ts, tax.ts, history.ts, dashboard.ts, report-builder.ts) keeps
- * operating on plain "BRL" values exactly as it already does — see
- * docs/coinbase-adapter-plan.md for why this boundary was chosen over threading a
- * currency code through the whole engine.
+ * USD/BRL exchange rate service, for adapters whose exchange quotes in USD (or a
+ * USD-pegged stablecoin) instead of BRL (e.g. Coinbase, which this adapter targets
+ * via USDC-quoted pairs — see docs/coinbase-adapter-plan.md). USDC is treated as
+ * 1:1 with USD for this conversion; any de-peg risk is accepted, not modeled.
+ * Converts at the adapter boundary so every other layer (math.ts, costbasis.ts,
+ * tax.ts, history.ts, dashboard.ts, report-builder.ts) keeps operating on plain
+ * "BRL" values exactly as it already does — see docs/coinbase-adapter-plan.md for
+ * why this boundary was chosen over threading a currency code through the whole
+ * engine.
  *
  * Rate source: BACEN SGS série 1 — "Taxa de câmbio - Livre - Dólar americano
  * (venda)", the official PTAX sell rate. This is the rate Receita Federal guidance

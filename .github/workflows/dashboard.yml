@@ -69,7 +69,7 @@ jobs:
           # subpath empty ("") for the one instance that should live at the root.
           declare -A INSTANCES=(
             ["hype-mb"]=""
-            # ["coinbase-btc"]="coinbase-btc"   # uncomment once this instance is live
+            # ["coinbase-shannon-1"]="coinbase-shannon-1"   # uncomment once this instance is live
           )
 
           for instance in "${!INSTANCES[@]}"; do

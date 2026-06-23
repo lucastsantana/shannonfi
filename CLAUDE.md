@@ -6,16 +6,16 @@ This is a **multi-exchange, multi-instance trading bot** implementing Shannon's 
 
 The repo contains **only the CEX bot** — the Solana on-chain vault implementation has been removed entirely.
 
-**Exchanges:** Mercado Bitcoin, Binance, and Coinbase, via a shared `ExchangeAdapter` interface (see `adapters/types.ts`). Coinbase has no BRL-quoted trading pairs — its adapter converts BRL<->USD at the boundary using the daily BACEN PTAX rate, so every other layer still operates on plain BRL values. See `docs/coinbase-adapter-plan.md`.
+**Exchanges:** Mercado Bitcoin and Coinbase have active or near-active instances; Binance's adapter still exists in the codebase but has no active instance (its only real instance, `btc-binance`, was decommissioned). All three share an `ExchangeAdapter` interface (see `adapters/types.ts`). Coinbase has no BRL-quoted trading pairs — its adapter converts BRL<->USD at the boundary using the daily BACEN PTAX rate (treating USDC as 1:1 with USD; USDC, not USD, is the quote currency it actually trades), so every other layer still operates on plain BRL values. See `docs/coinbase-adapter-plan.md`.
 
 **Instances:** Each instance is one `(exchange, symbol)` pair driven by its own config file under `bot/configs/`, with its own SQLite database and JSON backups under `bot/data/<instance>/`. Instances run independently — there is no shared global config or shared database. The *active* symbol for an instance is resolved from its database (`current_symbol`, seeded from the YAML default on first run), not hardcoded — this is what asset rotation (see `docs/dynamic-asset-rotation-plan.md`) updates without a restart.
+
+**Naming convention:** `{exchange}-{strategy}-{n}`, e.g. `coinbase-shannon-1`, with `coinbase-shannon-2` etc. for additional parallel instances on the same exchange. This deliberately excludes the symbol — since dynamic asset rotation means an instance's traded symbol can change at runtime, naming it after a point-in-time symbol would go stale. `hype-mb` is a pre-convention name kept as-is: it already has real accumulated trade/tax history and GitHub Actions artifact/release continuity tied to that exact name, so renaming it isn't worth the risk. `btc-binance` (a real, now-decommissioned Binance instance) was removed entirely, not renamed — Binance is no longer in active use.
 
 | Instance | Exchange | Symbol | Config | Deployment |
 |---|---|---|---|---|
 | `hype-mb` | Mercado Bitcoin | HYPE-BRL | `bot/configs/hype-mb.yaml` | Local PM2 **and** GitHub Actions (rebalancer, scan, dashboard) |
-| `btc-binance` | Binance | BTC-BRL | `bot/configs/btc-binance.yaml` | Local PM2 only (`ecosystem.config.cjs`) |
-| *(template)* | Binance | SOL-BRL | `bot/configs/sol-binance.yaml.template` | Not yet instantiated — copy to `.yaml` and add to `ecosystem.config.cjs` to enable |
-| *(template)* | Coinbase | BTC-USD | `bot/configs/coinbase-btc.yaml.template` | Not yet instantiated — needs real CDP credentials; adapter not yet live-tested against a real account |
+| *(template)* | Coinbase | BTC-USDC | `bot/configs/coinbase-shannon-1.yaml.template` | Not yet instantiated — needs real Trade-permissioned CDP credentials; adapter live-tested for auth/balances/market-data/PTAX, order placement not yet exercised live |
 
 Only `hype-mb` is mirrored to GitHub Actions; other instances are local-only and not visible to CI. All four workflows are matrix-based and ready to add another instance to (just uncomment its entry) — they're just not actively running anything beyond `hype-mb` yet.
 
@@ -63,13 +63,12 @@ shannonfi/
 │   │           ├── pnl.ts        # Realized/unrealized P&L helpers
 │   │           ├── metrics.ts    # Track-record metrics (returns, drawdown, etc.)
 │   │           └── logger.ts
-│   ├── configs/                  # One YAML per instance — exchange + symbol fixed per file
-│   │   ├── hype-mb.yaml          # HYPE-BRL on Mercado Bitcoin (live: PM2 + GitHub Actions)
-│   │   ├── btc-binance.yaml      # BTC-BRL on Binance (live: PM2 only)
-│   │   └── sol-binance.yaml.template  # Scaffold for a third instance
+│   ├── configs/                  # One YAML per instance — naming: {exchange}-{strategy}-{n}
+│   │   ├── hype-mb.yaml          # HYPE-BRL on Mercado Bitcoin (live: PM2 + GitHub Actions; pre-convention name)
+│   │   └── coinbase-shannon-1.yaml.template  # Scaffold for a Coinbase instance
 │   ├── tests/                    # vitest unit tests
 │   ├── data/                     # Persistent local state, gitignored
-│   │   └── <instance>/           # e.g. hype-mb/, btc-binance/ — one dir per instance, fully isolated
+│   │   └── <instance>/           # e.g. hype-mb/, coinbase-shannon-1/ — one dir per instance, fully isolated
 │   │       ├── shannonfi.db          # Primary SQLite store (trades, snapshots, tax, cost basis)
 │   │       ├── shannonfi.db-shm/-wal # WAL companion files (auto-managed by SQLite)
 │   │       ├── trade_history.json    # Rolling 15-day JSON backup of trades
@@ -78,7 +77,7 @@ shannonfi/
 │   │       ├── portfolio_snapshots.json  # Rolling 15-day JSON backup of daily snapshots
 │   │       └── dashboard.html        # Generated by publishers/dashboard.ts
 │   ├── README.md                 # Full bot setup & tuning guide
-│   ├── ecosystem.config.cjs      # PM2: defines all local instances (hype-mb, btc-binance, ...)
+│   ├── ecosystem.config.cjs      # PM2: defines all local instances (hype-mb, coinbase-shannon-1, ...)
 │   ├── start-instance.sh         # Wrapper: loads creds from GNOME Keyring, launches one instance
 │   ├── package.json
 │   └── .github/workflows/ → see .github/workflows/ below (top-level, not under bot/)
@@ -203,7 +202,9 @@ Everything that ships output to somewhere external to the bot, mirroring the `ad
 - `dashboard.ts` — Reads the SQLite DB, renders the retro HTML dashboard; dual-purpose as a library and CLI (`npm run dashboard -- --config <path>`), invoked by `dashboard.yml` to publish to GitHub Pages
 
 ### Scanner (`bot/src/scanner/`)
-Cross-pair volatility scanner — ranks candidate symbols on an exchange by recent volatility to help pick what to trade next. `scan.ts` is the CLI entry (`npm run scan`); used by `scan.yml` (daily) and locally via cron scripts (`bot/scan-mb-daily.sh`, `bot/scan-binance-daily.sh`).
+Cross-pair volatility scanner — ranks candidate symbols on an exchange by recent volatility, trend direction, and liquidity to help pick what to trade next. `scan.ts` is the CLI entry (`npm run scan`); used by `scan.yml` (daily, both `hype-mb` and `coinbase-shannon-1`) and locally via cron scripts (`bot/scan-mb-daily.sh`, `bot/scan-coinbase-daily.sh`). Each candidate's score is `MAD × (1 + rollingReturn) × liquidityWeight`; candidates with a clearly negative trend (`computeNormalizedTrendSlope()` in `math.ts`, an OLS regression slope normalized by mean price) are filtered out entirely — only sideways-or-up candidates qualify — and `liquidityWeight` (0..1, saturating at `liquidityFullWeightBrl`) dampens thin markets beyond the hard `minVolumeBrl` floor.
+
+For an instance with `bootstrapViaScan: true` (e.g. `coinbase-shannon-1`), `RebalancerBot` triggers a scan itself on its very first cycle instead of trading its YAML-default `symbol` immediately. With `autonomousWeeklyRotation: true` also set, there is **no Telegram approval step at all** for that instance: `checkAndRunAutonomousRotationDecision()` (`core/rebalancer.ts`) picks the first asset immediately on bootstrap, then re-evaluates once a week (right after midnight Sunday→Monday BRT) and switches only if a new top candidate beats the current asset's score by `autonomousRotationMinMarginPct` — inserting an already-`APPROVED` `pending_rotation` row that the existing (Telegram-approval-agnostic) execution path then runs the same cycle. `hype-mb` keeps the original manual Telegram approve/reject flow (`scan-reporter.ts`'s buttons) — autonomous mode is opt-in per instance. See "`config`, `scans`, `pending_rotation` — asset rotation" below and `docs/dynamic-asset-rotation-plan.md`, "Autonomous weekly rotation".
 
 ### Tax Tracker
 **File:** `core/tracker/tax.ts`
@@ -711,7 +712,7 @@ If `|estWeight − 0.5| ≤ τ`, the balance fetch is skipped for this cycle. Th
 - `monthly-db-backup.yml` — 1st of each month; archives the SQLite DB as a GitHub Release
 - Credentials from GitHub Secrets; the SQLite DB persists between runs as a GitHub Actions artifact (`hype-mb-database`), downloaded/re-uploaded each run — see "Database Architecture" → artifact-sharing caveats in git history if debugging data loss
 - Telegram notifications on failure (`appleboy/telegram-action`)
-- Other local instances (`btc-binance`, ...) are **not** mirrored to GitHub Actions
+- Other local instances (`coinbase-shannon-1`, ...) are **not** mirrored to GitHub Actions
 
 ### 3. Backtest (Python, offline)
 - `shannon_backtest_real.py` — uses public exchange candle API
@@ -779,4 +780,4 @@ If `|estWeight − 0.5| ≤ τ`, the balance fetch is skipped for this cycle. Th
 
 ---
 
-**Last Updated:** 2026-06-20
+**Last Updated:** 2026-06-23

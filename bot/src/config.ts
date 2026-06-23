@@ -39,7 +39,7 @@ const TelegramSchema = z.object({
 // ─── Shared strategy fields (all exchanges) ───────────────────────────────────
 
 const CommonConfigSchema = z.object({
-  // Trading pair symbol (e.g. SOL-BRL, HYPE-BRL, BTC-BRL, or BTC-USD for Coinbase).
+  // Trading pair symbol (e.g. SOL-BRL, HYPE-BRL, BTC-BRL, or BTC-USDC for Coinbase).
   // The base asset is derived as the portion before the hyphen. The allowed quote
   // currency depends on the exchange — see the per-exchange `symbol` override below;
   // this default-only definition exists so TypeScript has a single `Config.symbol`
@@ -61,6 +61,30 @@ const CommonConfigSchema = z.object({
 
   // ─── Safeguards ─────────────────────────────────────────────────────────────
   enableDayTradeSafeguard: z.boolean().default(true),
+
+  // When true, the instance places no trade on its YAML-default `symbol` at all —
+  // it waits for the daily scanner to run, posts the result to Telegram, and only
+  // ever trades once a human approves a candidate via the existing rotation flow
+  // (docs/dynamic-asset-rotation-plan.md). Defaults false to preserve every
+  // existing instance's current behavior (immediate trading on its configured
+  // symbol); set true on a brand-new instance that should pick its first asset via
+  // the scanner rather than starting on a hardcoded default. See rebalancer.ts's
+  // `checkAndRebalance()` bootstrap gate. Superseded by `autonomousWeeklyRotation`
+  // below when both are true (no Telegram wait at all in that case).
+  bootstrapViaScan: z.boolean().default(false),
+
+  // When true, the instance picks and switches its own traded asset with no human
+  // approval step at all — replacing the Telegram approve/reject flow entirely for
+  // this instance. The very first asset (bootstrap) is picked immediately on the
+  // first cycle; every asset after that is re-evaluated once a week, right after
+  // midnight Sunday→Monday BRT, and only switched if the new top candidate beats
+  // the current asset's score by `autonomousRotationMinMarginPct` (avoids weekly
+  // churn/fees over noise-level differences). See rebalancer.ts's
+  // `checkAndRunAutonomousRotationDecision()` and
+  // docs/dynamic-asset-rotation-plan.md, "Autonomous weekly rotation". Defaults
+  // false — every existing instance keeps the manual Telegram-approval flow.
+  autonomousWeeklyRotation: z.boolean().default(false),
+  autonomousRotationMinMarginPct: z.number().min(0).max(5).default(0.20),
 
   // ─── Runtime ────────────────────────────────────────────────────────────────
   dryRun: z.boolean().default(false),
@@ -86,11 +110,10 @@ const MbConfigSchema = CommonConfigSchema.extend({
   // Lei 9.250/1995 Art. 21: caps SELL_BASE trades so monthly gross SELL proceeds
   // stay under the exemption limit. The law applies to a Brazilian tax resident's
   // aggregate crypto sales regardless of exchange ("no Brasil ou no exterior") — see
-  // docs/coinbase-adapter-plan.md, open question 5. This flag currently only exists
-  // on the mercadobitcoin branch for historical reasons (kept as-is for the already-
-  // running btc-binance instance pending an explicit decision); Coinbase gets the
-  // same flag on its own branch below, defaulted to true rather than carrying over
-  // that same gap into a brand-new instance.
+  // docs/coinbase-adapter-plan.md, open question 5. Defaulted false here to preserve
+  // the already-running hype-mb instance's existing behavior; Coinbase gets the same
+  // flag on its own branch below, defaulted to true rather than carrying over that
+  // same gap into a brand-new instance.
   neverExceedExemptionLimit: z.boolean().default(false),
 });
 
@@ -104,10 +127,11 @@ const CoinbaseConfigSchema = CommonConfigSchema.extend({
   exchange: z.literal('coinbase'),
   coinbase: CoinbaseSchema,
   // Coinbase has no BRL-quoted trading pairs (verified against its live products
-  // API — see docs/coinbase-adapter-plan.md). USD is the only quote currency this
-  // adapter has actually been built/tested against; USDC is allowed in the schema
-  // for a future instance but not yet implemented in adapter.ts.
-  symbol: z.string().regex(/^[A-Z]+-(USD|USDC)$/, "Symbol must match BASE-USD or BASE-USDC format").default('BTC-USD'),
+  // API — see docs/coinbase-adapter-plan.md). USDC is the quote currency this
+  // adapter actually targets: live testing showed Brazilian-held Coinbase balances
+  // only convert/trade cleanly against USDC-quoted pairs. USD is left schema-legal
+  // for completeness but is not the supported/default path.
+  symbol: z.string().regex(/^[A-Z]+-(USD|USDC)$/, "Symbol must match BASE-USD or BASE-USDC format").default('BTC-USDC'),
 
   // See note on MbConfigSchema above. Defaulted to true here (unlike the
   // mercadobitcoin branch's `false` default) because Lei 9.250's R$35k/month

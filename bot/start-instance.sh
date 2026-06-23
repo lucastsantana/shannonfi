@@ -5,7 +5,7 @@
 #
 # Usage:
 #   ./start-instance.sh hype-mb
-#   ./start-instance.sh btc-binance --once
+#   ./start-instance.sh coinbase-shannon-1 --once
 #   ./start-instance.sh hype-mb --config custom.yaml
 
 set -euo pipefail
@@ -14,7 +14,7 @@ if [ $# -eq 0 ]; then
   echo "Error: No instance name provided."
   echo "Usage: $0 <instance-name> [additional args...]"
   echo "Example: $0 hype-mb"
-  echo "Example: $0 btc-binance --once"
+  echo "Example: $0 coinbase-shannon-1 --once"
   exit 1
 fi
 

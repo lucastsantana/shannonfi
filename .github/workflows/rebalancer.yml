@@ -32,7 +32,7 @@ jobs:
       matrix:
         instance:
           - hype-mb
-          # - coinbase-btc   # uncomment once COINBASE_API_KEY_NAME/COINBASE_API_KEY_SECRET are set (see docs/coinbase-adapter-plan.md)
+          # - coinbase-shannon-1   # uncomment once COINBASE_API_KEY_NAME/COINBASE_API_KEY_SECRET are set (see docs/coinbase-adapter-plan.md)
     concurrency:
       group: ${{ matrix.instance }}-database
       cancel-in-progress: false

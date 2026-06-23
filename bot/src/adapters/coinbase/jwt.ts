@@ -23,6 +23,35 @@ function detectAlgorithm(keyObject: crypto.KeyObject): 'ES256' | 'EdDSA' {
   );
 }
 
+// Minimal PKCS8 DER envelope for Ed25519 (OID 1.3.101.112), everything but the
+// 32-byte seed that follows is fixed-width and identical for every Ed25519 key.
+const ED25519_PKCS8_PREFIX = Buffer.from('302e020100300506032b657004220420', 'hex');
+
+/**
+ * Coinbase's CDP "Secret API Key" download for Ed25519 keys is base64-encoded raw
+ * key material, not PEM — Node's crypto module only loads DER/PEM, so a raw 32-byte
+ * (or 64-byte seed+pubkey) Ed25519 key needs to be wrapped in a minimal PKCS8 DER
+ * envelope first. EC keys are still handed over to Coinbase as a PEM block, so that
+ * path is unchanged.
+ */
+function parsePrivateKey(privateKeyMaterial: string): crypto.KeyObject {
+  const trimmed = privateKeyMaterial.trim();
+  if (trimmed.startsWith('-----BEGIN')) {
+    return crypto.createPrivateKey(trimmed);
+  }
+
+  const raw = Buffer.from(trimmed, 'base64');
+  if (raw.length !== 32 && raw.length !== 64) {
+    throw new Error(
+      `Unrecognized Coinbase private key format: expected a PEM block or a base64-encoded ` +
+        `Ed25519 key (32 or 64 raw bytes), got ${raw.length} decoded bytes.`,
+    );
+  }
+  const seed = raw.subarray(0, 32);
+  const der = Buffer.concat([ED25519_PKCS8_PREFIX, seed]);
+  return crypto.createPrivateKey({ key: der, format: 'der', type: 'pkcs8' });
+}
+
 /**
  * Generates a fresh, short-lived JWT for one specific request. Coinbase's CDP auth
  * binds each token to the exact method+host+path being called (via the `uri`
@@ -36,7 +65,7 @@ export async function generateCoinbaseJwt(
   requestPath: string,
   host = 'api.coinbase.com',
 ): Promise<string> {
-  const keyObject = crypto.createPrivateKey(privateKeyPem);
+  const keyObject = parsePrivateKey(privateKeyPem);
   const algorithm = detectAlgorithm(keyObject);
   const now = Math.floor(Date.now() / 1000);
 

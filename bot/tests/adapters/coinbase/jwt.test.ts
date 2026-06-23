@@ -60,6 +60,27 @@ describe('generateCoinbaseJwt', () => {
     expect(decodeJwt(tokenA).header.nonce).not.toBe(decodeJwt(tokenB).header.nonce);
   });
 
+  it('signs with EdDSA for a raw base64-encoded Ed25519 key (Coinbase CDP download format)', async () => {
+    const { privateKey } = crypto.generateKeyPairSync('ed25519');
+    // Coinbase's "Secret API Key" download gives the raw 32-byte seed, base64-encoded,
+    // not PEM. Extract it from the PKCS8 DER by stripping the fixed 16-byte prefix.
+    const der = privateKey.export({ type: 'pkcs8', format: 'der' });
+    const seed = der.subarray(der.length - 32);
+    const rawBase64 = seed.toString('base64');
+
+    const token = await generateCoinbaseJwt('key-name', rawBase64, 'GET', '/api/v3/brokerage/accounts');
+    const { header, payload } = decodeJwt(token);
+
+    expect(header.alg).toBe('EdDSA');
+    expect(payload.uri).toBe('GET api.coinbase.com/api/v3/brokerage/accounts');
+  });
+
+  it('rejects malformed base64 key material that is neither PEM nor 32/64 raw bytes', async () => {
+    await expect(
+      generateCoinbaseJwt('key-name', Buffer.from('too-short').toString('base64'), 'GET', '/path'),
+    ).rejects.toThrow(/Unrecognized Coinbase private key format/);
+  });
+
   it('rejects an unsupported key type', async () => {
     const { privateKey } = crypto.generateKeyPairSync('rsa', { modulusLength: 2048 });
     const pem = privateKey.export({ type: 'pkcs8', format: 'pem' }).toString();

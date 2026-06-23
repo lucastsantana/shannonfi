@@ -1,11 +1,11 @@
 import Database from 'better-sqlite3';
-import { computeMeanAbsoluteDailyReturn } from '../math';
+import { computeMeanAbsoluteDailyReturn, computeNormalizedTrendSlope } from '../math';
 import { AssetCandidate, ScanResult, ScanOptions } from './types';
 import { logger } from '../core/tracker/logger';
 import { getDb } from '../core/tracker/db';
 
 // Generic adapter interface for scanner (duck typing)
-interface ScannerAdapter {
+export interface ScannerAdapter {
   getCandlesWithVolume(
     symbol: string,
     countback: number,
@@ -63,7 +63,7 @@ export class AssetScanner {
     for (let i = 0; i < brlSymbols.length; i++) {
       const symbol = brlSymbols[i]!;
       try {
-        const candidate = await this.scoreSymbol(symbol, options.windowDays);
+        const candidate = await this.scoreSymbol(symbol, options.windowDays, options.liquidityFullWeightBrl);
         if (candidate) {
           candidates.push(candidate);
         }
@@ -76,9 +76,14 @@ export class AssetScanner {
       }
     }
 
-    // Filter by return floor and volume
+    // Filter by return floor, volume, and trend direction — "sideways or trending
+    // up" means rejecting candidates whose normalized slope is clearly negative,
+    // even if their volatility score alone looks attractive.
     const filtered = candidates.filter(
-      (c) => c.rollingReturn >= options.returnFloor && c.avgDailyVolumeBrl >= options.minVolumeBrl,
+      (c) =>
+        c.rollingReturn >= options.returnFloor &&
+        c.avgDailyVolumeBrl >= options.minVolumeBrl &&
+        c.trendSlope >= options.minTrendSlope,
     );
 
     // Sort by score (descending) and assign ranks
@@ -126,7 +131,11 @@ export class AssetScanner {
     return scanResult;
   }
 
-  private async scoreSymbol(symbol: string, windowDays: number): Promise<Omit<AssetCandidate, 'rank'> | null> {
+  private async scoreSymbol(
+    symbol: string,
+    windowDays: number,
+    liquidityFullWeightBrl: number,
+  ): Promise<Omit<AssetCandidate, 'rank'> | null> {
     const countback = windowDays + 1; // +1 to get windowDays returns
     const candles = await this.adapter.getCandlesWithVolume(symbol, countback);
 
@@ -155,8 +164,17 @@ export class AssetScanner {
     // Compute average daily BRL volume
     const avgDailyVolumeBrl = candles.reduce((sum, c) => sum + c.close * c.volume, 0) / candles.length;
 
-    // Score: MAD × (1 + rolling_return)
-    const score = mad * (1 + rollingReturn);
+    // Trend direction over the window — see computeNormalizedTrendSlope's docstring.
+    const trendSlope = computeNormalizedTrendSlope(closes);
+
+    // Liquidity weight: dampens the score for thin markets even above the hard
+    // minVolumeBrl floor, instead of treating "just barely passed the floor" and
+    // "extremely liquid" as equally good. Saturates at 1.0 — high volume doesn't
+    // boost the score beyond that, it just stops being a penalty.
+    const liquidityWeight = Math.min(1, avgDailyVolumeBrl / liquidityFullWeightBrl);
+
+    // Score: MAD × (1 + rolling_return) × liquidity_weight
+    const score = mad * (1 + rollingReturn) * liquidityWeight;
 
     const baseAsset = symbol.split('-')[0]!;
 
@@ -166,6 +184,8 @@ export class AssetScanner {
       mad,
       rollingReturn,
       avgDailyVolumeBrl,
+      trendSlope,
+      liquidityWeight,
       score,
       dataPoints: candles.length,
     };

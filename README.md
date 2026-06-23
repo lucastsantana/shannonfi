@@ -57,7 +57,7 @@ pm2 start ecosystem.config.cjs --only hype-mb
 pm2 save
 ```
 
-(`ecosystem.config.cjs`, at the repo root, defines every local instance — `hype-mb`, `btc-binance`, etc. — each running `bot/start-instance.sh <name>`, which loads that instance's credentials from GNOME Keyring.)
+(`ecosystem.config.cjs`, at the repo root, defines every local instance — `hype-mb`, `coinbase-shannon-1`, etc. — each running `bot/start-instance.sh <name>`, which loads that instance's credentials from GNOME Keyring.)
 
 ### 4. Useful PM2 commands
 

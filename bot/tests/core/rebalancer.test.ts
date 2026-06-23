@@ -8,7 +8,13 @@ import { TaxService } from '../../src/core/tracker/tax';
 import { VolatilityService } from '../../src/core/tracker/volatility';
 import { MetricsService } from '../../src/core/tracker/metrics';
 import { Config } from '../../src/config';
-import { getDb, getDbConfig } from '../../src/core/tracker/db';
+import { getDb, getDbConfig, setDbConfig } from '../../src/core/tracker/db';
+import { runAssetScan } from '../../src/scanner/run-scan';
+
+// The bootstrap gate (see rebalancer.test.ts's "bootstrap gate" describe block below)
+// only needs to assert *whether* a scan was triggered, not exercise the real scanner
+// (which would need a real ScannerAdapter / candle data) — mock the whole module.
+vi.mock('../../src/scanner/run-scan', () => ({ runAssetScan: vi.fn() }));
 
 function uniqueMemDbPath(): string {
   return `:memory:?mode=memory&cache=shared&hash=${Math.random()}`;
@@ -36,6 +42,9 @@ const testConfig: Config = {
   thresholdVolatilityMultiplier: 1.5,
   volatilityWindowDays: 30,
   enableDayTradeSafeguard: true,
+  bootstrapViaScan: false,
+  autonomousWeeklyRotation: false,
+  autonomousRotationMinMarginPct: 0.20,
   neverExceedExemptionLimit: false,
 };
 
@@ -480,5 +489,226 @@ describe('RebalancerBot — asset rotation', () => {
     const row = db.prepare('SELECT * FROM pending_rotation').get() as any;
     expect(row.status).toBe('COMPLETED');
     expect(row.liquidation_trade_id).toBeNull();
+  });
+});
+
+describe('RebalancerBot — autonomous weekly rotation', () => {
+  // Cheap fake candle series: liquid + sideways/uptrending, so a symbol passes
+  // every filter (volume floor, trend floor, return floor) with a real score.
+  function goodCandles(startPrice: number, dailyVolumeBrl: number, count = 11) {
+    return Array.from({ length: count }, (_, i) => {
+      const close = startPrice + i * (startPrice * 0.01); // mild uptrend
+      return { close, volume: dailyVolumeBrl / close, timestamp: i };
+    });
+  }
+
+  // Adapter whose getCandlesWithVolume only returns usable data for the symbols
+  // named in `goodSymbols` — everything else returns too few candles to score,
+  // so the scanner's full 15-symbol universe collapses to just the ones under test.
+  function makeScannerAdapter(goodSymbols: Record<string, number>, portfolio = makePortfolio()) {
+    return {
+      getPrice: vi.fn().mockResolvedValue(portfolio.basePrice),
+      getPortfolio: vi.fn().mockResolvedValue(portfolio),
+      executeTrade: vi.fn().mockResolvedValue(makeTradeRecord()),
+      getCandles: vi.fn().mockResolvedValue([]),
+      getCandlesWithVolume: vi.fn(async (symbol: string) => {
+        const price = goodSymbols[symbol];
+        return price !== undefined ? goodCandles(price, 100_000) : [];
+      }),
+    } as unknown as ExchangeAdapter;
+  }
+
+  it('bootstrap: picks and executes a first asset immediately, no Telegram wait', async () => {
+    const dbPath = uniqueMemDbPath();
+    const adapter = makeScannerAdapter({ 'BTC-BRL': 100 });
+    const newAdapter = {
+      getPrice: vi.fn().mockResolvedValue(100),
+      getPortfolio: vi.fn().mockResolvedValue(makePortfolio({ baseBalance: 0, basePrice: 100, baseValueBrl: 0, brlBalance: 3000, totalValueBrl: 3000, baseRatioBps: 0, deviationBps: 10000 })),
+      executeTrade: vi.fn().mockResolvedValue(makeTradeRecord({ id: 'auto-acq', direction: 'BUY_BASE', baseAmountFilled: 15, brlAmountFilled: 1500, fillPrice: 100 })),
+      getCandles: vi.fn().mockResolvedValue([]),
+    } as unknown as ExchangeAdapter;
+    const adapterFactory = vi.fn().mockReturnValue(newAdapter);
+
+    const history = new TradeHistoryService(dbPath, 0);
+    const pnl = { logRebalance: vi.fn(), printReport: vi.fn() } as unknown as PnlService;
+    const costBasis = new CostBasisService(dbPath, 0, 'SOL');
+    const tax = new TaxService(dbPath, 0);
+    const volatility = { computeAdaptiveThresholdBps: vi.fn().mockResolvedValue(100) } as unknown as VolatilityService;
+    const metrics = { computeMetrics: vi.fn().mockReturnValue({}), printReport: vi.fn() } as unknown as MetricsService;
+    const config: Config = { ...testConfig, dbPath, symbol: 'SOL-BRL', bootstrapViaScan: true, autonomousWeeklyRotation: true, minPortfolioValueBrl: 1 };
+
+    const bot = new RebalancerBot(adapter, history, pnl, costBasis, tax, volatility, metrics, config, adapterFactory);
+
+    await bot.checkAndRebalance();
+
+    // A rotation from SOL-BRL (placeholder) to BTC-BRL was approved and executed
+    // — same cycle, no waiting for a Telegram tap.
+    expect(adapterFactory).toHaveBeenCalledWith('BTC-BRL');
+    const row = getDb(dbPath).prepare('SELECT * FROM pending_rotation').get() as any;
+    expect(row.requested_by).toBe('autonomous-weekly');
+    expect(row.status).toBe('COMPLETED');
+    expect(history.readTrades().length).toBeGreaterThan(0);
+  });
+
+  it('weekly: switches when the top candidate beats the current asset by the configured margin', async () => {
+    const dbPath = uniqueMemDbPath();
+    // Current asset (SOL) scores low; BTC scores much higher — comfortably over the 20% margin.
+    const adapter = makeScannerAdapter({ 'SOL-BRL': 100, 'BTC-BRL': 100 });
+    // Force a real score gap: SOL flat (no trend bonus), BTC strongly uptrending.
+    (adapter.getCandlesWithVolume as any) = vi.fn(async (symbol: string) => {
+      if (symbol === 'BTC-BRL') {
+        return Array.from({ length: 11 }, (_, i) => ({ close: 100 + i * 5, volume: 1000, timestamp: i }));
+      }
+      if (symbol === 'SOL-BRL') {
+        return Array.from({ length: 11 }, (_, i) => ({ close: 100 + i * 0.1, volume: 1000, timestamp: i }));
+      }
+      return [];
+    });
+
+    const newAdapter = {
+      getPrice: vi.fn().mockResolvedValue(140),
+      getPortfolio: vi.fn().mockResolvedValue(makePortfolio({ baseBalance: 0, basePrice: 140, baseValueBrl: 0, brlBalance: 3000, totalValueBrl: 3000, baseRatioBps: 0, deviationBps: 10000 })),
+      executeTrade: vi.fn().mockResolvedValue(makeTradeRecord({ id: 'auto-acq-2', direction: 'BUY_BASE', baseAmountFilled: 10, brlAmountFilled: 1500, fillPrice: 140 })),
+      getCandles: vi.fn().mockResolvedValue([]),
+    } as unknown as ExchangeAdapter;
+    const adapterFactory = vi.fn().mockReturnValue(newAdapter);
+
+    const history = new TradeHistoryService(dbPath, 0);
+    history.appendTrade(makeTradeRecord({ id: 'prior-trade', baseAsset: 'SOL' }));
+    const pnl = { logRebalance: vi.fn(), printReport: vi.fn() } as unknown as PnlService;
+    const costBasis = new CostBasisService(dbPath, 0, 'SOL');
+    const tax = new TaxService(dbPath, 0);
+    const volatility = { computeAdaptiveThresholdBps: vi.fn().mockResolvedValue(100) } as unknown as VolatilityService;
+    const metrics = { computeMetrics: vi.fn().mockReturnValue({}), printReport: vi.fn() } as unknown as MetricsService;
+    const config: Config = { ...testConfig, dbPath, symbol: 'SOL-BRL', autonomousWeeklyRotation: true, minPortfolioValueBrl: 1 };
+
+    const bot = new RebalancerBot(adapter, history, pnl, costBasis, tax, volatility, metrics, config, adapterFactory);
+
+    await bot.checkAndRebalance();
+
+    expect(adapterFactory).toHaveBeenCalledWith('BTC-BRL');
+    const row = getDb(dbPath).prepare("SELECT * FROM pending_rotation WHERE requested_by = 'autonomous-weekly'").get() as any;
+    expect(row).toBeDefined();
+    expect(row.status).toBe('COMPLETED');
+    expect(getDbConfig('autonomous_rotation_last_week_brt', undefined, dbPath)).not.toBeNull();
+  });
+
+  it('weekly: keeps the current asset when no candidate beats it by the margin, and does not create a rotation row', async () => {
+    const dbPath = uniqueMemDbPath();
+    // SOL and BTC score nearly identically — should not trigger a switch.
+    const adapter = makeScannerAdapter({ 'SOL-BRL': 100, 'BTC-BRL': 100.01 });
+
+    const history = new TradeHistoryService(dbPath, 0);
+    history.appendTrade(makeTradeRecord({ id: 'prior-trade-2', baseAsset: 'SOL' }));
+    const pnl = { logRebalance: vi.fn(), printReport: vi.fn() } as unknown as PnlService;
+    const costBasis = new CostBasisService(dbPath, 0, 'SOL');
+    const tax = new TaxService(dbPath, 0);
+    const volatility = { computeAdaptiveThresholdBps: vi.fn().mockResolvedValue(100) } as unknown as VolatilityService;
+    const metrics = { computeMetrics: vi.fn().mockReturnValue({}), printReport: vi.fn() } as unknown as MetricsService;
+    const config: Config = { ...testConfig, dbPath, symbol: 'SOL-BRL', autonomousWeeklyRotation: true, minPortfolioValueBrl: 1_000_000 };
+    const adapterFactory = vi.fn();
+
+    const bot = new RebalancerBot(adapter, history, pnl, costBasis, tax, volatility, metrics, config, adapterFactory);
+
+    await bot.checkAndRebalance();
+
+    expect(adapterFactory).not.toHaveBeenCalled();
+    const row = getDb(dbPath).prepare("SELECT * FROM pending_rotation WHERE requested_by = 'autonomous-weekly'").get();
+    expect(row).toBeUndefined();
+    expect(getDbConfig('autonomous_rotation_last_week_brt', undefined, dbPath)).not.toBeNull();
+  });
+
+  it('weekly: does not re-scan within the same week once already decided', async () => {
+    const dbPath = uniqueMemDbPath();
+    const adapter = makeScannerAdapter({ 'SOL-BRL': 100 });
+    const scanSpy = adapter.getCandlesWithVolume as any;
+
+    const history = new TradeHistoryService(dbPath, 0);
+    history.appendTrade(makeTradeRecord({ id: 'prior-trade-3', baseAsset: 'SOL' }));
+    const pnl = { logRebalance: vi.fn(), printReport: vi.fn() } as unknown as PnlService;
+    const costBasis = new CostBasisService(dbPath, 0, 'SOL');
+    const tax = new TaxService(dbPath, 0);
+    const volatility = { computeAdaptiveThresholdBps: vi.fn().mockResolvedValue(100) } as unknown as VolatilityService;
+    const metrics = { computeMetrics: vi.fn().mockReturnValue({}), printReport: vi.fn() } as unknown as MetricsService;
+    const config: Config = { ...testConfig, dbPath, symbol: 'SOL-BRL', autonomousWeeklyRotation: true, minPortfolioValueBrl: 1_000_000 };
+
+    // Pre-mark this week as already decided.
+    const db = getDb(dbPath);
+    const todayBRT = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+    const dow = new Date(`${todayBRT}T00:00:00Z`).getUTCDay();
+    const monday = new Date(`${todayBRT}T00:00:00Z`);
+    monday.setUTCDate(monday.getUTCDate() - ((dow + 6) % 7));
+    setDbConfig('autonomous_rotation_last_week_brt', monday.toISOString().slice(0, 10), dbPath);
+
+    const bot = new RebalancerBot(adapter, history, pnl, costBasis, tax, volatility, metrics, config, vi.fn());
+    await bot.checkAndRebalance();
+
+    expect(scanSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe('RebalancerBot — bootstrap gate', () => {
+  beforeEach(() => {
+    vi.mocked(runAssetScan).mockClear();
+  });
+
+  it('runs an initial scan instead of trading, when bootstrapViaScan is on and no scan has run yet', async () => {
+    const dbPath = uniqueMemDbPath();
+    const { bot, adapter } = makeBot({ readTrades: vi.fn().mockReturnValue([]) }, { dbPath, bootstrapViaScan: true });
+
+    await bot.checkAndRebalance();
+
+    expect(runAssetScan).toHaveBeenCalledTimes(1);
+    expect(runAssetScan).toHaveBeenCalledWith(
+      expect.objectContaining({ dbPath, activeSymbol: 'SOL-BRL' }),
+    );
+    // Gate stops the cycle before any normal price/trade logic runs.
+    expect(adapter.getPrice).not.toHaveBeenCalled();
+    expect(adapter.executeTrade).not.toHaveBeenCalled();
+  });
+
+  it('waits for Telegram approval (no second scan, no trade) once a scan already exists', async () => {
+    const dbPath = uniqueMemDbPath();
+    const db = getDb(dbPath);
+    db.prepare(
+      `INSERT INTO scans (timestamp, window_days, total_scanned, status, scan_data) VALUES (?, 30, 5, 'COMPLETED', '{}')`,
+    ).run(new Date().toISOString());
+
+    const { bot, adapter } = makeBot({ readTrades: vi.fn().mockReturnValue([]) }, { dbPath, bootstrapViaScan: true });
+
+    await bot.checkAndRebalance();
+
+    expect(runAssetScan).not.toHaveBeenCalled();
+    expect(adapter.getPrice).not.toHaveBeenCalled();
+    expect(adapter.executeTrade).not.toHaveBeenCalled();
+  });
+
+  it('does not gate once the instance has at least one trade in its history', async () => {
+    const dbPath = uniqueMemDbPath();
+    const { bot, adapter } = makeBot(
+      { readTrades: vi.fn().mockReturnValue([makeTradeRecord()]) },
+      { dbPath, bootstrapViaScan: true },
+    );
+    vi.mocked(adapter.getPortfolio).mockResolvedValue(
+      makePortfolio({ baseValueBrl: 3000, brlBalance: 3000, totalValueBrl: 6000, baseRatioBps: 5000, deviationBps: 0 }),
+    );
+
+    await bot.checkAndRebalance();
+
+    expect(runAssetScan).not.toHaveBeenCalled();
+    expect(adapter.getPrice).toHaveBeenCalled();
+  });
+
+  it('never gates when bootstrapViaScan is off (default), even with zero trade history', async () => {
+    const dbPath = uniqueMemDbPath();
+    const { bot, adapter } = makeBot({ readTrades: vi.fn().mockReturnValue([]) }, { dbPath, bootstrapViaScan: false });
+    vi.mocked(adapter.getPortfolio).mockResolvedValue(
+      makePortfolio({ baseValueBrl: 3000, brlBalance: 3000, totalValueBrl: 6000, baseRatioBps: 5000, deviationBps: 0 }),
+    );
+
+    await bot.checkAndRebalance();
+
+    expect(runAssetScan).not.toHaveBeenCalled();
+    expect(adapter.getPrice).toHaveBeenCalled();
   });
 });

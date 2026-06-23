@@ -11,21 +11,25 @@ export class ScanReporter {
     private exchange: string = 'Unknown',
   ) {}
 
-  async report(scanResult: ScanResult, dryRun: boolean = false): Promise<void> {
+  async report(scanResult: ScanResult, dryRun: boolean = false, interactive: boolean = true): Promise<void> {
     // Always print to console
     this.printConsoleReport(scanResult);
 
     // Send to Telegram if available and not dry-run
     if (this.telegram && !dryRun) {
-      await this.sendTelegramReport(scanResult);
+      await this.sendTelegramReport(scanResult, interactive);
       logger.info('Telegram report sent');
 
-      // Set up callback handler (blocking, waits for user interaction)
-      logger.info('Waiting for Telegram interaction (60 seconds)');
-      await this.telegram.setupCallbackHandler(
-        (query) => this.onCallbackQuery(query, scanResult.id!),
-        60,
-      );
+      // Only autonomous-instance callers pass interactive=false (see scan.ts) —
+      // an instance that decides for itself on a schedule shouldn't also wait on
+      // (or risk acting on) a stray button tap from this report.
+      if (interactive) {
+        logger.info('Waiting for Telegram interaction (60 seconds)');
+        await this.telegram.setupCallbackHandler(
+          (query) => this.onCallbackQuery(query, scanResult.id!),
+          60,
+        );
+      }
     } else if (!this.telegram) {
       logger.info('Telegram not configured, skipping interactive UI');
     }
@@ -62,7 +66,7 @@ export class ScanReporter {
     logger.info(lines.join('\n'));
   }
 
-  private async sendTelegramReport(scanResult: ScanResult): Promise<void> {
+  private async sendTelegramReport(scanResult: ScanResult, interactive: boolean): Promise<void> {
     const { candidates, currentSymbol, windowDays, totalScanned } = scanResult;
 
     // Format the message
@@ -101,9 +105,18 @@ export class ScanReporter {
     lines.push(`  • <b>Liquidity:</b> ${formatBrl(top.avgDailyVolumeBrl)}/day`);
     lines.push(`  • <b>Score:</b> ${top.score.toFixed(3)}`);
     lines.push('');
-    lines.push('⏰ <i>Daily scans: 9 AM BRT</i>');
+    lines.push(
+      interactive
+        ? '⏰ <i>Daily scans: 9 AM BRT</i>'
+        : '🤖 <i>Autonomous mode: the bot reviews and rotates automatically every Monday — no action needed.</i>',
+    );
 
     const message = lines.join('\n');
+
+    if (!interactive) {
+      await this.telegram!.sendMessage(message);
+      return;
+    }
 
     // Attach the per-candidate selection buttons so a tap can trigger
     // onCandidateSelected() below — without this, the approve/reject flow that

@@ -1,5 +1,5 @@
 #!/bin/bash
-# Daily asset scanner for Binance at 9 AM BRT
+# Daily asset scanner at 9 AM BRT
 # Runs Shannon's Demon asset analysis and sends results to Telegram
 
 set -e
@@ -12,23 +12,23 @@ NC='\033[0m' # No Color
 
 # Configuration
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-LOG_DIR="${SCRIPT_DIR}/logs/scanner/binance"
-LOG_FILE="${LOG_DIR}/daily-scan-$(date +%Y%m%d-%H%M%S).log"
-CONFIG_FILE="${SCRIPT_DIR}/configs/btc-binance.yaml"
+LOG_DIR="${SCRIPT_DIR}/logs/scanner"
+LOG_FILE="${LOG_DIR}/daily-scan-coinbase-shannon-1-$(date +%Y%m%d-%H%M%S).log"
+CONFIG_FILE="${SCRIPT_DIR}/configs/coinbase-shannon-1.yaml"
 WINDOW_DAYS=30
 
 # Ensure log directory exists
 mkdir -p "${LOG_DIR}"
 
 echo "=================================================="
-echo "Binance Asset Scanner — $(date '+%Y-%m-%d %H:%M:%S %Z')"
+echo "Daily Asset Scanner (coinbase-shannon-1) — $(date '+%Y-%m-%d %H:%M:%S %Z')"
 echo "=================================================="
 echo "Config: ${CONFIG_FILE}"
 echo "Window: ${WINDOW_DAYS} days"
 echo "Log: ${LOG_FILE}"
 echo ""
 
-# Run the scan with Telegram notifications (unified scanner supports both MB and Binance)
+# Run the scan with Telegram notifications
 {
   cd "${SCRIPT_DIR}"
   npm run scan -- \

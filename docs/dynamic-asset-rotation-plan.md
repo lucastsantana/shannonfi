@@ -285,6 +285,95 @@ always proceeds in full regardless of the monthly exemption cap; approval stays
 manual-only via Telegram (no autonomous auto-approve); the scanner's hardcoded
 15-symbol candidate list is unchanged; scope is `hype-mb` only for this pass.
 
+**Extended for `coinbase-shannon-1` (2026-06-23): bootstrap via scan, not a hardcoded
+starting symbol.** `coinbase-shannon-1` shouldn't just start trading a fixed
+`BTC-USDC` — it should pick its first asset the same way it picks every subsequent
+one: via the scanner and a human Telegram approval. Added `bootstrapViaScan: boolean`
+(`config.ts`, default `false` — every existing instance's behavior is unchanged) and
+`RebalancerBot.checkBootstrapGate()` (`core/rebalancer.ts`): while an instance with
+this flag on has zero trade history, it never executes a normal rebalance trade on
+its YAML's default `symbol`; instead, on the first cycle it runs a scan itself (via
+the new `scanner/run-scan.ts`, factored out of `scan.ts`'s CLI so both can call the
+same scan→Telegram-report sequence) and posts candidates, then on every cycle after
+that it just waits — `checkAndExecuteRotation()` already runs every cycle regardless
+of this gate, so the instant a candidate is approved via Telegram, the existing
+rotation mechanism executes it (liquidating nothing, since there's no prior position,
+then acquiring the chosen asset with the available USDC — the exact "skips the
+liquidation trade when nothing to sell" path already covered by a rotation test
+above). Once that first rotation completes, `readTrades().length > 0` and the gate
+never fires again — there's no separate "bootstrap complete" flag to manage or get
+out of sync.
+
+## Autonomous weekly rotation (2026-06-23, `coinbase-shannon-1` only)
+
+Manual Telegram approval makes sense for `hype-mb` (real money, established
+history) but is friction for a brand-new instance meant to run unattended. Decision:
+`coinbase-shannon-1` switches assets entirely on its own, on a weekly schedule, with
+no human approval step — `hype-mb` is explicitly unchanged (keeps the Telegram
+approve/reject buttons). This is opt-in per instance via two new config flags
+(`config.ts`):
+
+- `autonomousWeeklyRotation: boolean` (default `false`) — when true, replaces the
+  Telegram approval requirement entirely for this instance, for both the bootstrap
+  pick and every rotation after it.
+- `autonomousRotationMinMarginPct: number` (default `0.20`) — the new top
+  candidate's score must beat the current asset's by this fraction before the bot
+  switches; otherwise it stays put. Exists specifically to avoid weekly churn (and
+  the fees that come with it) over noise-level differences between near-tied
+  candidates.
+
+**Mechanics** (`RebalancerBot.checkAndRunAutonomousRotationDecision()`,
+`core/rebalancer.ts`, called immediately before `checkAndExecuteRotation()` so a
+same-cycle decision-and-execution happens with no extra poll-interval delay):
+
+- **Bootstrap** (zero trade history): picks the first asset immediately — no
+  reason to leave a freshly funded, all-cash instance idle for up to a week waiting
+  for a schedule boundary. This supersedes `bootstrapViaScan`'s original
+  Telegram-wait behavior for any instance with `autonomousWeeklyRotation` also on
+  (`checkBootstrapGate()` explicitly defers to this method in that case).
+- **Ongoing**: re-evaluated once per week, right after midnight Sunday→Monday BRT.
+  Timing is tracked via a `autonomous_rotation_last_week_brt` DB config key
+  (the most recent Monday's calendar date, BRT) rather than a separate timer —
+  the check runs every cycle (cheap, one key lookup) and only actually re-scans
+  once the calendar has rolled into a new week, so it fires within one poll
+  interval of the boundary regardless of `pollIntervalSeconds`, without needing
+  its own cron/scheduler.
+- Either way, when a switch is warranted this inserts an already-`status =
+  'APPROVED'` `pending_rotation` row (`requested_by = 'autonomous-weekly'`) —
+  it never touches the adapter or places a trade itself. The existing
+  `checkAndExecuteRotation()`, unchanged, is what actually executes it; it
+  doesn't know or care whether a row came from a Telegram tap or this method.
+- A Telegram message is still sent either way (switched, kept, or no qualifying
+  candidate) — informational only, no buttons, so there's still visibility into
+  what the bot decided and why without anything to act on.
+- The existing daily scan (`scan.yml`, still running for visibility) no longer
+  shows approve/reject buttons for an autonomous instance — `ScanReporter.report()`
+  takes a new `interactive` parameter (`scan.ts` passes
+  `!config.autonomousWeeklyRotation`); a stray tap on a button that doesn't
+  actually do anything next, or worse, that creates a competing
+  `pending_rotation` row outside the weekly/margin guardrails, would be a
+  confusing footgun.
+
+**Trend and liquidity now factor into candidate scoring** (`scanner/scanner.ts`,
+`scanner/types.ts`, `math.ts`), not just volatility — needed so "sideways or
+trending up" candidates are favored over high-volatility-but-falling ones:
+
+- `computeNormalizedTrendSlope()` (`math.ts`): an ordinary-least-squares
+  regression slope of the window's closes against time, normalized by the
+  window's mean price into a fractional change-per-day (comparable across assets
+  of wildly different price magnitudes). Positive = uptrend, negative = downtrend,
+  near-zero = sideways.
+- `AssetCandidate.trendSlope` is now a hard filter (`ScanOptions.minTrendSlope`,
+  default `-0.0005`, i.e. roughly -1.5%/30-day-window) — candidates trending down
+  past that are excluded entirely, regardless of how attractive their volatility
+  score looks.
+- `AssetCandidate.liquidityWeight` (0..1, `ScanOptions.liquidityFullWeightBrl`,
+  default `50_000`): `avgDailyVolumeBrl / liquidityFullWeightBrl`, capped at 1.0.
+  Multiplied into the score (`score = mad × (1 + rollingReturn) × liquidityWeight`)
+  so a candidate that just barely clears the existing hard `minVolumeBrl` floor
+  doesn't score identically to one with far deeper liquidity — it dampens thin
+  markets continuously rather than treating the floor as a binary pass/fail.
+
 **A real bug was found and fixed via testing, not just a design walkthrough.** The
 original plan (and the recovered `rotation-executor.ts` it was based on) assumed that
 once a rotation lands the portfolio at 100% BRL / 0% target asset, the *existing*

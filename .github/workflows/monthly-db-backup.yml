@@ -19,7 +19,7 @@ jobs:
       matrix:
         instance:
           - hype-mb
-          # - coinbase-btc   # uncomment once this instance is live
+          # - coinbase-shannon-1   # uncomment once this instance is live
 
     steps:
       - name: Checkout code

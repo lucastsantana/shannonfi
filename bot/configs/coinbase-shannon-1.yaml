@@ -1,0 +1,96 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Template: coinbase-shannon-1 — Shannon's Demon on Coinbase
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# Instance naming convention: {exchange}-{strategy}-{n}, e.g. coinbase-shannon-1.
+# This decouples the instance's identity from its currently-traded symbol, since
+# dynamic asset rotation (docs/dynamic-asset-rotation-plan.md) means the symbol
+# below can change at runtime — the DB's current_symbol, not this file, is the
+# source of truth once rotation is in play. A second parallel Coinbase instance
+# would be coinbase-shannon-2, with its own config/data dir, not a new symbol
+# suffix on this one.
+#
+# Coinbase has no BRL-quoted trading pairs. USDC, not USD, is the supported quote
+# currency: live testing against a Brazilian-held Coinbase account found balances
+# only convert/trade cleanly via USDC pairs (see docs/coinbase-adapter-plan.md,
+# "Implementation Notes"). BRL<->USD conversion happens inside the adapter via the
+# daily BACEN PTAX rate, treating USDC as 1:1 with USD. Every other layer of the
+# bot — math, cost basis, tax tracking, dashboard, reporting — sees plain BRL
+# values exactly like the Mercado Bitcoin instance; nothing else needs to know
+# this instance is actually trading in USDC underneath.
+#
+# `bootstrapViaScan: true` + `autonomousWeeklyRotation: true` below means this
+# instance does NOT start by trading the `symbol` default — it's only there to
+# satisfy the schema and to pick the quote currency (USDC) and adapter wiring.
+# On first run (zero trade history) the bot picks its first asset itself via the
+# scanner, immediately — no Telegram approval wait. After that, it re-evaluates
+# once a week, right after midnight Sunday→Monday BRT, and only switches if a
+# new top candidate beats the current asset's score by
+# `autonomousRotationMinMarginPct` (avoids weekly churn from noise-level
+# differences). Candidate selection filters out clearly-downtrending assets
+# (sideways/up only) and dampens illiquid assets' scores — see
+# docs/dynamic-asset-rotation-plan.md, "Autonomous weekly rotation". A daily
+# Telegram report still posts (informational only, no buttons — see scan.ts).
+#
+# To use this:
+#   1. cp configs/coinbase-shannon-1.yaml.template configs/coinbase-shannon-1.yaml
+#   2. Create a Coinbase CDP API key (Coinbase Developer Platform → API Keys),
+#      then store it in GNOME Keyring (the private key is a multi-line PEM —
+#      paste the whole "-----BEGIN ... PRIVATE KEY-----" block, then Ctrl+D):
+#        secret-tool store --label="Coinbase API Key Name" service coinbase key keyName
+#        secret-tool store --label="Coinbase API Private Key" service coinbase key privateKeyPem
+#   3. Run `npm run setup-check -- --config configs/coinbase-shannon-1.yaml` to
+#      validate auth, balances, candles, and the PTAX rate fetch BEFORE enabling
+#      live trading. Full walkthrough (key creation, secret-tool commands, expected
+#      output): docs/coinbase-adapter-plan.md, "Setup Walkthrough".
+#   4. Uncomment coinbase-shannon-1 in ecosystem.config.cjs (for local PM2) and/or
+#      in .github/workflows/{rebalancer,scan,dashboard,monthly-db-backup}.yml (for
+#      GitHub Actions), plus COINBASE_API_KEY_NAME/COINBASE_API_KEY_SECRET as repo secrets.
+#   5. pm2 restart ecosystem.config.cjs
+#
+# LIVE-TESTED: JWT auth, balances, market data, and PTAX conversion have been
+# verified against a real Coinbase account. Order placement/fill polling has not
+# yet been exercised live — run a DRY_RUN cycle, then a small live cycle, before
+# trusting this with meaningful funds.
+
+exchange: coinbase
+symbol: BTC-USDC   # placeholder only — autonomous bootstrap below picks the real first asset
+bootstrapViaScan: true
+autonomousWeeklyRotation: true
+autonomousRotationMinMarginPct: 0.20   # require the new top candidate to beat the current asset's score by 20%+ to switch
+
+# apiBaseUrl defaults to https://api.coinbase.com — only override for testing.
+# Credentials (keyName + privateKeyPem) are never stored here; they're loaded
+# from GNOME Keyring (local) or COINBASE_API_KEY_NAME/COINBASE_API_KEY_SECRET
+# env vars (GitHub Actions) — see core/keyring.ts.
+coinbase: {}
+
+# ─── Strategy parameters ──────────────────────────────────────────────────────
+
+rebalanceThresholdBps: 100        # 1.0% static threshold
+maxSlippageBps: 100               # 1.0% max slippage
+minPortfolioValueBrl: 200         # Skip if portfolio < R$200-equivalent
+minTradeSizeBrl: 20               # Skip trades < R$20-equivalent
+pollIntervalSeconds: 900          # Check every 15 minutes
+minRebalanceIntervalSeconds: 7200 # Min 2 hours between rebalances
+
+# ─── Adaptive threshold ────────────────────────────────────────────────────────
+
+useAdaptiveThreshold: true
+thresholdVolatilityMultiplier: 1.5
+volatilityWindowDays: 30
+
+# Lei 9.250/1995 Art. 21's R$35k/month exemption applies to aggregate crypto sales
+# regardless of exchange — defaulted true here (see docs/coinbase-adapter-plan.md,
+# open question 5, and rebalancer.ts's comment on this same flag).
+neverExceedExemptionLimit: true
+
+# ─── Runtime ──────────────────────────────────────────────────────────────────
+
+dryRun: true                      # Start in dry-run; flip to false only after setup-check passes
+logLevel: info
+
+# ─── Data persistence (SEPARATE FROM OTHER INSTANCES) ──────────────────────────
+
+dbPath: ./data/coinbase-shannon-1/shannonfi.db
+jsonRetentionDays: 15

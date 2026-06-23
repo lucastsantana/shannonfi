@@ -2,15 +2,18 @@
  * Coinbase Advanced Trade adapter.
  * Coinbase has no BRL-quoted trading pairs (verified against its live products API
  * — see docs/coinbase-adapter-plan.md) — every product this adapter trades is
- * USD-quoted (e.g. BTC-USD). This adapter converts BRL<->USD at the boundary using
- * the daily BACEN PTAX rate (FxRateService), so every other layer in the engine
- * (math, cost basis, tax, history, dashboard, reporting) sees plain "BRL" values
- * exactly like the Mercado Bitcoin and Binance adapters provide — it never knows
- * this instance is actually trading in USD underneath.
+ * USDC-quoted (e.g. BTC-USDC). USDC, not USD, is the supported quote currency:
+ * live testing against a Brazilian-held Coinbase account found that holdings only
+ * convert/trade cleanly via USDC pairs (see docs/coinbase-adapter-plan.md,
+ * "Implementation Notes"). This adapter converts BRL<->USD at the boundary using
+ * the daily BACEN PTAX rate (FxRateService), treating USDC as 1:1 with USD for
+ * that conversion, so every other layer in the engine (math, cost basis, tax,
+ * history, dashboard, reporting) sees plain "BRL" values exactly like the Mercado
+ * Bitcoin and Binance adapters provide — it never knows this instance is actually
+ * trading in USDC underneath.
  *
- * NOT YET LIVE-TESTED: written against Coinbase's published API docs, with no
- * credentials available in this environment to validate against a real account.
- * Run `npm run setup-check` and a DRY_RUN cycle before trusting this with real funds.
+ * LIVE-TESTED against a real Coinbase account (auth, balances, market data, PTAX
+ * conversion) — order placement/fill polling has not yet been exercised live.
  */
 
 import { v4 as uuidv4 } from 'uuid';
@@ -36,8 +39,8 @@ export class CoinbaseAdapter implements ExchangeAdapter {
   private endpoints: CoinbaseEndpoints;
   private fxRate: FxRateService;
   private baseAsset: string;
-  private quoteCurrency: string; // 'USD' (or 'USDC' — schema-allowed, not yet exercised)
-  private productId: string;    // e.g. "BTC-USD"
+  private quoteCurrency: string; // 'USDC' (default/supported); 'USD' schema-allowed but unsupported
+  private productId: string;    // e.g. "BTC-USDC"
 
   constructor(
     private coinbaseConfig: CoinbaseConfig,
@@ -46,7 +49,7 @@ export class CoinbaseAdapter implements ExchangeAdapter {
     private symbol: string,
   ) {
     if (!symbol || !symbol.includes('-')) {
-      throw new Error(`Invalid symbol format: ${symbol}. Expected BASE-QUOTE format (e.g. BTC-USD)`);
+      throw new Error(`Invalid symbol format: ${symbol}. Expected BASE-QUOTE format (e.g. BTC-USDC)`);
     }
     const parts = symbol.split('-');
     this.baseAsset = parts[0]!;

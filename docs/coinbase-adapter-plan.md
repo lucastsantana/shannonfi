@@ -1,9 +1,12 @@
 # Coinbase Adapter — Implementation Plan
 
-**Branch:** `feature/coinbase-adapter` (branched from `feature/dynamic-base-asset-rotation`)
-**Status:** Implemented (USD quote currency, GitHub Actions generalized from day
-one — both confirmed). See "Implementation Notes" at the end for what was built,
-what's verified vs. not, and what's still required before going live.
+**Branch:** `feature/dynamic-base-asset-rotation` (Coinbase adapter merged in from
+the now-deleted `feature/coinbase-adapter`)
+**Status:** Implemented and live-tested against a real Brazilian-held Coinbase
+account (auth, balances, market data, PTAX conversion). **USDC, not USD, is the
+supported quote currency** — see "Implementation Notes — Live Testing Findings"
+below for why this changed from the original USD-first plan. GitHub Actions
+generalized from day one. Order placement/fill polling not yet exercised live.
 
 ## Context
 
@@ -138,10 +141,12 @@ identically to `hype-mb`, with no Coinbase-specific rotation code required.
 
 ## New instance wiring
 
-- `bot/configs/coinbase-<symbol>.yaml` (e.g. `coinbase-btc.yaml`), following the
-  existing per-instance config convention.
-- `bot/data/coinbase-<symbol>/` for its isolated SQLite DB + JSON backups.
-- `ecosystem.config.cjs`: new PM2 entry, same pattern as `btc-binance`.
+- `bot/configs/coinbase-shannon-<n>.yaml` (e.g. `coinbase-shannon-1.yaml`),
+  following the `{exchange}-{strategy}-{n}` naming convention (deliberately not
+  symbol-based, since dynamic asset rotation means the symbol can change at
+  runtime — see `docs/dynamic-asset-rotation-plan.md`).
+- `bot/data/coinbase-shannon-<n>/` for its isolated SQLite DB + JSON backups.
+- `ecosystem.config.cjs`: new PM2 entry, same pattern as `hype-mb`.
 - GitHub Actions: since the whole point is GH-Actions compatibility, this instance
   *should* get `rebalancer.yml`/`dashboard.yml`/`scan.yml`-equivalent workflows — but
   those three workflows are currently hardcoded to the `hype-mb` instance (per
@@ -168,12 +173,11 @@ identically to `hype-mb`, with no Coinbase-specific rotation code required.
 
 ## Open questions (need your decision before implementation starts)
 
-1. **USD or USDC as the quote currency?** Affects which Coinbase product IDs get
-   traded (`BTC-USD` vs `BTC-USDC`), funding mechanics (Pix→BRL→USD is Coinbase's
-   built-in path; USDC would mean holding a stablecoin between trades), and adds the
-   de-peg risk above if USDC. Recommend USD unless you have a specific reason to want
-   USDC (e.g. avoiding fiat-wire mechanics, or fee-tier differences I haven't
-   verified).
+1. ~~**USD or USDC as the quote currency?**~~ **RESOLVED via live testing — see
+   "Implementation Notes — Live Testing Findings" below.** USDC is the supported
+   quote currency; the Brazilian-held test account's USD balance wasn't usable
+   the same way, and Consumer-platform balances needed manual conversion to USDC
+   before they were Advanced-Trade-tradable at all.
 2. **PTAX rate accounting convention (compra vs. venda)** — I flagged this as needing
    verification rather than asserting an answer. Do you want me to research the
    correct BACEN series/convention as the first implementation step, or do you
@@ -264,6 +268,61 @@ generalized workflow against `hype-mb` (the one instance with real secrets
 already configured) before relying on them, to catch any YAML or matrix-syntax
 mistake before it matters for a second instance.
 
+## Implementation Notes — Live Testing Findings (2026-06-23)
+
+Once a real Brazilian-held Coinbase account and CDP key were available, three
+things from the original plan turned out to be wrong or incomplete in practice:
+
+1. **Coinbase's "Secret API Key" download for Ed25519 keys is not PEM.** The
+   plan and `jwt.ts`'s original implementation assumed `crypto.createPrivateKey()`
+   would always receive a PEM block (`-----BEGIN...-----`). The actual CDP
+   download for an Ed25519 key is base64-encoded raw key material (a 32-byte seed,
+   or 64 bytes of seed+pubkey concatenated) with no PEM wrapper at all — Node's
+   `crypto` module can't load that directly. Fixed in `jwt.ts`'s `parsePrivateKey()`:
+   it detects whether the input starts with `-----BEGIN` (PEM, existing EC path
+   unchanged) or treats it as base64 raw bytes, wrapping the 32-byte seed in a
+   minimal hardcoded PKCS8 DER envelope (`302e020100300506032b657004220420` + seed)
+   before handing it to `crypto.createPrivateKey({key, format:'der', type:'pkcs8'})`.
+   Covered by a new test in `jwt.test.ts` using a real generated Ed25519 key
+   re-encoded into this raw format.
+
+2. **Coinbase "Consumer" balances are not Advanced-Trade-tradable.** A real
+   account's holdings came back from `/accounts` with
+   `"platform": "ACCOUNT_PLATFORM_CONSUMER"`. Placing any order against those
+   balances via the Advanced Trade API fails with `400 INVALID_ARGUMENT: "account
+   is not available"` — this is a platform/portfolio mismatch, not a permissions
+   or pair-availability problem (the products were confirmed `online` and
+   tradable). Consumer-held balances must be manually converted/moved (e.g. via
+   the regular Coinbase app's "Convert" feature) before the bot's adapter or any
+   script here can touch them. This is a manual, one-time step per asset — there
+   is no API-level fix.
+
+3. **USDC, not USD, is the quote currency that actually works for this account.**
+   After manually converting all non-cash holdings to USDC via the Coinbase
+   Consumer app, balances and market data resolved cleanly through
+   `BASE-USDC` products. This may be specific to Brazilian-held Coinbase accounts
+   (Coinbase's USD on/off-ramp infrastructure for Brazil routes through
+   conversion rather than direct USD cash custody) — not deeply investigated
+   beyond "USDC works, this account's USD balance does not appear usable the same
+   way." **Decision: default everything (config default, `.yaml`/`.yaml.template`,
+   adapter doc comments, `liquidate-all.ts`) to USDC.** USD remains schema-legal
+   (`^[A-Z]+-(USD|USDC)$`) for completeness but is not the supported/tested path.
+   `FxRateService` is unchanged — it still fetches the USD/BRL PTAX rate and
+   treats USDC as 1:1 with USD for that conversion; stablecoin de-peg risk (named
+   in "Risks worth naming plainly" above) is accepted, not modeled.
+
+A new `bot/src/scripts/liquidate-all.ts` (`npm run liquidate-all`) was added to
+help with step 2/3's manual cleanup going forward — it lists every non-cash
+balance across *all* accounts (not just the configured pair, unlike
+`liquidate.ts`), previews what would be sold and into which quote currency
+(read from the instance config, so it follows whatever `symbol`'s quote
+currency is — USDC by default), and requires a typed `"yes"` confirmation
+before placing any real order (`--yes` skips only the prompt, never the
+preview; `--dry-run` places no orders at all). It still hits the same Consumer
+vs. Advanced-Trade wall described in finding 2 above if run against
+Consumer-held balances — it's meant for use *after* a manual conversion, on
+balances already in Advanced Trade.
+
 ## Setup Walkthrough (first-time credential bring-up)
 
 This is the actual step-by-step to go from nothing to a passing `setup-check`.
@@ -300,15 +359,15 @@ secret-tool lookup service coinbase key privateKeyPem   # should print the full 
 
 ```bash
 cd bot
-cp configs/coinbase-btc.yaml.template configs/coinbase-btc.yaml
+cp configs/coinbase-shannon-1.yaml.template configs/coinbase-shannon-1.yaml
 ```
-Defaults to `dryRun: true` and `BTC-USD` — no edits needed to start testing.
+Defaults to `dryRun: true` and `BTC-USDC` — no edits needed to start testing.
 
 ### 4. Run setup-check
 
 ```bash
 npm run build
-npm run setup-check -- --config configs/coinbase-btc.yaml
+npm run setup-check -- --config configs/coinbase-shannon-1.yaml
 ```
 (`setup-check.ts` now parses `--config` like every other script in this repo —
 it didn't before this was written, which would have silently ignored the flag
@@ -320,20 +379,29 @@ Expected output:
    OK — Authenticated. N account(s) visible.
 3. Fetching balances...
    BTC balance: 0.000000 BTC
-   USD balance: 0.00 USD
-4. Checking BTC-USD market (recent candles)...
-   OK — 7 daily candles. Latest close: ... USD/BTC
+   USDC balance: 0.00 USDC
+4. Checking BTC-USDC market (recent candles)...
+   OK — 7 daily candles. Latest close: ... USDC/BTC
 5. Checking BACEN PTAX rate (USD/BRL conversion)...
    OK — PTAX rate: 5.xxxx BRL/USD
 ```
 If it fails at step 2: most likely a PEM pasted with line breaks lost (re-check
 `secret-tool lookup`), a View-only key missing `accounts:read` scope, or a
-stale/revoked key.
+stale/revoked key. If it fails at order placement specifically with `400
+INVALID_ARGUMENT: "account is not available"`, the balance is probably sitting
+in a Coinbase "Consumer" wallet rather than an Advanced Trade portfolio — see
+"Implementation Notes — Live Testing Findings" above; it needs a manual
+conversion in the regular Coinbase app first. `npm run balances -- --config
+configs/coinbase-shannon-1.yaml` lists every account's balance (not just the
+configured pair) if you need to check what's actually there; `npm run
+liquidate-all -- --config configs/coinbase-shannon-1.yaml` consolidates
+everything non-cash into the configured quote currency (with a preview and a
+typed-confirmation prompt before placing any order).
 
 ### 5. Dry-run a cycle
 
 ```bash
-DRY_RUN=true node dist/index.js --config configs/coinbase-btc.yaml --once
+DRY_RUN=true node dist/index.js --config configs/coinbase-shannon-1.yaml --once
 ```
 Places no real order (the adapter short-circuits before `createOrder` when
 `dryRun` is true) but exercises the full rebalance-decision path against real

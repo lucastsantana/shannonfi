@@ -74,6 +74,36 @@ export function computeMeanAbsoluteDailyReturn(closes: number[]): number {
 }
 
 /**
+ * Ordinary-least-squares slope of closes against their index (0, 1, 2, ...),
+ * normalized by the window's mean price so the result is a fractional
+ * change-per-day comparable across assets of very different price magnitudes
+ * (e.g. a R$0.01 token vs. a R$300,000 BTC). Used by the asset scanner as a
+ * trend-direction signal: positive means uptrending, negative means
+ * downtrending, near-zero means sideways. Returns 0 for fewer than 2 points or
+ * a non-positive mean price (can't normalize).
+ */
+export function computeNormalizedTrendSlope(closes: number[]): number {
+  const n = closes.length;
+  if (n < 2) return 0;
+
+  const meanX = (n - 1) / 2;
+  const meanY = closes.reduce((sum, c) => sum + c, 0) / n;
+  if (meanY <= 0) return 0;
+
+  let numerator = 0;
+  let denominator = 0;
+  for (let i = 0; i < n; i++) {
+    const dx = i - meanX;
+    numerator += dx * ((closes[i] as number) - meanY);
+    denominator += dx * dx;
+  }
+  if (denominator === 0) return 0;
+
+  const slopePerDay = numerator / denominator;
+  return slopePerDay / meanY;
+}
+
+/**
  * Adaptive threshold in BPS = round(mad * 10_000 * multiplier),
  * clamped to [MIN_ADAPTIVE_THRESHOLD_BPS, MAX_ADAPTIVE_THRESHOLD_BPS].
  */

@@ -11,7 +11,10 @@ import { Config } from '../config';
 import { BR_EFFECTIVE_LIMIT_BRL } from '../constants';
 import { TelegramService } from '../publishers/telegram';
 import { DailyDigestService } from '../publishers/daily-digest';
-import { getDb, setDbConfig } from './tracker/db';
+import { getDb, getDbConfig, setDbConfig } from './tracker/db';
+import { runAssetScan } from '../scanner/run-scan';
+import { AssetScanner, ScannerAdapter } from '../scanner/scanner';
+import { AssetCandidate, ScanResult } from '../scanner/types';
 
 // Small delay between sequential API calls during a rebalance execution,
 // to avoid hitting MB's 60 req/60s limit when multiple calls fire back-to-back.
@@ -161,11 +164,22 @@ export class RebalancerBot {
       timeZone: 'America/Sao_Paulo',
     });
 
+    // ── Autonomous instances decide for themselves first (may insert a freshly
+    // APPROVED pending_rotation row) — then the existing execution check immediately
+    // below picks it up and runs it the same cycle, no extra poll-interval delay. ──
+    await this.checkAndRunAutonomousRotationDecision();
+
     // ── Check for an approved asset rotation before anything else ────────────────
     // Cheap (one indexed SELECT) on the common case where nothing is pending. If a
     // rotation executes, this.adapter/this.config.symbol/etc. are swapped in place and
     // every check below naturally proceeds against the new asset for the rest of this cycle.
     await this.checkAndExecuteRotation();
+
+    // ── Bootstrap gate: brand-new instances configured to pick their first asset
+    // via the scanner, rather than trading the YAML's default `symbol` immediately ──
+    if (await this.checkBootstrapGate()) {
+      return;
+    }
 
     // ── Check if it's time to send daily digest ──────────────────────────────────
     if (this.dailyDigest) {
@@ -527,6 +541,217 @@ export class RebalancerBot {
       baseAsset: this.config.symbol.split('-')[0]!,
     };
     this.history.appendSnapshot(snapshot);
+  }
+
+  /**
+   * For instances with `bootstrapViaScan: true` (see config.ts) and zero trade
+   * history: never place a trade on the YAML's default `symbol` — instead trigger
+   * the same scanner+Telegram flow used for ongoing rotation, and wait for a human
+   * to approve a candidate via the existing pending_rotation mechanism (handled by
+   * checkAndExecuteRotation() above, which runs every cycle regardless of this
+   * gate). Once that rotation executes, readTrades() becomes non-empty and this
+   * gate stops firing — there's no separate "bootstrap complete" flag to manage.
+   * Returns true if the gate is active and the rest of this cycle should be skipped.
+   *
+   * Instances with `autonomousWeeklyRotation: true` never reach the Telegram-wait
+   * logic below at all — checkAndRunAutonomousRotationDecision() (called earlier in
+   * checkAndRebalance()) owns their entire bootstrap decision, including picking
+   * and approving their first asset immediately with no human step. By the time
+   * this method runs, that decision has already produced a trade (so the
+   * zero-trade-history check below is naturally false) — this early return just
+   * makes the "no Telegram for autonomous instances" guarantee explicit rather than
+   * incidental, for the case where no candidate qualified yet and history is still empty.
+   */
+  private async checkBootstrapGate(): Promise<boolean> {
+    if (!this.config.bootstrapViaScan) return false;
+    if (this.config.autonomousWeeklyRotation) return false;
+    if (this.history.readTrades().length > 0) return false;
+
+    const db = getDb(this.config.dbPath);
+    const { c: scanCount } = db.prepare('SELECT COUNT(*) as c FROM scans').get() as { c: number };
+
+    if (scanCount === 0) {
+      logger.info('Bootstrap: no trade history yet — running initial scan before any trade', {
+        symbol: this.config.symbol,
+      });
+      try {
+        await runAssetScan({
+          adapter: this.adapter as unknown as ScannerAdapter,
+          db,
+          dbPath: this.config.dbPath,
+          exchange: this.config.exchange,
+          activeSymbol: this.config.symbol,
+          telegram: this.telegram,
+          dryRun: this.config.dryRun,
+        });
+      } catch (err) {
+        logger.error('Bootstrap scan failed', { error: (err as Error).message });
+      }
+    } else {
+      logger.info('Bootstrap: awaiting scan approval via Telegram before placing any trade', {
+        symbol: this.config.symbol,
+      });
+    }
+    return true;
+  }
+
+  /** Calendar date (YYYY-MM-DD, BRT) of the most recent Monday at or before now. */
+  private mostRecentMondayBRT(): string {
+    const todayBRT = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+    // todayBRT is a plain calendar date (no time component) — parsing it as UTC
+    // midnight and using getUTCDay()/setUTCDate() below treats it as a date-only
+    // value throughout, so this never gets re-interpreted in a different timezone.
+    const dow = new Date(`${todayBRT}T00:00:00Z`).getUTCDay(); // 0=Sun .. 6=Sat
+    const daysSinceMonday = (dow + 6) % 7; // Monday=0, Sunday=6
+    const monday = new Date(`${todayBRT}T00:00:00Z`);
+    monday.setUTCDate(monday.getUTCDate() - daysSinceMonday);
+    return monday.toISOString().slice(0, 10);
+  }
+
+  /**
+   * For instances with `autonomousWeeklyRotation: true` (see config.ts): decides
+   * and approves asset switches with no human in the loop, replacing the Telegram
+   * approve/reject flow entirely for this instance. Two cases:
+   *
+   *   - Bootstrap (zero trade history): picks the first asset immediately — no
+   *     reason to make a freshly-deployed, all-cash instance wait up to a week.
+   *   - Ongoing: re-evaluates once per week, right after midnight Sunday→Monday
+   *     BRT (tracked via the `autonomous_rotation_last_week_brt` DB config key —
+   *     see mostRecentMondayBRT() — so it fires exactly once per week regardless
+   *     of poll interval, not on a separate timer of its own).
+   *
+   * Either way, if a switch is warranted this inserts an already-APPROVED
+   * pending_rotation row; checkAndExecuteRotation() (called immediately after this
+   * in checkAndRebalance()) is what actually executes it — this method only ever
+   * decides, never touches the adapter or places a trade itself.
+   */
+  private async checkAndRunAutonomousRotationDecision(): Promise<void> {
+    if (!this.config.autonomousWeeklyRotation) return;
+
+    const isBootstrap = this.history.readTrades().length === 0;
+    const mostRecentMonday = this.mostRecentMondayBRT();
+
+    if (!isBootstrap) {
+      const lastWeek = getDbConfig('autonomous_rotation_last_week_brt', undefined, this.config.dbPath);
+      if (lastWeek === mostRecentMonday) return; // already decided this week
+    }
+
+    logger.info(
+      isBootstrap
+        ? 'Autonomous bootstrap: selecting first asset via scan (no Telegram wait)'
+        : 'Autonomous weekly rotation: running scheduled review',
+      { symbol: this.config.symbol },
+    );
+
+    let scanResult: ScanResult;
+    try {
+      const db = getDb(this.config.dbPath);
+      const scanner = new AssetScanner(this.adapter as unknown as ScannerAdapter, db, this.config.dbPath);
+      scanResult = await scanner.scan({
+        windowDays: 30,
+        minVolumeBrl: 5_000,
+        minDataPoints: 10,
+        returnFloor: -0.20,
+        topN: 15,
+        minTrendSlope: -0.0005,
+        liquidityFullWeightBrl: 50_000,
+        quoteCurrency: this.config.symbol.split('-')[1]!,
+      });
+    } catch (err) {
+      logger.error('Autonomous rotation scan failed — will retry next cycle', {
+        error: (err as Error).message,
+      });
+      return;
+    }
+
+    // Mark this week as decided regardless of outcome, so a "no qualifying
+    // candidate" or "keep current asset" result doesn't re-scan every cycle until
+    // the next Monday boundary.
+    if (!isBootstrap) {
+      setDbConfig('autonomous_rotation_last_week_brt', mostRecentMonday, this.config.dbPath);
+    }
+
+    const top = scanResult.candidates[0];
+    if (!top) {
+      logger.info('Autonomous rotation: no qualifying candidate this run', {
+        totalScanned: scanResult.totalScanned,
+      });
+      await this.notifyAutonomousDecision(isBootstrap, null, null, null);
+      return;
+    }
+
+    const currentBaseAsset = this.config.symbol.split('-')[0]!;
+
+    if (!isBootstrap) {
+      const currentCandidate = scanResult.candidates.find((c) => c.baseAsset === currentBaseAsset);
+      const baselineScore = currentCandidate?.score ?? 0;
+      const isSameAsset = top.baseAsset === currentBaseAsset;
+      // baselineScore is 0 when the current asset didn't even qualify this week
+      // (filtered by volume/trend/return floor) — any positive score beats that
+      // trivially, so the margin check only applies once there's a real baseline.
+      const marginOk =
+        baselineScore <= 0 ? top.score > 0 : top.score >= baselineScore * (1 + this.config.autonomousRotationMinMarginPct);
+
+      if (isSameAsset || !marginOk) {
+        logger.info('Autonomous rotation: keeping current asset', {
+          currentBaseAsset,
+          topBaseAsset: top.baseAsset,
+          topScore: top.score.toFixed(4),
+          baselineScore: baselineScore.toFixed(4),
+        });
+        await this.notifyAutonomousDecision(false, top, baselineScore, null);
+        return;
+      }
+    }
+
+    const quoteCurrency = this.config.symbol.split('-')[1]!;
+    const toSymbol = `${top.baseAsset}-${quoteCurrency}`;
+    const db = getDb(this.config.dbPath);
+    db.prepare(
+      `INSERT INTO pending_rotation (from_symbol, to_symbol, approved_at, status, scan_id, requested_by)
+       VALUES (?, ?, ?, 'APPROVED', ?, 'autonomous-weekly')`,
+    ).run(this.config.symbol, toSymbol, new Date().toISOString(), scanResult.id ?? null);
+
+    logger.info('Autonomous rotation approved — will execute this same cycle', {
+      from: this.config.symbol,
+      to: toSymbol,
+      score: top.score.toFixed(4),
+    });
+    await this.notifyAutonomousDecision(isBootstrap, top, null, toSymbol);
+  }
+
+  private async notifyAutonomousDecision(
+    isBootstrap: boolean,
+    top: AssetCandidate | null,
+    baselineScore: number | null,
+    toSymbol: string | null,
+  ): Promise<void> {
+    if (!this.telegram) return;
+
+    const lines: string[] = [];
+    lines.push(isBootstrap ? '🤖 <b>AUTONOMOUS BOOTSTRAP</b>' : '🤖 <b>AUTONOMOUS WEEKLY REVIEW</b>');
+    lines.push('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    lines.push('');
+
+    if (!top) {
+      lines.push('No qualifying candidate this run (failed volume/trend/return filters) — staying as-is.');
+    } else if (toSymbol) {
+      lines.push(`Switching to <b>${toSymbol}</b> (score ${top.score.toFixed(4)}).`);
+      lines.push(`├─ MAD: ${(top.mad * 100).toFixed(1)}% | Trend: ${(top.trendSlope * 100).toFixed(3)}%/day`);
+      lines.push(`└─ Liquidity weight: ${top.liquidityWeight.toFixed(2)}`);
+    } else {
+      lines.push(`Keeping <b>${this.config.symbol}</b>.`);
+      lines.push(`├─ Top candidate this week: ${top.symbol} (score ${top.score.toFixed(4)})`);
+      lines.push(`└─ Current asset score: ${(baselineScore ?? 0).toFixed(4)} — not enough margin to switch`);
+    }
+
+    try {
+      await this.telegram.sendMessage(lines.join('\n'));
+    } catch (err) {
+      logger.warn('Failed to send autonomous rotation notification', {
+        error: (err as Error).message,
+      });
+    }
   }
 
   /**
