@@ -374,6 +374,46 @@ trending up" candidates are favored over high-volatility-but-falling ones:
   doesn't score identically to one with far deeper liquidity — it dampens thin
   markets continuously rather than treating the floor as a binary pass/fail.
 
+**The scanner's candidate universe was a hardcoded 15-symbol list — too narrow
+for an autonomous instance.** `KNOWN_BASE_ASSETS` in `scanner.ts` was a deliberate
+"keep it simple" choice from the original rotation plan, kept unchanged when
+Coinbase support was added. It meant `coinbase-shannon-1` could only ever rotate
+among those 15 names, even though Coinbase lists ~400 USDC-quoted pairs (verified
+live). Fixed via an optional `ScannerAdapter.listAvailableBaseAssets(maxCandidates)`
+method (`scanner.ts`) — when an adapter implements it, the scanner uses it instead
+of the hardcoded list, falling back to the hardcoded list on any error (network
+failure, etc.) so a bad scan never hard-fails. `CoinbaseAdapter.listAvailableBaseAssets()`
+calls the new `CoinbaseEndpoints.listProducts()` (`GET /api/v3/brokerage/products`,
+verified live — one call, no pagination, returns the full ~930-product SPOT
+catalog), filters to the configured quote currency + `status: 'online'` + not
+disabled. Mercado Bitcoin and Binance adapters don't implement this method, so
+`hype-mb` is completely unaffected — still the same 15-symbol hardcoded list.
+
+**No pre-filtering by volume — the point is to find candidates a volume-rank
+cutoff would hide.** An earlier version of this capped to the top 40 by Coinbase's
+own reported 24h volume before scoring, to keep scan time down. Explicitly
+rejected: that cap would exclude exactly the kind of lower-volume "hidden" asset
+worth surfacing — the existing post-scoring `minVolumeBrl` floor is the real,
+deliberate volume filter (it runs after MAD/trend/liquidity are actually computed,
+not before). `MAX_DYNAMIC_CANDIDATES` is now 1000 — effectively unlimited at
+Coinbase's current catalog size, kept only as a future safety bound.
+
+Live-tested twice, at increasing scope:
+1. Capped to top 40 by volume (the rejected approach): 38 distinct symbols
+   discovered, 9 qualified, top pick `RE-USDC` (score 0.51) — already an
+   improvement over the old hardcoded list's only qualifier, `HYPE-USDC`
+   (score 0.06).
+2. **Full catalog, no cap:** all 401 USDC pairs discovered and scored, taking
+   224 seconds (~3.75 min — comfortably inside `scan.yml`'s 15-minute timeout).
+   39 qualified. Top pick changed again to `ALLO-USDC` (score 0.65, +363.2%
+   return) — invisible in run 1 because it wasn't in the top-40-by-volume
+   pre-filter. Concretely demonstrates the cap's cost: `SYND-USDC` ranked #3
+   (score 0.41) on only ~R$1.8M/day volume, an order of magnitude below names
+   that would have crowded it out of any volume-ranked top-40.
+
+Also caught and fixed in the same pass: `USD1` (a stablecoin) was missing from
+`STABLECOIN_BASE_ASSETS` and slipped into live scan results.
+
 **A real bug was found and fixed via testing, not just a design walkthrough.** The
 original plan (and the recovered `rotation-executor.ts` it was based on) assumed that
 once a rotation lands the portfolio at 100% BRL / 0% target asset, the *existing*

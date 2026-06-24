@@ -51,27 +51,24 @@ module.exports = {
       },
     },
 
-    // ─── Not yet enabled: BTC-USDC on Coinbase ─────────────────────────────────
-    // Uncomment once configs/coinbase-shannon-1.yaml exists (copy from the
-    // .template) and Coinbase CDP credentials are stored in GNOME Keyring — see
-    // docs/coinbase-adapter-plan.md and configs/coinbase-shannon-1.yaml.template.
-    // Data would be stored in: bot/data/coinbase-shannon-1/
-    // {
-    //   name: 'coinbase-shannon-1',
-    //   script: './start-instance.sh',
-    //   cwd: './bot',
-    //   args: 'coinbase-shannon-1',
-    //   watch: false,
-    //   autorestart: true,
-    //   max_memory_restart: '500M',
-    //   out_file: 'logs/coinbase-shannon-1.log',
-    //   error_file: 'logs/coinbase-shannon-1-error.log',
-    //   log_date_format: 'YYYY-MM-DD HH:mm:ss Z',
-    //   merge_logs: true,
-    //   env: {
-    //     NODE_ENV: 'production',
-    //   },
-    // },
+    // ─── Coinbase: USDC-quoted, autonomous weekly asset rotation ───────────────
+    // Data stored in: bot/data/coinbase-shannon-1/
+    {
+      name: 'coinbase-shannon-1',
+      script: './start-instance.sh',
+      cwd: './bot',
+      args: 'coinbase-shannon-1',
+      watch: false,
+      autorestart: true,
+      max_memory_restart: '500M',
+      out_file: 'logs/coinbase-shannon-1.log',
+      error_file: 'logs/coinbase-shannon-1-error.log',
+      log_date_format: 'YYYY-MM-DD HH:mm:ss Z',
+      merge_logs: true,
+      env: {
+        NODE_ENV: 'production',
+      },
+    },
   ],
 
   // ─── Global settings ──────────────────────────────────────────────────────

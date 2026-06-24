@@ -85,3 +85,19 @@ export interface CoinbaseProduct {
   base_increment: string;
   quote_min_size: string;
 }
+
+/** Subset of fields actually used from GET /api/v3/brokerage/products (list, not one product) — the real response has ~40 fields, most unused here. */
+export interface CoinbaseProductSummary {
+  product_id: string;
+  base_currency_id: string;
+  quote_currency_id: string;
+  status: string; // 'online' when tradable
+  trading_disabled: boolean;
+  is_disabled: boolean;
+  approximate_quote_24h_volume: string; // 24h volume in quote-currency terms, e.g. USDC
+}
+
+export interface CoinbaseProductsListResponse {
+  products: CoinbaseProductSummary[];
+  num_products: number;
+}

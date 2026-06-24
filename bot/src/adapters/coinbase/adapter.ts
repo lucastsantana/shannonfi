@@ -304,6 +304,37 @@ export class CoinbaseAdapter implements ExchangeAdapter {
     return data;
   }
 
+  /**
+   * Discovers the tradable base-asset universe dynamically from Coinbase's own
+   * product catalog (~930 SPOT products, ~400 USDC-quoted, verified live — one
+   * call, no pagination needed) instead of scanner.ts's hardcoded 15-symbol
+   * fallback list. Duck-typed against scanner.ts's optional
+   * ScannerAdapter.listAvailableBaseAssets — MB/Binance adapters don't implement
+   * this, so they keep using the hardcoded list unchanged.
+   *
+   * Deliberately does NOT pre-filter to only the highest-volume products before
+   * scanner.ts scores them — scanner.ts passes a very high maxCandidates (see
+   * MAX_DYNAMIC_CANDIDATES) specifically so lower-volume "hidden" candidates
+   * still get scored on their actual MAD/trend/liquidity rather than being
+   * excluded purely by a pre-rank. The existing post-scoring minVolumeBrl floor
+   * is the real, deliberate volume filter; `maxCandidates` here just protects
+   * against an unbounded catalog in the future, not against today's ~400 pairs.
+   */
+  async listAvailableBaseAssets(maxCandidates: number): Promise<string[]> {
+    const resp = await this.endpoints.listProducts();
+    const candidates = resp.products
+      .filter(
+        (p) =>
+          p.quote_currency_id === this.quoteCurrency &&
+          p.status === 'online' &&
+          !p.trading_disabled &&
+          !p.is_disabled,
+      )
+      .sort((a, b) => parseFloat(b.approximate_quote_24h_volume) - parseFloat(a.approximate_quote_24h_volume))
+      .slice(0, maxCandidates);
+    return candidates.map((p) => p.base_currency_id);
+  }
+
   private async getAllAccounts() {
     const accounts = [];
     let cursor: string | undefined;

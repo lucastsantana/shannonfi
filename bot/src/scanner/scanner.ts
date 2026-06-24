@@ -10,20 +10,39 @@ export interface ScannerAdapter {
     symbol: string,
     countback: number,
   ): Promise<Array<{ close: number; volume: number; timestamp: number }>>;
+
+  // Optional: discover the tradable base-asset universe dynamically from the
+  // exchange's own product catalog (e.g. CoinbaseAdapter.listAvailableBaseAssets,
+  // ranked by the exchange's own 24h volume and capped to `maxCandidates`).
+  // Adapters that don't implement this (Mercado Bitcoin, Binance) fall back to
+  // the hardcoded KNOWN_BASE_ASSETS list below unchanged.
+  listAvailableBaseAssets?(maxCandidates: number): Promise<string[]>;
 }
 
-// Base assets to scan across, regardless of exchange/quote currency. Some may not
-// exist on every exchange (e.g. listed on Mercado Bitcoin but not yet on Coinbase)
-// — scoreSymbol() failures are caught per-symbol and skipped (see the catch in
-// scan() below), so an incomplete list costs a few wasted lookups, not correctness.
+// Fallback base assets when the adapter has no dynamic discovery — also still
+// used by Mercado Bitcoin/Binance. Some may not exist on every exchange (e.g.
+// listed on Mercado Bitcoin but not yet on Coinbase) — scoreSymbol() failures
+// are caught per-symbol and skipped (see the catch in scan() below), so an
+// incomplete list costs a few wasted lookups, not correctness.
 const KNOWN_BASE_ASSETS = [
   'BTC', 'ETH', 'SOL', 'HYPE', 'XRP', 'ADA',
   'DOGE', 'LINK', 'LTC', 'BCH', 'AVAX', 'ARB',
   'OP', 'PEPE', 'SHIB',
 ];
 
+// Effectively unlimited — the point of dynamic discovery is to find lower-volume
+// "hidden" candidates a top-N-by-volume pre-filter would exclude before they're
+// ever scored, so this deliberately does NOT pre-rank by exchange-reported
+// volume the way an earlier version of this code did. The existing post-scoring
+// minVolumeBrl floor (ScanOptions) is the real, deliberate volume filter — it
+// runs after a candidate's actual MAD/trend/liquidity have been computed, not
+// before. At Coinbase's current ~400-500 USDC pairs and the existing
+// 200ms-between-calls rate limit, a full scan takes a few minutes — comfortably
+// inside scan.yml's 15-minute timeout (verified live: ~650ms/symbol observed).
+const MAX_DYNAMIC_CANDIDATES = 1000;
+
 const STABLECOIN_BASE_ASSETS = new Set([
-  'USDC', 'USDT', 'BRZ', 'DAI', 'BUSD', 'PAXG', 'BRAX', 'EUR', 'jBRL',
+  'USDC', 'USDT', 'BRZ', 'DAI', 'BUSD', 'PAXG', 'BRAX', 'EUR', 'jBRL', 'USD1',
 ]);
 
 // Base assets confirmed to NOT exist for a given quote currency (e.g. wrong ticker,
@@ -49,14 +68,28 @@ export class AssetScanner {
     const startTime = Date.now();
 
     // Discover symbols quoted in this instance's quote currency (BRL for MB/Binance,
-    // USD for Coinbase) — the same base-asset universe, just suffixed differently.
+    // USDC for Coinbase) — the same base-asset universe, just suffixed differently.
     const quoteCurrency = options.quoteCurrency;
     const unavailable = UNAVAILABLE_BASE_ASSETS[quoteCurrency] ?? new Set<string>();
-    let brlSymbols = KNOWN_BASE_ASSETS
+
+    let baseAssets: string[] = KNOWN_BASE_ASSETS;
+    let discoverySource: 'dynamic' | 'hardcoded' = 'hardcoded';
+    if (this.adapter.listAvailableBaseAssets) {
+      try {
+        baseAssets = await this.adapter.listAvailableBaseAssets(MAX_DYNAMIC_CANDIDATES);
+        discoverySource = 'dynamic';
+      } catch (err) {
+        logger.warn('Dynamic base-asset discovery failed, falling back to hardcoded list', {
+          error: (err as Error).message,
+        });
+      }
+    }
+
+    let brlSymbols = [...new Set(baseAssets)]
       .filter((b) => !STABLECOIN_BASE_ASSETS.has(b) && !unavailable.has(b))
       .map((b) => `${b}-${quoteCurrency}`);
 
-    logger.info('Symbol discovery complete', { total: brlSymbols.length, quoteCurrency });
+    logger.info('Symbol discovery complete', { total: brlSymbols.length, quoteCurrency, discoverySource });
 
     // Score each symbol with rate limiting (200ms between API calls)
     const candidates: Omit<AssetCandidate, 'rank'>[] = [];

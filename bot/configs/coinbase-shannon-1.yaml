@@ -69,10 +69,10 @@ coinbase: {}
 
 rebalanceThresholdBps: 100        # 1.0% static threshold
 maxSlippageBps: 100               # 1.0% max slippage
-minPortfolioValueBrl: 200         # Skip if portfolio < R$200-equivalent
-minTradeSizeBrl: 20               # Skip trades < R$20-equivalent
-pollIntervalSeconds: 900          # Check every 15 minutes
-minRebalanceIntervalSeconds: 7200 # Min 2 hours between rebalances
+minPortfolioValueBrl: 10          # Skip if portfolio < R$10-equivalent
+minTradeSizeBrl: 1                # Skip trades < R$1-equivalent
+pollIntervalSeconds: 3600         # Check every hour
+minRebalanceIntervalSeconds: 3600 # Min 1 hour between rebalances
 
 # ─── Adaptive threshold ────────────────────────────────────────────────────────
 
@@ -80,14 +80,16 @@ useAdaptiveThreshold: true
 thresholdVolatilityMultiplier: 1.5
 volatilityWindowDays: 30
 
-# Lei 9.250/1995 Art. 21's R$35k/month exemption applies to aggregate crypto sales
-# regardless of exchange — defaulted true here (see docs/coinbase-adapter-plan.md,
-# open question 5, and rebalancer.ts's comment on this same flag).
-neverExceedExemptionLimit: true
+# Day-trade safeguard disabled — same-day opposite-direction trades are allowed.
+enableDayTradeSafeguard: false
+
+# Lei 9.250/1995 Art. 21's R$35k/month exemption cap disabled — SELLs are never
+# capped/skipped to stay under the monthly exemption threshold.
+neverExceedExemptionLimit: false
 
 # ─── Runtime ──────────────────────────────────────────────────────────────────
 
-dryRun: true                      # Start in dry-run; flip to false only after setup-check passes
+dryRun: false                     # Live trading enabled
 logLevel: info
 
 # ─── Data persistence (SEPARATE FROM OTHER INSTANCES) ──────────────────────────

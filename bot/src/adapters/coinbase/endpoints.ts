@@ -7,6 +7,7 @@ import {
   CoinbaseGetOrderResponse,
   CoinbaseGranularity,
   CoinbaseProduct,
+  CoinbaseProductsListResponse,
 } from './raw-types';
 
 export class CoinbaseEndpoints {
@@ -37,6 +38,18 @@ export class CoinbaseEndpoints {
 
   async getProduct(productIdOverride?: string): Promise<CoinbaseProduct> {
     return this.client.get<CoinbaseProduct>(`/api/v3/brokerage/products/${productIdOverride ?? this.productId}`);
+  }
+
+  /**
+   * Lists every SPOT product Coinbase offers (verified live: ~930 products, no
+   * pagination needed — a single call returns everything). Used by the scanner to
+   * discover the tradable base-asset universe dynamically instead of a hand-
+   * maintained list — see scanner.ts's listAvailableBaseAssets().
+   */
+  async listProducts(): Promise<CoinbaseProductsListResponse> {
+    return this.client.get<CoinbaseProductsListResponse>('/api/v3/brokerage/products', {
+      product_type: 'SPOT',
+    });
   }
 
   async createOrder(request: CoinbaseCreateOrderRequest): Promise<CoinbaseCreateOrderResponse> {

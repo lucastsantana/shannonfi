@@ -70,7 +70,6 @@ async function main(): Promise<void> {
     config.exchange === 'mercadobitcoin' ? 'Mercado Bitcoin'
     : config.exchange === 'binance' ? 'Binance'
     : 'Coinbase';
-  logger.info(`Using ${exchangeLabel} adapter (${config.symbol})`);
 
   // ── Build services ─────────────────────────────────────────────────────────
   const retentionDays = config.jsonRetentionDays ?? 15;
@@ -80,6 +79,16 @@ async function main(): Promise<void> {
   const tax = new TaxService(config.dbPath, retentionDays);
   const volatility = new VolatilityService(adapter, config.volatilityWindowDays);
   const metrics = new MetricsService(history);
+
+  // config.symbol is just a schema-satisfying placeholder for bootstrapViaScan
+  // instances until the scanner picks (and rotation persists) a real asset —
+  // logging it as if it were the active pair before that's happened is misleading.
+  const bootstrapPending = config.bootstrapViaScan === true && history.readTrades().length === 0;
+  logger.info(
+    bootstrapPending
+      ? `Using ${exchangeLabel} adapter — no asset selected yet (bootstrap pending)`
+      : `Using ${exchangeLabel} adapter (${config.symbol})`,
+  );
 
   // ── --report mode ──────────────────────────────────────────────────────────
   if (report) {

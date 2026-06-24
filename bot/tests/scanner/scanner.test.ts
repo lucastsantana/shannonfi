@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { AssetScanner, ScannerAdapter } from '../../src/scanner/scanner';
 import { ScanOptions } from '../../src/scanner/types';
 import { getDb, closeDb } from '../../src/core/tracker/db';
@@ -117,6 +117,44 @@ describe('AssetScanner', () => {
 
     const result = await scanner.scan(BASE_OPTIONS);
     expect(result.candidates.find((c) => c.baseAsset === 'BTC')).toBeUndefined();
+    closeDb();
+  });
+
+  it('uses listAvailableBaseAssets() instead of the hardcoded list when the adapter implements it', async () => {
+    const dbPath = uniqueMemDbPath();
+    const db = getDb(dbPath);
+    // 'FOO' isn't in KNOWN_BASE_ASSETS at all — only reachable via dynamic discovery.
+    const listAvailableBaseAssets = vi.fn().mockResolvedValue(['FOO']);
+    const adapter: ScannerAdapter = {
+      getCandlesWithVolume: async (symbol: string) =>
+        symbol === 'FOO-BRL' ? uptrendingCandles(100, 1, 100_000) : [],
+      listAvailableBaseAssets,
+    };
+    const scanner = new AssetScanner(adapter, db, dbPath);
+
+    const result = await scanner.scan(BASE_OPTIONS);
+
+    expect(listAvailableBaseAssets).toHaveBeenCalledWith(1000);
+    expect(result.totalScanned).toBe(1);
+    expect(result.candidates.find((c) => c.baseAsset === 'FOO')).toBeDefined();
+    closeDb();
+  });
+
+  it('falls back to the hardcoded list if dynamic discovery throws', async () => {
+    const dbPath = uniqueMemDbPath();
+    const db = getDb(dbPath);
+    const adapter: ScannerAdapter = {
+      getCandlesWithVolume: async (symbol: string) =>
+        symbol === 'BTC-BRL' ? uptrendingCandles(100, 1, 100_000) : [],
+      listAvailableBaseAssets: vi.fn().mockRejectedValue(new Error('network error')),
+    };
+    const scanner = new AssetScanner(adapter, db, dbPath);
+
+    const result = await scanner.scan(BASE_OPTIONS);
+
+    // Fell back to the 15-symbol hardcoded list (BTC is on it).
+    expect(result.totalScanned).toBe(15);
+    expect(result.candidates.find((c) => c.baseAsset === 'BTC')).toBeDefined();
     closeDb();
   });
 });

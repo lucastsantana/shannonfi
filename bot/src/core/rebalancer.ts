@@ -121,10 +121,11 @@ export class RebalancerBot {
       ? this.config.neverExceedExemptionLimit
       : false;
     const baseAsset = this.config.symbol.split('-')[0]!;
+    const bootstrapPending = this.config.bootstrapViaScan === true && this.history.readTrades().length === 0;
 
     logger.info("Shannon's Demon bot starting", {
       exchange: this.config.exchange,
-      symbol: this.config.symbol,
+      symbol: bootstrapPending ? 'pending (bootstrapViaScan — no asset selected yet)' : this.config.symbol,
       dryRun: this.config.dryRun,
       useAdaptiveThreshold: this.config.useAdaptiveThreshold,
       neverExceedExemptionLimit: neverExceed,
@@ -572,7 +573,7 @@ export class RebalancerBot {
 
     if (scanCount === 0) {
       logger.info('Bootstrap: no trade history yet — running initial scan before any trade', {
-        symbol: this.config.symbol,
+        yamlPlaceholderSymbol: this.config.symbol,
       });
       try {
         await runAssetScan({
@@ -589,7 +590,7 @@ export class RebalancerBot {
       }
     } else {
       logger.info('Bootstrap: awaiting scan approval via Telegram before placing any trade', {
-        symbol: this.config.symbol,
+        yamlPlaceholderSymbol: this.config.symbol,
       });
     }
     return true;
@@ -640,7 +641,7 @@ export class RebalancerBot {
       isBootstrap
         ? 'Autonomous bootstrap: selecting first asset via scan (no Telegram wait)'
         : 'Autonomous weekly rotation: running scheduled review',
-      { symbol: this.config.symbol },
+      isBootstrap ? { yamlPlaceholderSymbol: this.config.symbol } : { symbol: this.config.symbol },
     );
 
     let scanResult: ScanResult;

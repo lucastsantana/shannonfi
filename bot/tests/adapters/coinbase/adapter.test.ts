@@ -23,6 +23,7 @@ function makeAdapter() {
     getProduct: vi.fn(),
     createOrder: vi.fn(),
     getOrder: vi.fn(),
+    listProducts: vi.fn(),
   };
   const mockFxRate = { getUsdBrlRate: vi.fn().mockResolvedValue(PTAX) };
 
@@ -155,5 +156,63 @@ describe('CoinbaseAdapter — BRL<->USD conversion at the boundary', () => {
 
     expect(mockEndpoints.createOrder).not.toHaveBeenCalled();
     expect(trade.status).toBe('DRY_RUN');
+  });
+
+  describe('listAvailableBaseAssets()', () => {
+    function product(overrides: Partial<{
+      product_id: string; base_currency_id: string; quote_currency_id: string;
+      status: string; trading_disabled: boolean; is_disabled: boolean; approximate_quote_24h_volume: string;
+    }> = {}) {
+      return {
+        product_id: 'BTC-USDC', base_currency_id: 'BTC', quote_currency_id: 'USDC',
+        status: 'online', trading_disabled: false, is_disabled: false,
+        approximate_quote_24h_volume: '1000',
+        ...overrides,
+      };
+    }
+
+    it('filters to the configured quote currency, online, and tradable products', async () => {
+      const { adapter, mockEndpoints } = makeAdapter();
+      mockEndpoints.listProducts.mockResolvedValue({
+        num_products: 4,
+        products: [
+          product({ base_currency_id: 'BTC', quote_currency_id: 'USDC' }),
+          product({ base_currency_id: 'ETH', quote_currency_id: 'USD' }), // wrong quote currency
+          product({ base_currency_id: 'SOL', status: 'offline' }), // not online
+          product({ base_currency_id: 'XRP', trading_disabled: true }), // disabled
+        ],
+      });
+
+      const result = await adapter.listAvailableBaseAssets(40);
+      expect(result).toEqual(['BTC']);
+    });
+
+    it('ranks by approximate 24h quote volume, descending', async () => {
+      const { adapter, mockEndpoints } = makeAdapter();
+      mockEndpoints.listProducts.mockResolvedValue({
+        num_products: 3,
+        products: [
+          product({ base_currency_id: 'LOW', approximate_quote_24h_volume: '100' }),
+          product({ base_currency_id: 'HIGH', approximate_quote_24h_volume: '999999' }),
+          product({ base_currency_id: 'MID', approximate_quote_24h_volume: '5000' }),
+        ],
+      });
+
+      const result = await adapter.listAvailableBaseAssets(40);
+      expect(result).toEqual(['HIGH', 'MID', 'LOW']);
+    });
+
+    it('caps the result to maxCandidates', async () => {
+      const { adapter, mockEndpoints } = makeAdapter();
+      mockEndpoints.listProducts.mockResolvedValue({
+        num_products: 5,
+        products: Array.from({ length: 5 }, (_, i) =>
+          product({ base_currency_id: `ASSET${i}`, approximate_quote_24h_volume: String(i) }),
+        ),
+      });
+
+      const result = await adapter.listAvailableBaseAssets(2);
+      expect(result).toHaveLength(2);
+    });
   });
 });
