@@ -171,6 +171,39 @@ export class CoinbaseAdapter implements ExchangeAdapter {
     }
 
     const usdAmount = brlAmount / ptax;
+    const baseSize = brlToBase(brlAmount, portfolioBefore.basePrice, 8);
+
+    // Check against the product's live minimum order size before submitting — Coinbase
+    // rejects undersized orders with an opaque PREVIEW_INVALID_QUOTE_SIZE_TOO_SMALL /
+    // PREVIEW_INVALID_BASE_SIZE_TOO_SMALL error rather than failing fast, and the minimum
+    // varies per product (not just $1 — it's whatever this pair's quote_min_size/
+    // base_min_size currently is, which also matters here since autonomousWeeklyRotation
+    // can switch this instance across ~400 different USDC pairs).
+    const product = await this.endpoints.getProduct();
+    if (direction === 'BUY_BASE') {
+      const quoteMinSize = parseFloat(product.quote_min_size);
+      if (Number.isFinite(quoteMinSize) && usdAmount < quoteMinSize) {
+        logger.warn('Skipping Coinbase order — below exchange minimum quote size', {
+          productId: this.productId,
+          usdAmount: usdAmount.toFixed(2),
+          quoteMinSize,
+        });
+        record.status = 'FAILED';
+        return record;
+      }
+    } else {
+      const baseMinSize = parseFloat(product.base_min_size);
+      if (Number.isFinite(baseMinSize) && baseSize < baseMinSize) {
+        logger.warn('Skipping Coinbase order — below exchange minimum base size', {
+          productId: this.productId,
+          baseSize,
+          baseMinSize,
+        });
+        record.status = 'FAILED';
+        return record;
+      }
+    }
+
     const orderRequest =
       direction === 'BUY_BASE'
         ? {
@@ -184,9 +217,7 @@ export class CoinbaseAdapter implements ExchangeAdapter {
             product_id: this.productId,
             side: 'SELL' as const,
             order_configuration: {
-              market_market_ioc: {
-                base_size: brlToBase(brlAmount, portfolioBefore.basePrice, 8).toFixed(8),
-              },
+              market_market_ioc: { base_size: baseSize.toFixed(8) },
             },
           };
 

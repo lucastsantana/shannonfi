@@ -9,7 +9,9 @@ import {
   computeNormalizedTrendSlope,
   computeAdaptiveThresholdBps,
   isSlippageAcceptable,
+  computePortfolioAfterFill,
 } from '../src/math';
+import { Portfolio } from '../src/adapters/types';
 
 describe('computeBaseRatioBps', () => {
   it('returns 5000 for equal split', () => {
@@ -85,6 +87,43 @@ describe('computeRebalanceTrade', () => {
     const { direction, brlAmount } = computeRebalanceTrade(750, 250);
     expect(direction).toBe('SELL_BASE');
     expect(brlAmount).toBeCloseTo(250, 2);
+  });
+});
+
+describe('computePortfolioAfterFill', () => {
+  const before: Portfolio = {
+    baseBalance: 0,
+    brlBalance: 174.12339109119998,
+    basePrice: 2.16699684,
+    baseValueBrl: 0,
+    totalValueBrl: 174.12339109119998,
+    baseRatioBps: 0,
+    deviationBps: 0,
+    timestamp: '2026-06-24T00:30:29.833Z',
+  };
+
+  it('derives the post-BUY state from the fill instead of re-reading (possibly stale) balances', () => {
+    // Regression case: a Coinbase bootstrap BUY that filled 40.05 base for R$86.98 — the
+    // live bug re-fetched balances immediately after the fill and got back the pre-trade
+    // snapshot (base still 0), poisoning every later drift estimate with Infinity.
+    const after = computePortfolioAfterFill(before, 'BUY_BASE', 40.05, 86.978689425, 0.08697868942499999, 2.17217114);
+
+    expect(after.baseBalance).toBeCloseTo(40.05, 8);
+    expect(after.brlBalance).toBeCloseTo(87.05772297677498, 6);
+    expect(after.baseValueBrl).toBeGreaterThan(0);
+    // A fresh 50/50 acquisition should land close to the 5000 bps target, not 0.
+    expect(after.baseRatioBps).toBeGreaterThan(4900);
+    expect(after.baseRatioBps).toBeLessThan(5100);
+    expect(Number.isFinite(after.deviationBps)).toBe(true);
+  });
+
+  it('derives the post-SELL state from the fill', () => {
+    const sellBefore: Portfolio = { ...before, baseBalance: 40.05, baseValueBrl: 40.05 * 2.17, brlBalance: 87.06, totalValueBrl: 174.12 };
+    const after = computePortfolioAfterFill(sellBefore, 'SELL_BASE', 40.05, 86.98, 0.087, 2.17);
+
+    expect(after.baseBalance).toBeCloseTo(0, 8);
+    expect(after.brlBalance).toBeCloseTo(87.06 + 86.98 - 0.087, 6);
+    expect(after.baseValueBrl).toBeCloseTo(0, 8);
   });
 });
 

@@ -70,7 +70,10 @@ coinbase: {}
 rebalanceThresholdBps: 100        # 1.0% static threshold
 maxSlippageBps: 100               # 1.0% max slippage
 minPortfolioValueBrl: 10          # Skip if portfolio < R$10-equivalent
-minTradeSizeBrl: 1                # Skip trades < R$1-equivalent
+minTradeSizeBrl: 10               # Skip trades < R$10-equivalent — Coinbase rejects orders below
+                                   # its $1 USD quote_min_size; R$10 keeps margin above that floor
+                                   # as the PTAX rate moves (was R$1, too low, caused every live
+                                   # rebalance to fail with PREVIEW_INVALID_QUOTE_SIZE_TOO_SMALL)
 pollIntervalSeconds: 3600         # Check every hour
 minRebalanceIntervalSeconds: 3600 # Min 1 hour between rebalances
 

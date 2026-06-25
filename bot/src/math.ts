@@ -10,6 +10,7 @@ import {
   MIN_ADAPTIVE_THRESHOLD_BPS,
   MAX_ADAPTIVE_THRESHOLD_BPS,
 } from './constants';
+import { Portfolio } from './adapters/types';
 
 /** Base asset allocation as basis points of total portfolio. */
 export function computeBaseRatioBps(baseValueBrl: number, totalValueBrl: number): number {
@@ -45,6 +46,47 @@ export function computeRebalanceTrade(
     return { direction: 'SELL_BASE', brlAmount: baseValueBrl - target };
   }
   return { direction: 'BUY_BASE', brlAmount: target - baseValueBrl };
+}
+
+/**
+ * Derives the post-fill portfolio from `before` plus the trade's actual fill
+ * amounts, instead of re-fetching balances from the exchange right after the
+ * order fills. A fresh balance fetch can read stale data if the exchange's
+ * account snapshot lags the fill confirmation by even a second or two
+ * (observed live on Coinbase: a filled BUY's immediate getPortfolio() call
+ * still reported the pre-trade balance, recording a 0 post-trade base
+ * allocation and poisoning every subsequent drift estimate with Infinity).
+ * Fees are assumed deducted from the quote (BRL) side on both directions,
+ * matching Coinbase's fee model.
+ */
+export function computePortfolioAfterFill(
+  before: Portfolio,
+  direction: 'BUY_BASE' | 'SELL_BASE',
+  baseAmountFilled: number,
+  brlAmountFilled: number,
+  feeBrl: number,
+  fillPriceBrl: number,
+): Portfolio {
+  const baseBalance =
+    direction === 'BUY_BASE' ? before.baseBalance + baseAmountFilled : before.baseBalance - baseAmountFilled;
+  const brlBalance =
+    direction === 'BUY_BASE'
+      ? before.brlBalance - brlAmountFilled - feeBrl
+      : before.brlBalance + brlAmountFilled - feeBrl;
+
+  const baseValueBrl = baseBalance * fillPriceBrl;
+  const totalValueBrl = baseValueBrl + brlBalance;
+
+  return {
+    baseBalance,
+    brlBalance,
+    basePrice: fillPriceBrl,
+    baseValueBrl,
+    totalValueBrl,
+    baseRatioBps: computeBaseRatioBps(baseValueBrl, totalValueBrl),
+    deviationBps: computeDeviationBps(baseValueBrl, brlBalance),
+    timestamp: new Date().toISOString(),
+  };
 }
 
 /**

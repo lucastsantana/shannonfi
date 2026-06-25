@@ -70,6 +70,9 @@ describe('CoinbaseAdapter — BRL<->USD conversion at the boundary', () => {
 
   it('executeTrade() BUY converts the BRL amount to USD for quote_size', async () => {
     const { adapter, mockEndpoints } = makeAdapter();
+    mockEndpoints.getProduct.mockResolvedValue({
+      product_id: 'BTC-USDC', base_min_size: '0.00001', base_increment: '0.00001', quote_min_size: '1',
+    });
     mockEndpoints.createOrder.mockResolvedValue({
       success: true,
       success_response: { order_id: 'order-1', product_id: 'BTC-USDC', side: 'BUY', client_order_id: 'c1' },
@@ -106,6 +109,9 @@ describe('CoinbaseAdapter — BRL<->USD conversion at the boundary', () => {
 
   it('executeTrade() SELL converts the BRL amount to a base-asset quantity via the BRL price', async () => {
     const { adapter, mockEndpoints } = makeAdapter();
+    mockEndpoints.getProduct.mockResolvedValue({
+      product_id: 'BTC-USDC', base_min_size: '0.00001', base_increment: '0.00001', quote_min_size: '1',
+    });
     mockEndpoints.createOrder.mockResolvedValue({
       success: true,
       success_response: { order_id: 'order-2', product_id: 'BTC-USDC', side: 'SELL', client_order_id: 'c2' },
@@ -133,6 +139,44 @@ describe('CoinbaseAdapter — BRL<->USD conversion at the boundary', () => {
         order_configuration: { market_market_ioc: { base_size: '0.01000000' } },
       }),
     );
+  });
+
+  it('executeTrade() BUY skips the order when below the product quote_min_size', async () => {
+    const { adapter, mockEndpoints } = makeAdapter();
+    mockEndpoints.getProduct.mockResolvedValue({
+      product_id: 'BTC-USDC', base_min_size: '0.00001', base_increment: '0.00001', quote_min_size: '1',
+    });
+
+    const portfolioBefore: Portfolio = {
+      baseBalance: 0, brlBalance: 5000, basePrice: 60_000 * PTAX, baseValueBrl: 0,
+      totalValueBrl: 5000, baseRatioBps: 0, deviationBps: 10_000, timestamp: new Date().toISOString(),
+    };
+
+    // 2 BRL / PTAX(5.0) = $0.40 USD, below the $1 quote_min_size
+    const trade = await adapter.executeTrade('BUY_BASE', 2, portfolioBefore);
+
+    expect(mockEndpoints.createOrder).not.toHaveBeenCalled();
+    expect(trade.status).toBe('FAILED');
+  });
+
+  it('executeTrade() SELL skips the order when below the product base_min_size', async () => {
+    const { adapter, mockEndpoints } = makeAdapter();
+    mockEndpoints.getProduct.mockResolvedValue({
+      product_id: 'BTC-USDC', base_min_size: '0.001', base_increment: '0.00001', quote_min_size: '1',
+    });
+
+    const basePriceBrl = 60_000 * PTAX;
+    const portfolioBefore: Portfolio = {
+      baseBalance: 0.01, brlBalance: 0, basePrice: basePriceBrl, baseValueBrl: 0.01 * basePriceBrl,
+      totalValueBrl: 0.01 * basePriceBrl, baseRatioBps: 10_000, deviationBps: 10_000,
+      timestamp: new Date().toISOString(),
+    };
+
+    // R$30-worth at R$300,000/BTC -> 0.0001 BTC, below the 0.001 base_min_size
+    const trade = await adapter.executeTrade('SELL_BASE', 30, portfolioBefore);
+
+    expect(mockEndpoints.createOrder).not.toHaveBeenCalled();
+    expect(trade.status).toBe('FAILED');
   });
 
   it('dry run never calls createOrder and tags the record DRY_RUN', async () => {

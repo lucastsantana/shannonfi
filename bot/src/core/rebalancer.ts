@@ -6,7 +6,7 @@ import { TaxService } from './tracker/tax';
 import { VolatilityService } from './tracker/volatility';
 import { MetricsService } from './tracker/metrics';
 import { logger } from './tracker/logger';
-import { shouldRebalance, computeRebalanceTrade, computeBaseRatioBps } from '../math';
+import { shouldRebalance, computeRebalanceTrade, computeBaseRatioBps, computeDeviationBps, computePortfolioAfterFill } from '../math';
 import { Config } from '../config';
 import { BR_EFFECTIVE_LIMIT_BRL } from '../constants';
 import { TelegramService } from '../publishers/telegram';
@@ -223,19 +223,13 @@ export class RebalancerBot {
         const estBaseValueBrl = prev.baseValueBrl * priceRatio;
         const estTotalBrl = estBaseValueBrl + prev.brlBalance;
         const estBaseRatioBps = computeBaseRatioBps(estBaseValueBrl, estTotalBrl);
-        // Use the same relative-ratio calculation as the actual trigger
-        const estDeviationBps = Math.round((Math.abs(estBaseValueBrl - prev.brlBalance) / Math.min(estBaseValueBrl, prev.brlBalance)) * 10000);
+        // Same relative-ratio formula as the actual trigger (shares its zero-guard,
+        // so a fully one-sided portfolio reports 0 BPS rather than Infinity).
+        const estDeviationBps = computeDeviationBps(estBaseValueBrl, prev.brlBalance);
 
         // Get acquisition price for reference (cost basis)
         const costBasisLedger = this.costBasis.getLedger();
         const acquisitionPrice = costBasisLedger.base.averageCostBrl > 0 ? costBasisLedger.base.averageCostBrl : prevPrice;
-
-        // Trigger prices using the same relative-difference formula as shouldRebalance:
-        // SELL fires when estBaseValue / brlBalance = 1 + T  →  price = prevPrice * brlBalance*(1+T) / prevBaseValue
-        // BUY  fires when brlBalance / estBaseValue  = 1 + T  →  price = prevPrice * brlBalance / (prevBaseValue*(1+T))
-        const thresholdRatio = effectiveThresholdBps / 10000;
-        const triggerPriceUp = (prevPrice * prev.brlBalance * (1 + thresholdRatio)) / prev.baseValueBrl;
-        const triggerPriceDown = (prevPrice * prev.brlBalance) / (prev.baseValueBrl * (1 + thresholdRatio));
 
         logMetadata.baseAsset = this.config.symbol.split('-')[0];
         logMetadata.baseBalance = prev.baseBalance.toFixed(6);
@@ -246,8 +240,18 @@ export class RebalancerBot {
         logMetadata.portfolioValueBrl = estTotalBrl.toFixed(2);
         logMetadata.thresholdBps = effectiveThresholdBps;
         logMetadata.acquisitionPrice = acquisitionPrice.toFixed(2);
-        logMetadata.triggerPriceUpBrl = triggerPriceUp.toFixed(2);
-        logMetadata.triggerPriceDownBrl = triggerPriceDown.toFixed(2);
+
+        // Trigger prices using the same relative-difference formula as shouldRebalance:
+        // SELL fires when estBaseValue / brlBalance = 1 + T  →  price = prevPrice * brlBalance*(1+T) / prevBaseValue
+        // BUY  fires when brlBalance / estBaseValue  = 1 + T  →  price = prevPrice * brlBalance / (prevBaseValue*(1+T))
+        // Undefined (no base held yet, e.g. right after a rotation liquidation) — skip rather than divide by zero.
+        if (prev.baseValueBrl > 0) {
+          const thresholdRatio = effectiveThresholdBps / 10000;
+          const triggerPriceUp = (prevPrice * prev.brlBalance * (1 + thresholdRatio)) / prev.baseValueBrl;
+          const triggerPriceDown = (prevPrice * prev.brlBalance) / (prev.baseValueBrl * (1 + thresholdRatio));
+          logMetadata.triggerPriceUpBrl = triggerPriceUp.toFixed(2);
+          logMetadata.triggerPriceDownBrl = triggerPriceDown.toFixed(2);
+        }
       }
     }
 
@@ -407,9 +411,15 @@ export class RebalancerBot {
       this.lastRebalanceDateBRT = todayBRT;
       this.lastRebalanceDirection = direction;
 
-      if (!this.config.dryRun) {
-        await new Promise((r) => setTimeout(r, INTER_REQUEST_DELAY_MS));
-        tradeRecord.portfolioAfter = await this.adapter.getPortfolio();
+      if (!this.config.dryRun && tradeRecord.baseAmountFilled != null && tradeRecord.fillPrice != null) {
+        tradeRecord.portfolioAfter = computePortfolioAfterFill(
+          portfolio,
+          direction,
+          tradeRecord.baseAmountFilled,
+          tradeRecord.brlAmountFilled ?? brlAmount,
+          tradeRecord.feeBrl ?? 0,
+          tradeRecord.fillPrice,
+        );
       }
 
       // ── Cost basis and tax recording ────────────────────────────────────────
@@ -819,9 +829,15 @@ export class RebalancerBot {
       let pendingTaxEvent: ReturnType<TaxService['buildTaxEvent']> | null = null;
 
       if (tradeRecord.status === 'FILLED' || tradeRecord.status === 'DRY_RUN') {
-        if (!this.config.dryRun) {
-          await new Promise((r) => setTimeout(r, INTER_REQUEST_DELAY_MS));
-          tradeRecord.portfolioAfter = await this.adapter.getPortfolio();
+        if (!this.config.dryRun && tradeRecord.baseAmountFilled != null && tradeRecord.fillPrice != null) {
+          tradeRecord.portfolioAfter = computePortfolioAfterFill(
+            portfolio,
+            'SELL_BASE',
+            tradeRecord.baseAmountFilled,
+            tradeRecord.brlAmountFilled ?? brlAmount,
+            tradeRecord.feeBrl ?? 0,
+            tradeRecord.fillPrice,
+          );
         }
 
         const baseSold = tradeRecord.baseAmountFilled ?? portfolio.baseBalance;
@@ -902,9 +918,15 @@ export class RebalancerBot {
       acquisitionTradeId = acquisitionTrade.id;
 
       if (acquisitionTrade.status === 'FILLED' || acquisitionTrade.status === 'DRY_RUN') {
-        if (!this.config.dryRun) {
-          await new Promise((r) => setTimeout(r, INTER_REQUEST_DELAY_MS));
-          acquisitionTrade.portfolioAfter = await this.adapter.getPortfolio();
+        if (!this.config.dryRun && acquisitionTrade.baseAmountFilled != null && acquisitionTrade.fillPrice != null) {
+          acquisitionTrade.portfolioAfter = computePortfolioAfterFill(
+            newPortfolio,
+            'BUY_BASE',
+            acquisitionTrade.baseAmountFilled,
+            acquisitionTrade.brlAmountFilled ?? acquisitionBrl,
+            acquisitionTrade.feeBrl ?? 0,
+            acquisitionTrade.fillPrice,
+          );
         }
 
         const baseAcquired = acquisitionTrade.baseAmountFilled ?? 0;
