@@ -255,7 +255,7 @@ function generateHtml(d: DashboardData): string {
   const liveDev     = lastSnap ? Math.abs(lastSnap.base_ratio_bps - 5000) : 0;
   const avgCost     = d.costBasis?.average_cost_brl ?? 0;
   const totalBase   = d.costBasis?.total_base ?? 0;
-  const netGain     = d.totalRealizedGain - d.totalFees;
+  const netGain     = d.initialTotal > 0 ? liveTotal - d.initialTotal : 0;
   const tradeCount  = d.trades.length;
 
   const retCls   = liveReturn >= 0 ? 'gain' : 'loss';
@@ -866,7 +866,7 @@ function generateHtml(d: DashboardData): string {
   </div>
   <div class="score">
     <div class="score-lbl">&#128200; NET GAIN</div>
-    <div class="score-val ${gainCls(netGain)}">${fmtBrl(netGain, true)}</div>
+    <div class="score-val ${gainCls(netGain)}" data-live="net-gain" data-base-class="score-val" data-initial="${d.initialTotal.toFixed(2)}">${fmtBrl(netGain, true)}</div>
   </div>
   <div class="score">
     <div class="score-lbl">&#127919; RETURN</div>
@@ -1306,6 +1306,13 @@ function repaintChartForTheme() {
         document.querySelectorAll('[data-live="return-detail"]').forEach(function (el) {
           el.textContent = fP(ret) + ' vs R$' + INIT.toFixed(2);
           el.className = (el.dataset.baseClass || '') + ' ' + rc;
+        });
+        document.querySelectorAll('[data-live="net-gain"]').forEach(function (el) {
+          var init = parseFloat(el.dataset.initial || '0');
+          var ng = tot - init;
+          var ngc = ng >= 0 ? 'gain' : 'loss';
+          el.textContent = (ng >= 0 ? '+' : '') + 'R$' + ng.toFixed(2);
+          el.className = (el.dataset.baseClass || '') + ' ' + ngc;
         });
         var now = new Date();
         var brtMs = now.getTime() - 3 * 60 * 60 * 1000;
