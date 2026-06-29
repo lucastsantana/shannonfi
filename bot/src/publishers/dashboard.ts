@@ -252,7 +252,8 @@ function generateHtml(d: DashboardData): string {
   const liveBaseVal = liveBase * livePrice;
   const liveTotal   = liveBaseVal + liveBrl;
   const liveReturn  = d.initialTotal > 0 ? (liveTotal - d.initialTotal) / d.initialTotal : 0;
-  const liveDev     = lastSnap ? Math.abs(lastSnap.base_ratio_bps - 5000) : 0;
+  const liveRatioBps = liveTotal > 0 ? Math.round((liveBaseVal / liveTotal) * 10_000) : 5000;
+  const liveDev      = Math.abs(liveRatioBps - 5000);
   const avgCost     = d.costBasis?.average_cost_brl ?? 0;
   const totalBase   = d.costBasis?.total_base ?? 0;
   const netGain     = d.initialTotal > 0 ? liveTotal - d.initialTotal : 0;
@@ -908,7 +909,7 @@ function generateHtml(d: DashboardData): string {
     <div class="panel-hdr">&#129302; BOT STATUS</div>
     <div class="sr"><span class="sl">STRATEGY</span><span class="sv mag">SHANNON'S DEMON</span></div>
     <div class="sr"><span class="sl">SYMBOL</span><span class="sv cyan">${d.symbol}</span></div>
-    <div class="sr"><span class="sl">DEVIATION NOW</span><span class="sv ${devCls}">${liveDev} BPS ${devLabel}</span></div>
+    <div class="sr"><span class="sl">DEVIATION NOW</span><span class="sv ${devCls}" data-live="deviation" data-base-class="sv" data-brl-balance="${liveBrl.toFixed(2)}">${liveDev} BPS ${devLabel}</span></div>
     <div class="sr"><span class="sl">THRESHOLD</span><span class="sv">${lastSnap?.effective_threshold_bps ?? '—'} BPS (ADAPTIVE)</span></div>
     <div class="sr"><span class="sl">LAST TRADE</span><span class="sv">${d.trades.length > 0 ? (d.trades[d.trades.length - 1]!.trade_date_brt ?? '—') : '—'}</span></div>
     <div class="sr"><span class="sl">TOTAL FEES PAID</span><span class="sv loss">&#8722;${fmtBrl(d.totalFees)}</span></div>
@@ -1306,6 +1307,17 @@ function repaintChartForTheme() {
         document.querySelectorAll('[data-live="return-detail"]').forEach(function (el) {
           el.textContent = fP(ret) + ' vs R$' + INIT.toFixed(2);
           el.className = (el.dataset.baseClass || '') + ' ' + rc;
+        });
+        document.querySelectorAll('[data-live="deviation"]').forEach(function (el) {
+          var brl = parseFloat(el.dataset.brlBalance || '0');
+          var baseVal = bval;
+          var total = baseVal + brl;
+          var ratioBps = total > 0 ? Math.round((baseVal / total) * 10000) : 5000;
+          var dev = Math.abs(ratioBps - 5000);
+          var label = dev < 200 ? '✓ BALANCED' : dev < 450 ? '⚠ DRIFTING' : '⚡ ALERT';
+          var dc = dev < 200 ? 'gain' : dev < 450 ? 'yel' : 'loss';
+          el.textContent = dev + ' BPS ' + label;
+          el.className = (el.dataset.baseClass || '') + ' ' + dc;
         });
         document.querySelectorAll('[data-live="net-gain"]').forEach(function (el) {
           var init = parseFloat(el.dataset.initial || '0');
