@@ -252,8 +252,10 @@ function generateHtml(d: DashboardData): string {
   const liveBaseVal = liveBase * livePrice;
   const liveTotal   = liveBaseVal + liveBrl;
   const liveReturn  = d.initialTotal > 0 ? (liveTotal - d.initialTotal) / d.initialTotal : 0;
-  const liveRatioBps = liveTotal > 0 ? Math.round((liveBaseVal / liveTotal) * 10_000) : 5000;
-  const liveDev      = Math.abs(liveRatioBps - 5000);
+  const liveDevSmaller = Math.min(liveBaseVal, liveBrl);
+  const liveDev        = liveDevSmaller > 0
+    ? Math.round((Math.abs(liveBaseVal - liveBrl) / liveDevSmaller) * 10_000)
+    : 0;
   const avgCost     = d.costBasis?.average_cost_brl ?? 0;
   const totalBase   = d.costBasis?.total_base ?? 0;
   const netGain     = d.initialTotal > 0 ? liveTotal - d.initialTotal : 0;
@@ -1310,10 +1312,8 @@ function repaintChartForTheme() {
         });
         document.querySelectorAll('[data-live="deviation"]').forEach(function (el) {
           var brl = parseFloat(el.dataset.brlBalance || '0');
-          var baseVal = bval;
-          var total = baseVal + brl;
-          var ratioBps = total > 0 ? Math.round((baseVal / total) * 10000) : 5000;
-          var dev = Math.abs(ratioBps - 5000);
+          var smaller = Math.min(bval, brl);
+          var dev = smaller > 0 ? Math.round((Math.abs(bval - brl) / smaller) * 10000) : 0;
           var label = dev < 200 ? '✓ BALANCED' : dev < 450 ? '⚠ DRIFTING' : '⚡ ALERT';
           var dc = dev < 200 ? 'gain' : dev < 450 ? 'yel' : 'loss';
           el.textContent = dev + ' BPS ' + label;
