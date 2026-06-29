@@ -828,6 +828,13 @@ export class RebalancerBot {
 
       let pendingTaxEvent: ReturnType<TaxService['buildTaxEvent']> | null = null;
 
+      if (tradeRecord.status === 'FAILED') {
+        // Record the failed trade for the audit trail, then abort before swapping symbols.
+        // The outer catch in checkAndExecuteRotation will mark the rotation FAILED.
+        this.history.appendTrade(tradeRecord);
+        throw new Error(`Liquidation of ${fromSymbol} failed — rotation aborted before symbol swap`);
+      }
+
       if (tradeRecord.status === 'FILLED' || tradeRecord.status === 'DRY_RUN') {
         if (!this.config.dryRun && tradeRecord.baseAmountFilled != null && tradeRecord.fillPrice != null) {
           tradeRecord.portfolioAfter = computePortfolioAfterFill(
@@ -912,50 +919,66 @@ export class RebalancerBot {
     if (targetAcquisitionBrl >= this.config.minTradeSizeBrl) {
       acquisitionBrl = targetAcquisitionBrl;
       await new Promise((r) => setTimeout(r, INTER_REQUEST_DELAY_MS));
-      const acquisitionTrade = await this.adapter.executeTrade('BUY_BASE', acquisitionBrl, newPortfolio);
-      acquisitionTrade.tradeDateBRT = todayBRT;
-      acquisitionTrade.baseAsset = newBaseAsset;
-      acquisitionTradeId = acquisitionTrade.id;
+      // Wrap the re-acquisition in a try/catch: the liquidation already succeeded and the
+      // rotation is COMPLETED. A BUY failure here (e.g. limit-only orderbook, transient
+      // API error) must not overwrite that COMPLETED status. The normal rebalance loop
+      // will BUY on the next cycle once the portfolio shows ~100% BRL deviation.
+      try {
+        const acquisitionTrade = await this.adapter.executeTrade('BUY_BASE', acquisitionBrl, newPortfolio);
+        acquisitionTrade.tradeDateBRT = todayBRT;
+        acquisitionTrade.baseAsset = newBaseAsset;
+        acquisitionTradeId = acquisitionTrade.id;
 
-      if (acquisitionTrade.status === 'FILLED' || acquisitionTrade.status === 'DRY_RUN') {
-        if (!this.config.dryRun && acquisitionTrade.baseAmountFilled != null && acquisitionTrade.fillPrice != null) {
-          acquisitionTrade.portfolioAfter = computePortfolioAfterFill(
-            newPortfolio,
-            'BUY_BASE',
-            acquisitionTrade.baseAmountFilled,
-            acquisitionTrade.brlAmountFilled ?? acquisitionBrl,
-            acquisitionTrade.feeBrl ?? 0,
-            acquisitionTrade.fillPrice,
-          );
-        }
+        if (acquisitionTrade.status === 'FILLED' || acquisitionTrade.status === 'DRY_RUN') {
+          if (!this.config.dryRun && acquisitionTrade.baseAmountFilled != null && acquisitionTrade.fillPrice != null) {
+            acquisitionTrade.portfolioAfter = computePortfolioAfterFill(
+              newPortfolio,
+              'BUY_BASE',
+              acquisitionTrade.baseAmountFilled,
+              acquisitionTrade.brlAmountFilled ?? acquisitionBrl,
+              acquisitionTrade.feeBrl ?? 0,
+              acquisitionTrade.fillPrice,
+            );
+          }
 
-        const baseAcquired = acquisitionTrade.baseAmountFilled ?? 0;
-        const brlSpent = acquisitionTrade.brlAmountFilled ?? acquisitionBrl;
-        this.costBasis.updateAfterBuy(baseAcquired, brlSpent);
-        acquisitionTrade.realizedGainBrl = 0;
+          const baseAcquired = acquisitionTrade.baseAmountFilled ?? 0;
+          const brlSpent = acquisitionTrade.brlAmountFilled ?? acquisitionBrl;
+          this.costBasis.updateAfterBuy(baseAcquired, brlSpent);
+          acquisitionTrade.realizedGainBrl = 0;
 
-        const acquisitionTaxEvent = this.tax.buildTaxEvent({
-          tradeId: acquisitionTrade.id,
-          tradeDateBRT: todayBRT,
-          direction: 'BUY_BASE',
-          tradedVolumeBrl: 0,
-          grossProceedsBrl: 0,
-          costBasisBrl: 0,
-          realizedGainBrl: 0,
-          exchange: acquisitionTrade.exchange,
-        });
+          const acquisitionTaxEvent = this.tax.buildTaxEvent({
+            tradeId: acquisitionTrade.id,
+            tradeDateBRT: todayBRT,
+            direction: 'BUY_BASE',
+            tradedVolumeBrl: 0,
+            grossProceedsBrl: 0,
+            costBasisBrl: 0,
+            realizedGainBrl: 0,
+            exchange: acquisitionTrade.exchange,
+          });
 
-        const txn2 = db.transaction(() => {
+          const txn2 = db.transaction(() => {
+            this.history.appendTrade(acquisitionTrade);
+            this.tax.appendTaxEvent(acquisitionTaxEvent);
+            db.prepare('UPDATE pending_rotation SET reacquisition_trade_id = ? WHERE id = ?')
+              .run(acquisitionTradeId, rotationId);
+          });
+          txn2();
+
+          this.lastRebalanceTime = Date.now();
+          this.lastRebalanceDateBRT = todayBRT;
+          this.lastRebalanceDirection = 'BUY_BASE';
+        } else {
           this.history.appendTrade(acquisitionTrade);
-          this.tax.appendTaxEvent(acquisitionTaxEvent);
-          db.prepare('UPDATE pending_rotation SET reacquisition_trade_id = ? WHERE id = ?')
-            .run(acquisitionTradeId, rotationId);
+          logger.warn('Re-acquisition order failed — liquidation succeeded; normal rebalance will BUY next cycle', {
+            to: toSymbol,
+          });
+        }
+      } catch (err) {
+        logger.warn('Re-acquisition threw — liquidation succeeded; normal rebalance will BUY next cycle', {
+          to: toSymbol,
+          error: (err as Error).message,
         });
-        txn2();
-
-        this.lastRebalanceTime = Date.now();
-        this.lastRebalanceDateBRT = todayBRT;
-        this.lastRebalanceDirection = 'BUY_BASE';
       }
     } else {
       logger.info('Skipping immediate re-acquisition — available BRL below minTradeSizeBrl', {

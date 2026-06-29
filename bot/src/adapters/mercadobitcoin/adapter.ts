@@ -159,7 +159,7 @@ export class MercadoBitcoinAdapter implements ExchangeAdapter {
         : {
             type: 'market' as const,
             side: 'sell' as const,
-            qty: brlToBase(brlAmount, portfolioBefore.basePrice, 8).toFixed(8),
+            qty: brlToBase(brlAmount, portfolioBefore.basePrice, 6).toFixed(6),
             externalId: clientOrderId,
           };
 

@@ -133,10 +133,11 @@ describe('CoinbaseAdapter — BRL<->USD conversion at the boundary', () => {
     // Sell R$3000-worth at a BRL price of R$300,000/BTC -> 0.01 BTC
     await adapter.executeTrade('SELL_BASE', 3000, portfolioBefore);
 
+    // base_increment '0.00001' → 5 decimal places; floored to match exchange precision
     expect(mockEndpoints.createOrder).toHaveBeenCalledWith(
       expect.objectContaining({
         side: 'SELL',
-        order_configuration: { market_market_ioc: { base_size: '0.01000000' } },
+        order_configuration: { market_market_ioc: { base_size: '0.01000' } },
       }),
     );
   });

@@ -180,6 +180,16 @@ export class CoinbaseAdapter implements ExchangeAdapter {
     // base_min_size currently is, which also matters here since autonomousWeeklyRotation
     // can switch this instance across ~400 different USDC pairs).
     const product = await this.endpoints.getProduct();
+
+    // base_increment determines the allowed decimal precision for base_size on SELL orders
+    // (e.g. "1" → 0 decimals, "0.01" → 2 decimals). Sending more decimals than allowed
+    // causes INVALID_SIZE_PRECISION rejection. Floor (not round) to avoid exceeding balance.
+    const baseDecimalPlaces = product.base_increment.includes('.')
+      ? product.base_increment.split('.')[1]!.length
+      : 0;
+    const flooredBaseSize =
+      Math.floor(baseSize * Math.pow(10, baseDecimalPlaces)) / Math.pow(10, baseDecimalPlaces);
+
     if (direction === 'BUY_BASE') {
       const quoteMinSize = parseFloat(product.quote_min_size);
       if (Number.isFinite(quoteMinSize) && usdAmount < quoteMinSize) {
@@ -193,10 +203,10 @@ export class CoinbaseAdapter implements ExchangeAdapter {
       }
     } else {
       const baseMinSize = parseFloat(product.base_min_size);
-      if (Number.isFinite(baseMinSize) && baseSize < baseMinSize) {
+      if (Number.isFinite(baseMinSize) && flooredBaseSize < baseMinSize) {
         logger.warn('Skipping Coinbase order — below exchange minimum base size', {
           productId: this.productId,
-          baseSize,
+          flooredBaseSize,
           baseMinSize,
         });
         record.status = 'FAILED';
@@ -217,7 +227,7 @@ export class CoinbaseAdapter implements ExchangeAdapter {
             product_id: this.productId,
             side: 'SELL' as const,
             order_configuration: {
-              market_market_ioc: { base_size: baseSize.toFixed(8) },
+              market_market_ioc: { base_size: flooredBaseSize.toFixed(baseDecimalPlaces) },
             },
           };
 
