@@ -47,6 +47,19 @@ export class CoinbaseClient {
     }
   }
 
+  /** GET without authentication — for Coinbase's public market-data endpoints. */
+  async getPublic<T>(path: string, params?: Record<string, string | number>): Promise<T> {
+    try {
+      const resp = await this.http.get<T>(path, { params });
+      return resp.data;
+    } catch (err) {
+      const status = (err as any).response?.status;
+      const data = (err as any).response?.data;
+      logger.error('Coinbase HTTP GET error', { path, status, data });
+      throw err;
+    }
+  }
+
   async post<TReq, TRes>(path: string, body: TReq): Promise<TRes> {
     const jwt = await generateCoinbaseJwt(this.keyName, this.privateKeyPem, 'POST', path, this.host);
     try {

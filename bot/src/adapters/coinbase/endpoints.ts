@@ -23,8 +23,9 @@ export class CoinbaseEndpoints {
     // ONE_DAY is the only granularity this adapter actually uses today.
     const secondsPerCandle = granularity === 'ONE_DAY' ? 86_400 : 3_600;
     const start = end - secondsPerCandle * (countback + 2);
-    return this.client.get<CoinbaseCandlesResponse>(
-      `/api/v3/brokerage/products/${productIdOverride ?? this.productId}/candles`,
+    // Use the public market endpoint — no auth required, same response format.
+    return this.client.getPublic<CoinbaseCandlesResponse>(
+      `/api/v3/brokerage/market/products/${productIdOverride ?? this.productId}/candles`,
       { start, end, granularity },
     );
   }
@@ -47,7 +48,8 @@ export class CoinbaseEndpoints {
    * maintained list — see scanner.ts's listAvailableBaseAssets().
    */
   async listProducts(): Promise<CoinbaseProductsListResponse> {
-    return this.client.get<CoinbaseProductsListResponse>('/api/v3/brokerage/products', {
+    // Public market endpoint — no auth required.
+    return this.client.getPublic<CoinbaseProductsListResponse>('/api/v3/brokerage/market/products', {
       product_type: 'SPOT',
     });
   }
