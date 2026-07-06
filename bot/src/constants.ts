@@ -3,6 +3,13 @@
 export const BPS_DENOMINATOR = 10_000;
 export const TARGET_ALLOCATION_BPS = 5_000;   // 50%
 
+// Sentinel deviation returned when one side of the portfolio is fully empty (e.g. right
+// after a rotation's re-acquisition leg fails). Must exceed any realistic threshold or
+// ratio-based deviation reading (which can already run past BPS_DENOMINATOR itself for
+// extreme price moves) so shouldRebalance() always fires instead of misreading "0 on one
+// side" as "no drift".
+export const FULLY_CONCENTRATED_DEVIATION_BPS = 1_000_000;
+
 // ─── Mercado Bitcoin ──────────────────────────────────────────────────────────
 export const MB_API_BASE = 'https://api.mercadobitcoin.net/api/v4';
 export const MB_TOKEN_REFRESH_BUFFER_MS = 60_000;

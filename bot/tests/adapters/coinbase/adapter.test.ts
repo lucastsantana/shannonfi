@@ -207,11 +207,12 @@ describe('CoinbaseAdapter — BRL<->USD conversion at the boundary', () => {
     function product(overrides: Partial<{
       product_id: string; base_currency_id: string; quote_currency_id: string;
       status: string; trading_disabled: boolean; is_disabled: boolean; approximate_quote_24h_volume: string;
+      limit_only: boolean;
     }> = {}) {
       return {
         product_id: 'BTC-USDC', base_currency_id: 'BTC', quote_currency_id: 'USDC',
         status: 'online', trading_disabled: false, is_disabled: false,
-        approximate_quote_24h_volume: '1000',
+        approximate_quote_24h_volume: '1000', limit_only: false,
         ...overrides,
       };
     }
@@ -225,6 +226,20 @@ describe('CoinbaseAdapter — BRL<->USD conversion at the boundary', () => {
           product({ base_currency_id: 'ETH', quote_currency_id: 'USD' }), // wrong quote currency
           product({ base_currency_id: 'SOL', status: 'offline' }), // not online
           product({ base_currency_id: 'XRP', trading_disabled: true }), // disabled
+        ],
+      });
+
+      const result = await adapter.listAvailableBaseAssets(40);
+      expect(result).toEqual(['BTC']);
+    });
+
+    it('excludes limit-only products — market orders (and marketable-limit fallback) cannot reliably fill on them', async () => {
+      const { adapter, mockEndpoints } = makeAdapter();
+      mockEndpoints.listProducts.mockResolvedValue({
+        num_products: 2,
+        products: [
+          product({ base_currency_id: 'BTC', limit_only: false }),
+          product({ base_currency_id: 'SYND', limit_only: true }), // orderbook restricted to limit orders
         ],
       });
 

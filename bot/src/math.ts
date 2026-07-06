@@ -9,6 +9,7 @@ import {
   TARGET_ALLOCATION_BPS,
   MIN_ADAPTIVE_THRESHOLD_BPS,
   MAX_ADAPTIVE_THRESHOLD_BPS,
+  FULLY_CONCENTRATED_DEVIATION_BPS,
 } from './constants';
 import { Portfolio } from './adapters/types';
 
@@ -25,8 +26,15 @@ export function computeBaseRatioBps(baseValueBrl: number, totalValueBrl: number)
  * Measures divergence from the last rebalance point (when holdings were equal).
  */
 export function computeDeviationBps(baseValueBrl: number, brlBalance: number): number {
+  // Empty portfolio (both sides zero) — nothing to rebalance, this is the one case
+  // where "0 drift" is actually correct rather than a divide-by-zero artifact.
+  if (baseValueBrl <= 0 && brlBalance <= 0) return 0;
   const smaller = Math.min(baseValueBrl, brlBalance);
-  if (smaller <= 0) return 0;
+  // One side is fully empty while the other holds value — this is maximal drift
+  // (100% concentrated in one asset), not "balanced". A failed re-acquisition leg
+  // after an asset rotation is exactly this case; misreporting it as 0 traps the
+  // instance holding all-cash forever since shouldRebalance() would never fire.
+  if (smaller <= 0) return FULLY_CONCENTRATED_DEVIATION_BPS;
   return Math.round((Math.abs(baseValueBrl - brlBalance) / smaller) * BPS_DENOMINATOR);
 }
 

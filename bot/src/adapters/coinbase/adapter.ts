@@ -26,7 +26,7 @@ import { COINBASE_FILL_POLL_INTERVAL_MS, COINBASE_FILL_POLL_MAX_ATTEMPTS } from 
 import { CoinbaseConfig } from '../../config';
 import { getCoinbaseCredentials } from '../../core/keyring';
 import { FxRateService } from '../../core/tracker/fxrate';
-import { CoinbaseGranularity } from './raw-types';
+import { CoinbaseCreateOrderRequest, CoinbaseCreateOrderResponse, CoinbaseGranularity } from './raw-types';
 
 const COINBASE_RESOLUTION_MAP: Record<CandleResolution, CoinbaseGranularity> = {
   '1m': 'ONE_MINUTE',
@@ -34,6 +34,21 @@ const COINBASE_RESOLUTION_MAP: Record<CandleResolution, CoinbaseGranularity> = {
   '1h': 'ONE_HOUR',
   '1d': 'ONE_DAY',
 };
+
+/** True if a Coinbase order-creation error is the "orderbook is limit-only" rejection. */
+function isLimitOnlyModeError(err: unknown): boolean {
+  const data = (err as { response?: { data?: { error_details?: string; message?: string } } })?.response?.data;
+  const text = `${data?.error_details ?? ''} ${data?.message ?? ''}`.toLowerCase();
+  return text.includes('limit only mode');
+}
+
+/** Rounds a price to the product's quote_increment and formats it to that increment's decimals. */
+function roundToIncrement(value: number, increment: string): string {
+  const inc = parseFloat(increment);
+  const decimals = increment.includes('.') ? increment.split('.')[1]!.length : 0;
+  if (!Number.isFinite(inc) || inc <= 0) return value.toFixed(decimals);
+  return (Math.round(value / inc) * inc).toFixed(decimals);
+}
 
 export class CoinbaseAdapter implements ExchangeAdapter {
   private endpoints: CoinbaseEndpoints;
@@ -214,7 +229,7 @@ export class CoinbaseAdapter implements ExchangeAdapter {
       }
     }
 
-    const orderRequest =
+    const orderRequest: CoinbaseCreateOrderRequest =
       direction === 'BUY_BASE'
         ? {
             client_order_id: clientOrderId,
@@ -238,7 +253,45 @@ export class CoinbaseAdapter implements ExchangeAdapter {
       clientOrderId,
     });
 
-    const created = await this.endpoints.createOrder(orderRequest);
+    let created: CoinbaseCreateOrderResponse;
+    try {
+      created = await this.endpoints.createOrder(orderRequest);
+    } catch (err) {
+      if (!isLimitOnlyModeError(err)) throw err;
+
+      // Marketable limit order: priced aggressively enough (within maxSlippageBps) to
+      // fill immediately like the rejected market order would have, while satisfying
+      // Coinbase's limit-only requirement for this product.
+      const priceUsd = portfolioBefore.basePrice / ptax;
+      const limitPriceUsd =
+        direction === 'BUY_BASE'
+          ? priceUsd * (1 + this.maxSlippageBps / 10_000)
+          : priceUsd * (1 - this.maxSlippageBps / 10_000);
+      const limitPrice = roundToIncrement(limitPriceUsd, product.quote_increment);
+      const fallbackClientOrderId = uuidv4();
+
+      logger.warn('Market order rejected (orderbook limit-only) — retrying as marketable limit order', {
+        productId: this.productId,
+        direction,
+        limitPrice,
+        clientOrderId: fallbackClientOrderId,
+      });
+
+      const limitOrderRequest: CoinbaseCreateOrderRequest = {
+        client_order_id: fallbackClientOrderId,
+        product_id: this.productId,
+        side: orderRequest.side,
+        order_configuration: {
+          limit_limit_fok: {
+            base_size: flooredBaseSize.toFixed(baseDecimalPlaces),
+            limit_price: limitPrice,
+          },
+        },
+      };
+      record.clientOrderId = fallbackClientOrderId;
+      created = await this.endpoints.createOrder(limitOrderRequest);
+    }
+
     if (!created.success || !created.success_response) {
       logger.warn('Coinbase order creation failed', { error: created.error_response });
       record.status = 'FAILED';
@@ -360,6 +413,13 @@ export class CoinbaseAdapter implements ExchangeAdapter {
    * excluded purely by a pre-rank. The existing post-scoring minVolumeBrl floor
    * is the real, deliberate volume filter; `maxCandidates` here just protects
    * against an unbounded catalog in the future, not against today's ~400 pairs.
+   *
+   * `limit_only` products ARE excluded here regardless of volume/MAD score — this is
+   * unrelated to liquidity ranking, it's a hard tradability constraint: this adapter
+   * only places market orders (falling back to a marketable limit order bounded by
+   * maxSlippageBps), and a limit-only product's spread can easily exceed that
+   * tolerance, rejecting or FOK-cancelling every order attempt indefinitely (this is
+   * exactly what happened rotating into SYND-USDC — see docs/dynamic-asset-rotation-plan.md).
    */
   async listAvailableBaseAssets(maxCandidates: number): Promise<string[]> {
     const resp = await this.endpoints.listProducts();
@@ -369,7 +429,8 @@ export class CoinbaseAdapter implements ExchangeAdapter {
           p.quote_currency_id === this.quoteCurrency &&
           p.status === 'online' &&
           !p.trading_disabled &&
-          !p.is_disabled,
+          !p.is_disabled &&
+          !p.limit_only,
       )
       .sort((a, b) => parseFloat(b.approximate_quote_24h_volume) - parseFloat(a.approximate_quote_24h_volume))
       .slice(0, maxCandidates);

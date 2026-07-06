@@ -42,6 +42,18 @@ describe('computeDeviationBps', () => {
     // baseValueBrl = 500, brlBalance = 1500 → |500 - 1500| / 500 = 2 = 20000 bps
     expect(computeDeviationBps(500, 1500)).toBe(20000);
   });
+
+  it('returns 0 for an empty portfolio (both sides zero)', () => {
+    expect(computeDeviationBps(0, 0)).toBe(0);
+  });
+
+  it('returns maximal deviation when 100% base / 0 BRL — not "balanced"', () => {
+    expect(computeDeviationBps(1000, 0)).toBe(1_000_000);
+  });
+
+  it('returns maximal deviation when 0 base / 100% BRL — not "balanced"', () => {
+    expect(computeDeviationBps(0, 1000)).toBe(1_000_000);
+  });
 });
 
 describe('shouldRebalance', () => {

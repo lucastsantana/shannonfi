@@ -41,9 +41,15 @@ export interface CoinbaseCreateOrderRequest {
   product_id: string;
   side: 'BUY' | 'SELL';
   order_configuration: {
-    market_market_ioc:
+    market_market_ioc?:
       | { quote_size: string }
       | { base_size: string };
+    // Fallback for products whose orderbook is in limit-only mode (common for thin/new
+    // listings) — market_market_ioc is rejected outright with INVALID_ARGUMENT in that
+    // case. limit_limit_fok (Fill-Or-Kill) with an aggressive (marketable) limit_price
+    // fills immediately in full like a market order, or is cancelled outright — never
+    // left resting on the book — while satisfying the exchange's limit-only requirement.
+    limit_limit_fok?: { base_size: string; limit_price: string };
   };
 }
 
@@ -84,6 +90,7 @@ export interface CoinbaseProduct {
   base_min_size: string;
   base_increment: string;
   quote_min_size: string;
+  quote_increment: string;
 }
 
 /** Subset of fields actually used from GET /api/v3/brokerage/products (list, not one product) — the real response has ~40 fields, most unused here. */
@@ -95,6 +102,11 @@ export interface CoinbaseProductSummary {
   trading_disabled: boolean;
   is_disabled: boolean;
   approximate_quote_24h_volume: string; // 24h volume in quote-currency terms, e.g. USDC
+  // True when Coinbase restricts this product's orderbook to limit orders only — typically
+  // brand-new or highly volatile listings. Our adapter only ever places market orders (with a
+  // marketable-limit-order fallback bounded by maxSlippageBps), so a limit_only product with a
+  // spread wider than that tolerance can reject or FOK-cancel every order attempt indefinitely.
+  limit_only: boolean;
 }
 
 export interface CoinbaseProductsListResponse {
