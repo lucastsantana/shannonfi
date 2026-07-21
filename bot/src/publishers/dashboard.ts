@@ -606,7 +606,39 @@ function generateHtml(d: DashboardData): string {
       background: var(--p);
       padding: 20px 16px 14px;
       position: relative;
-      height: 380px;
+      height: 416px;
+      display: flex;
+      flex-direction: column;
+    }
+    .chart-canvas-wrap {
+      position: relative;
+      flex: 1 1 auto;
+      min-height: 0;
+    }
+    .range-btns {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      margin-bottom: 12px;
+    }
+    .range-btn {
+      font-family: var(--ft);
+      font-size: .74em;
+      letter-spacing: 1.5px;
+      color: var(--d);
+      background: transparent;
+      border: 1px solid var(--b);
+      padding: 4px 10px;
+      cursor: pointer;
+      text-transform: uppercase;
+      transition: color .15s, background .15s, border-color .15s, box-shadow .15s;
+    }
+    .range-btn:hover { color: var(--c); border-color: var(--c); }
+    .range-btn[aria-pressed="true"] {
+      color: var(--m);
+      border-color: var(--m);
+      text-shadow: 0 0 4px var(--m);
+      background: rgba(var(--m-rgb),.08);
     }
 
     /* ── Data tables ────────────────────────────────── */
@@ -797,7 +829,7 @@ function generateHtml(d: DashboardData): string {
       .panels { grid-template-columns: 1fr; }
       .scores { grid-template-columns: repeat(3, 1fr); }
       .scores .score:nth-child(3) { border-right: none; }
-      .chart-wrap { height: 280px; }
+      .chart-wrap { height: 320px; }
     }
 
     @media (max-width: 480px) {
@@ -819,7 +851,8 @@ function generateHtml(d: DashboardData): string {
       .sv.big { font-size: 1.15em; }
       .sec-hdr { font-size: 1.1em; padding: 6px 10px; }
       .sec-sub { display: block; margin-left: 0; margin-top: 2px; font-size: .78em; }
-      .chart-wrap { height: 230px; padding: 14px 8px 10px; }
+      .chart-wrap { height: 280px; padding: 14px 8px 10px; }
+      .range-btn { font-size: .68em; letter-spacing: .5px; padding: 4px 7px; }
       table { min-width: 480px; }
       .tbl thead th, .tbl td { padding: 6px 8px; font-size: .82em; }
       .tabs { gap: 0; }
@@ -951,7 +984,19 @@ function generateHtml(d: DashboardData): string {
     <p><strong class="cyan">STRATEGY SCOREBOARD</strong> &mdash; compares this bot's actual performance against two passive benchmarks computed from the same price history: a 50/50 buy-and-hold that never rebalances, and a 100%-${d.baseAsset} buy-and-hold. ANN. = annualized (scaled to a 1-year period from the actual sampling window). Sharpe and Sortino both assume a 0% risk-free rate. <strong class="cyan">VaR (95%)</strong> is the historical (empirical) per-period loss such that 95% of observed periods did not lose more &mdash; a higher magnitude means fatter downside tails. <strong class="cyan">MAX DRAWDOWN</strong> is the worst peak-to-trough decline over the whole window. Full methodology in the STRATEGY tab.</p>
   </div>
   <div class="chart-wrap">
-    <canvas id="bench-chart" role="img" aria-label="Line chart comparing Shannon's Demon, 50/50 Buy-and-Hold, and ${d.allInLabel} portfolio values over time"></canvas>
+    <div class="range-btns" role="group" aria-label="Chart time range">
+      <button type="button" class="range-btn" data-range="inception" aria-pressed="true">SINCE INCEPTION</button>
+      <button type="button" class="range-btn" data-range="ytd" aria-pressed="false">YTD</button>
+      <button type="button" class="range-btn" data-range="qtd" aria-pressed="false">QTD</button>
+      <button type="button" class="range-btn" data-range="mtd" aria-pressed="false">MTD</button>
+      <button type="button" class="range-btn" data-range="1y" aria-pressed="false">1Y</button>
+      <button type="button" class="range-btn" data-range="3m" aria-pressed="false">3M</button>
+      <button type="button" class="range-btn" data-range="1m" aria-pressed="false">1M</button>
+      <button type="button" class="range-btn" data-range="1w" aria-pressed="false">1W</button>
+    </div>
+    <div class="chart-canvas-wrap">
+      <canvas id="bench-chart" role="img" aria-label="Line chart comparing Shannon's Demon, 50/50 Buy-and-Hold, and ${d.allInLabel} portfolio values over time"></canvas>
+    </div>
   </div>
   <div class="fn-inline">
     <p><strong class="cyan">CHART LEGEND</strong> &mdash; solid magenta = this bot's actual value; solid blue = 50/50 buy-and-hold; dashed yellow = 100%-${d.baseAsset} buy-and-hold. A cyan dot marks a day a rebalance executed; a yellow dot marks the current live (intraday) point, not yet a closed daily snapshot.</p>
@@ -1118,62 +1163,112 @@ function chartTheme() {
 }
 
 // ── Strategy chart ──────────────────────────────────────────────────────────
-var benchChart = null;
+var benchChart  = null;
+var activeBench = BENCH; // rows currently plotted (post range-filter); tooltip callbacks read from this
+
+function buildBenchDatasets(rows, th) {
+  return {
+    labels:  rows.map(function (r) { return r.isLive ? r.date + ' ▶' : r.date; }),
+    shannon: rows.map(function (r) { return r.shannon; }),
+    bh50:    rows.map(function (r) { return r.bh50; }),
+    bhAll:   rows.map(function (r) { return r.bhAll; }),
+    ptRadius:            rows.map(function (r) { return r.rebalanced ? 6 : r.isLive ? 5 : 2; }),
+    liveOrDefaultRadius: rows.map(function (r) { return r.isLive ? 4 : 2; }),
+    ptColor:             rows.map(function (r) { return r.rebalanced ? th.c : r.isLive ? th.y : th.m; }),
+  };
+}
+
+// Ranges are computed against the last BENCH row's date (i.e. "now" as of the
+// last dashboard build/live refresh), not the viewer's clock — this dashboard
+// is a static file that can be viewed long after generation.
+function rangeCutoffDate(range) {
+  if (!BENCH.length) return null;
+  var ref = new Date(BENCH[BENCH.length - 1].date + 'T00:00:00Z');
+  var y = ref.getUTCFullYear(), m = ref.getUTCMonth(), d;
+  switch (range) {
+    case 'ytd': return new Date(Date.UTC(y, 0, 1));
+    case 'qtd': return new Date(Date.UTC(y, Math.floor(m / 3) * 3, 1));
+    case 'mtd': return new Date(Date.UTC(y, m, 1));
+    case '1y':  d = new Date(ref); d.setUTCFullYear(d.getUTCFullYear() - 1); return d;
+    case '3m':  d = new Date(ref); d.setUTCMonth(d.getUTCMonth() - 3);       return d;
+    case '1m':  d = new Date(ref); d.setUTCMonth(d.getUTCMonth() - 1);       return d;
+    case '1w':  d = new Date(ref); d.setUTCDate(d.getUTCDate() - 7);         return d;
+    default:    return null; // 'inception'
+  }
+}
+
+function filterBenchRange(range) {
+  var cutoff = rangeCutoffDate(range);
+  if (!cutoff) return BENCH;
+  var cutoffStr = cutoff.toISOString().slice(0, 10);
+  var rows = BENCH.filter(function (r) { return r.date >= cutoffStr; });
+  return rows.length ? rows : BENCH.slice(-1);
+}
+
+function applyRange(range) {
+  activeBench = filterBenchRange(range);
+  var th = chartTheme();
+  var ds = buildBenchDatasets(activeBench, th);
+  var sets = benchChart.data.datasets;
+  benchChart.data.labels = ds.labels;
+  sets[0].data = ds.shannon;
+  sets[0].pointRadius = ds.ptRadius;
+  sets[0].pointBackgroundColor = ds.ptColor;
+  sets[0].pointBorderColor = ds.ptColor;
+  sets[1].data = ds.bh50;
+  sets[1].pointRadius = ds.liveOrDefaultRadius;
+  sets[2].data = ds.bhAll;
+  sets[2].pointRadius = ds.liveOrDefaultRadius;
+  benchChart.update();
+}
+
 (function () {
-  var labels  = BENCH.map(function (r) { return r.isLive ? r.date + ' ▶' : r.date; });
-  var shannon = BENCH.map(function (r) { return r.shannon; });
-  var bh50    = BENCH.map(function (r) { return r.bh50; });
-  var bhAll   = BENCH.map(function (r) { return r.bhAll; });
-
-  var ptRadius = BENCH.map(function (r) { return r.rebalanced ? 6 : r.isLive ? 5 : 2; });
-  var liveOrDefaultRadius = BENCH.map(function (r) { return r.isLive ? 4 : 2; });
-
   var mono = "'Share Tech Mono', monospace";
   var th = chartTheme();
-  var ptColor = BENCH.map(function (r) { return r.rebalanced ? th.c : r.isLive ? th.y : th.m; });
+  var ds = buildBenchDatasets(activeBench, th);
 
   benchChart = new Chart(document.getElementById('bench-chart'), {
     type: 'line',
     data: {
-      labels: labels,
+      labels: ds.labels,
       datasets: [
         {
           label: "⚖ Shannon's Demon",
-          data: shannon,
+          data: ds.shannon,
           borderColor: th.m,
           backgroundColor: 'rgba(' + th.mRgb + ',0.07)',
           borderWidth: 2.5,
           fill: true,
           tension: 0.35,
-          pointRadius: ptRadius,
-          pointBackgroundColor: ptColor,
-          pointBorderColor: ptColor,
+          pointRadius: ds.ptRadius,
+          pointBackgroundColor: ds.ptColor,
+          pointBorderColor: ds.ptColor,
           pointHoverRadius: 7,
           order: 1,
         },
         {
           label: '50/50 Buy-and-Hold',
-          data: bh50,
+          data: ds.bh50,
           borderColor: th.G,
           backgroundColor: 'rgba(' + th.GRgb + ',0.05)',
           borderWidth: 1.5,
           fill: false,
           tension: 0.35,
-          pointRadius: liveOrDefaultRadius,
+          pointRadius: ds.liveOrDefaultRadius,
           pointBackgroundColor: th.G,
           pointHoverRadius: 5,
           order: 2,
         },
         {
           label: ALLIN_LABEL,
-          data: bhAll,
+          data: ds.bhAll,
           borderColor: th.y,
           backgroundColor: 'rgba(' + th.yRgb + ',0.04)',
           borderWidth: 1.5,
           borderDash: [6, 3],
           fill: false,
           tension: 0.35,
-          pointRadius: liveOrDefaultRadius,
+          pointRadius: ds.liveOrDefaultRadius,
           pointBackgroundColor: th.y,
           pointHoverRadius: 5,
           order: 3,
@@ -1207,12 +1302,12 @@ var benchChart = null;
           padding: 10,
           callbacks: {
             title: function (items) {
-              var b = BENCH[items[0].dataIndex];
+              var b = activeBench[items[0].dataIndex];
               return (items[0].label || '') + (b ? '  ·  ' + (b.baseAsset || BASE) + ' R$' + b.price.toFixed(2) : '');
             },
             label: function (ctx) {
               var val  = ' R$' + ctx.parsed.y.toFixed(2);
-              var b    = BENCH[ctx.dataIndex];
+              var b    = activeBench[ctx.dataIndex];
               var note = '';
               if (ctx.datasetIndex === 0 && b && b.rebalanced) note = '  ⚡ REBALANCED';
               if (b && b.isLive) note += '  ▶ LIVE';
@@ -1245,7 +1340,7 @@ var benchChart = null;
 function repaintChartForTheme() {
   if (!benchChart) return;
   var th = chartTheme();
-  var ptColor = BENCH.map(function (r) { return r.rebalanced ? th.c : r.isLive ? th.y : th.m; });
+  var ptColor = activeBench.map(function (r) { return r.rebalanced ? th.c : r.isLive ? th.y : th.m; });
 
   var ds = benchChart.data.datasets;
   ds[0].borderColor = th.m;
@@ -1274,6 +1369,19 @@ function repaintChartForTheme() {
 
   benchChart.update();
 }
+
+// ── Chart range buttons ──────────────────────────────────────────────────────
+(function () {
+  var btns = Array.prototype.slice.call(document.querySelectorAll('.range-btn'));
+  btns.forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      if (btn.getAttribute('aria-pressed') === 'true') return;
+      btns.forEach(function (b) { b.setAttribute('aria-pressed', 'false'); });
+      btn.setAttribute('aria-pressed', 'true');
+      applyRange(btn.getAttribute('data-range'));
+    });
+  });
+})();
 
 // ── Live price updates (every 30 s) ─────────────────────────────────────────
 (function () {
