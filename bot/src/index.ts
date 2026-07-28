@@ -20,8 +20,9 @@ import { CostBasisService } from './core/tracker/costbasis';
 import { TaxService } from './core/tracker/tax';
 import { VolatilityService } from './core/tracker/volatility';
 import { MetricsService } from './core/tracker/metrics';
+import { ShareLedgerService } from './core/tracker/shares';
 import { logger } from './core/tracker/logger';
-import { getDbConfig, setDbConfig, backfillBaseAsset } from './core/tracker/db';
+import { getDbConfig, setDbConfig, backfillBaseAsset, backfillShares } from './core/tracker/db';
 
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
@@ -48,6 +49,7 @@ async function main(): Promise<void> {
   setDbConfig('current_symbol', activeSymbol, config.dbPath);
   config.symbol = activeSymbol;
   backfillBaseAsset(activeSymbol.split('-')[0]!, config.dbPath);
+  backfillShares(config.dbPath);
 
   const baseAsset = config.symbol.split('-')[0]!;
 
@@ -79,6 +81,7 @@ async function main(): Promise<void> {
   const tax = new TaxService(config.dbPath, retentionDays);
   const volatility = new VolatilityService(adapter, config.volatilityWindowDays);
   const metrics = new MetricsService(history);
+  const shares = new ShareLedgerService(config.dbPath, retentionDays);
 
   // config.symbol is just a schema-satisfying placeholder for bootstrapViaScan
   // instances until the scanner picks (and rotation persists) a real asset —
@@ -106,6 +109,7 @@ async function main(): Promise<void> {
     tax,
     volatility,
     metrics,
+    shares,
     config,
     buildAdapter,
   );

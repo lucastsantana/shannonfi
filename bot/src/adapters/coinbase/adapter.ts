@@ -173,6 +173,9 @@ export class CoinbaseAdapter implements ExchangeAdapter {
       realizedGainBrl: null,
       tradeDateBRT: null,
       baseAsset: this.baseAsset,
+      sharesOutstanding: null,
+      navPerShareBefore: null,
+      navPerShareAfter: null,
     };
 
     if (this.dryRun) {

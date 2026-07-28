@@ -6,6 +6,7 @@ export interface TrackRecordMetrics {
   periodStart: string;
   periodEnd: string;
   totalDays: number;
+  /** Capital-flow-adjusted return (NAV/share delta) — unaffected by deposits/withdrawals. See ShareLedgerService. */
   totalReturnBrlPct: number;
   cagr: number | null;
   maxDrawdownPct: number;
@@ -26,14 +27,21 @@ export class MetricsService {
       (t): t is TradeRecord =>
         t.status === 'FILLED' || t.status === 'DRY_RUN',
     );
-    const sorted = [...snapshots].sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+    // Only snapshots with nav/share populated are usable for performance — a snapshot
+    // with navPerShare <= 0 predates ShareLedgerService and hasn't been backfilled yet
+    // (or the portfolio was genuinely empty), and total_value_brl deltas alone can't be
+    // trusted as "return" once deposits/withdrawals are in play. See CLAUDE.md,
+    // "Fund-Share (NAV-per-share) Ledger".
+    const sorted = [...snapshots]
+      .filter((s) => s.navPerShare > 0)
+      .sort((a, b) => a.timestamp.localeCompare(b.timestamp));
 
     if (sorted.length === 0) return this.emptyMetrics();
 
     const first = sorted[0]!;
     const last = sorted[sorted.length - 1]!;
-    const initialBrl = first.totalValueBrl;
-    const finalBrl = last.totalValueBrl;
+    const initialNav = first.navPerShare;
+    const finalNav = last.navPerShare;
 
     const totalDays = Math.max(
       1,
@@ -42,13 +50,13 @@ export class MetricsService {
       ),
     );
 
-    const totalReturnBrlPct = initialBrl > 0 ? ((finalBrl - initialBrl) / initialBrl) * 100 : 0;
+    const totalReturnBrlPct = initialNav > 0 ? ((finalNav - initialNav) / initialNav) * 100 : 0;
     const cagr =
-      initialBrl > 0 && totalDays > 0
-        ? (Math.pow(finalBrl / initialBrl, 365 / totalDays) - 1) * 100
+      initialNav > 0 && totalDays > 0
+        ? (Math.pow(finalNav / initialNav, 365 / totalDays) - 1) * 100
         : null;
 
-    const values = sorted.map((s) => s.totalValueBrl);
+    const values = sorted.map((s) => s.navPerShare);
     const maxDrawdownPct = this.computeMaxDrawdown(values);
     const sharpeRatio = this.computeSharpe(values);
 
@@ -148,8 +156,8 @@ export class MetricsService {
     const sign = (n: number) => (n >= 0 ? '+' : '');
     console.log("\n=== Shannon's Demon — Track Record ===");
     console.log(`Period:               ${m.periodStart.slice(0, 10)} → ${m.periodEnd.slice(0, 10)} (${m.totalDays}d)`);
-    console.log(`Return (BRL):         ${sign(m.totalReturnBrlPct)}${m.totalReturnBrlPct.toFixed(2)}%`);
-    if (m.cagr != null) console.log(`CAGR (BRL):           ${sign(m.cagr)}${m.cagr.toFixed(2)}%`);
+    console.log(`Return (NAV/share):   ${sign(m.totalReturnBrlPct)}${m.totalReturnBrlPct.toFixed(2)}%`);
+    if (m.cagr != null) console.log(`CAGR (NAV/share):     ${sign(m.cagr)}${m.cagr.toFixed(2)}%`);
     console.log(`Max Drawdown:         -${m.maxDrawdownPct.toFixed(2)}%`);
     if (m.sharpeRatio != null) console.log(`Sharpe Ratio:         ${m.sharpeRatio.toFixed(3)}`);
     console.log(`Rebalances:           ${m.totalRebalances}`);

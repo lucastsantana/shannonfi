@@ -24,6 +24,7 @@
     "migrate": "ts-node src/scripts/migrate-json-to-db.ts",
     "reconcile": "ts-node src/scripts/reconcile-orders.ts",
     "reconcile:built": "node dist/scripts/reconcile-orders.js",
+    "record-flow": "ts-node src/scripts/record-capital-flow.ts",
     "dashboard": "ts-node src/publishers/dashboard.ts",
     "dashboard:built": "node dist/publishers/dashboard.js"
   },

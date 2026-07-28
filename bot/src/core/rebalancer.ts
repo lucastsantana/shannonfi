@@ -1,10 +1,11 @@
-import { ExchangeAdapter, Portfolio, PortfolioSnapshot } from '../adapters/types';
+import { ExchangeAdapter, Portfolio, PortfolioSnapshot, TradeRecord } from '../adapters/types';
 import { TradeHistoryService } from './tracker/history';
 import { PnlService } from './tracker/pnl';
 import { CostBasisService } from './tracker/costbasis';
 import { TaxService } from './tracker/tax';
 import { VolatilityService } from './tracker/volatility';
 import { MetricsService } from './tracker/metrics';
+import { ShareLedgerService } from './tracker/shares';
 import { logger } from './tracker/logger';
 import { shouldRebalance, computeRebalanceTrade, computeBaseRatioBps, computeDeviationBps, computePortfolioAfterFill } from '../math';
 import { Config } from '../config';
@@ -71,6 +72,7 @@ export class RebalancerBot {
     private tax: TaxService,
     private volatility: VolatilityService,
     private metrics: MetricsService,
+    private shares: ShareLedgerService,
     private config: Config,
     // Builds a fresh ExchangeAdapter for a given symbol on this same exchange. Only needed
     // to support live asset rotation (swapping to a new symbol mid-process, without a
@@ -464,6 +466,8 @@ export class RebalancerBot {
       }
     }
 
+    this.stampShareState(tradeRecord, portfolio);
+
     // Wrap all three DB writes (cost_basis, trades, tax_events) in a single transaction
     // to ensure atomicity. Telegram notification is sent after the transaction commits.
     const db = getDb(this.config.dbPath);
@@ -538,6 +542,8 @@ export class RebalancerBot {
       timeZone: 'America/Sao_Paulo',
     });
 
+    const { sharesOutstanding, navPerShare } = this.shares.getShareState(portfolio.totalValueBrl);
+
     const snapshot: PortfolioSnapshot = {
       dateBRT: todayBRT,
       timestamp: new Date().toISOString(),
@@ -550,8 +556,26 @@ export class RebalancerBot {
       rebalancedToday,
       exchange: this.config.exchange,
       baseAsset: this.config.symbol.split('-')[0]!,
+      sharesOutstanding,
+      navPerShare,
     };
     this.history.appendSnapshot(snapshot);
+  }
+
+  /**
+   * Stamps fund-share reference fields onto a trade record right before it's persisted —
+   * a trade itself never changes shares outstanding (only a recorded capital flow does),
+   * but nav/share can move slightly between portfolioBefore and portfolioAfter from fees
+   * or slippage, so before/after are computed separately. Call after portfolioAfter has
+   * been set (or confirmed null), right before history.appendTrade().
+   */
+  private stampShareState(tradeRecord: TradeRecord, portfolioBefore: Portfolio): void {
+    const before = this.shares.getShareState(portfolioBefore.totalValueBrl);
+    tradeRecord.sharesOutstanding = before.sharesOutstanding;
+    tradeRecord.navPerShareBefore = before.navPerShare;
+    tradeRecord.navPerShareAfter = tradeRecord.portfolioAfter
+      ? this.shares.getShareState(tradeRecord.portfolioAfter.totalValueBrl).navPerShare
+      : null;
   }
 
   /**
@@ -831,6 +855,7 @@ export class RebalancerBot {
       if (tradeRecord.status === 'FAILED') {
         // Record the failed trade for the audit trail, then abort before swapping symbols.
         // The outer catch in checkAndExecuteRotation will mark the rotation FAILED.
+        this.stampShareState(tradeRecord, portfolio);
         this.history.appendTrade(tradeRecord);
         throw new Error(`Liquidation of ${fromSymbol} failed — rotation aborted before symbol swap`);
       }
@@ -871,6 +896,8 @@ export class RebalancerBot {
           exchange: tradeRecord.exchange,
         });
       }
+
+      this.stampShareState(tradeRecord, portfolio);
 
       const txn = db.transaction(() => {
         this.history.appendTrade(tradeRecord);
@@ -957,6 +984,8 @@ export class RebalancerBot {
             exchange: acquisitionTrade.exchange,
           });
 
+          this.stampShareState(acquisitionTrade, newPortfolio);
+
           const txn2 = db.transaction(() => {
             this.history.appendTrade(acquisitionTrade);
             this.tax.appendTaxEvent(acquisitionTaxEvent);
@@ -969,6 +998,7 @@ export class RebalancerBot {
           this.lastRebalanceDateBRT = todayBRT;
           this.lastRebalanceDirection = 'BUY_BASE';
         } else {
+          this.stampShareState(acquisitionTrade, newPortfolio);
           this.history.appendTrade(acquisitionTrade);
           logger.warn('Re-acquisition order failed — liquidation succeeded; normal rebalance will BUY next cycle', {
             to: toSymbol,

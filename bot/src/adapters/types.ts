@@ -76,6 +76,12 @@ export interface TradeRecord {
   realizedGainBrl: number | null;
   tradeDateBRT: string | null;    // YYYY-MM-DD BRT
   baseAsset: string | null;       // which asset this trade was for (supports asset rotation)
+  // Fund-share accounting (see ShareLedgerService) — set by RebalancerBot after the trade
+  // executes, not by the adapter (adapters have no DB access). null until then, and always
+  // null for a raw TradeRecord an adapter just returned from executeTrade().
+  sharesOutstanding: number | null;  // shares outstanding at trade time (a trade itself never changes this — only a capital flow does)
+  navPerShareBefore: number | null;  // nav/share computed from portfolioBefore.totalValueBrl
+  navPerShareAfter: number | null;   // nav/share computed from portfolioAfter.totalValueBrl; null if portfolioAfter is null
 }
 
 /** Daily BRL-native portfolio snapshot for track record. */
@@ -91,4 +97,6 @@ export interface PortfolioSnapshot {
   rebalancedToday: boolean;
   exchange: 'mercadobitcoin' | 'binance' | 'coinbase';
   baseAsset: string | null;       // which asset was active at this snapshot (supports asset rotation)
+  sharesOutstanding: number;      // fund-share accounting — see ShareLedgerService
+  navPerShare: number;            // totalValueBrl / sharesOutstanding at this snapshot
 }

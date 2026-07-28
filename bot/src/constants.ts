@@ -44,6 +44,14 @@ export const DEFAULT_VOLATILITY_WINDOW_DAYS = 30;
 export const MIN_ADAPTIVE_THRESHOLD_BPS = 50;        // 0.5% floor
 export const MAX_ADAPTIVE_THRESHOLD_BPS = 500;       // 5.0% ceiling
 
+// ─── Fund-share accounting ──────────────────────────────────────────────────────
+// Shares issued to a brand-new instance's inception deposit, and to backfillShares()'s
+// genesis capital_flows row for an instance that predates ShareLedgerService — a fixed,
+// round number rather than one scaled to whatever the initial BRL amount happened to be,
+// so nav/share reads as an intuitive per-unit price from day one instead of an arbitrary
+// value pinned to 1.00. See ShareLedgerService, core/tracker/db.ts's backfillShares().
+export const DEFAULT_INITIAL_SHARES = 100;
+
 // ─── Brazilian tax constants ──────────────────────────────────────────────────
 export const BR_MONTHLY_EXEMPTION_LIMIT_BRL = 35_000;
 export const BR_EXEMPTION_SAFE_BUFFER_BRL = 350;     // 1% safety buffer

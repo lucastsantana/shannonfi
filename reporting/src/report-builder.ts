@@ -262,7 +262,15 @@ export async function buildReportPayload(
 
   const startValueBrl = firstSnap.totalValueBrl;
   const endValueBrl = lastSnap.totalValueBrl;
-  const monthlyReturnPct = startValueBrl > 0 ? ((endValueBrl - startValueBrl) / startValueBrl) * 100 : 0;
+
+  // Return/drawdown are nav/share-based (capital-flow-adjusted) whenever available, so a
+  // deposit/withdrawal during the month isn't counted as trading performance — see
+  // ShareLedgerService / bot's CLAUDE.md, "Fund-Share (NAV-per-share) Ledger". Falls back to
+  // the raw totalValueBrl delta if nav/share hasn't been backfilled yet for this instance.
+  const navAvailableForMonth = firstSnap.navPerShare > 0 && lastSnap.navPerShare > 0;
+  const monthlyReturnPct = navAvailableForMonth
+    ? ((lastSnap.navPerShare - firstSnap.navPerShare) / firstSnap.navPerShare) * 100
+    : (startValueBrl > 0 ? ((endValueBrl - startValueBrl) / startValueBrl) * 100 : 0);
 
   // If a rotation happened mid-month, only compare the asset active at month-end's price
   // movement since the rotation — diffing across a rotation boundary would otherwise
@@ -274,7 +282,9 @@ export async function buildReportPayload(
   const baseOnlyReturnPct = baseCompareStart.basePrice > 0
     ? ((lastSnap.basePrice - baseCompareStart.basePrice) / baseCompareStart.basePrice) * 100
     : 0;
-  const monthDrawdown = computeMaxDrawdown(monthSnapshots.map(s => s.totalValueBrl));
+  const monthDrawdown = navAvailableForMonth
+    ? computeMaxDrawdown(monthSnapshots.map(s => s.navPerShare))
+    : computeMaxDrawdown(monthSnapshots.map(s => s.totalValueBrl));
 
   const monthTrades = allTrades.filter(t => {
     const d = t.tradeDateBRT ?? t.timestamp.slice(0, 10);

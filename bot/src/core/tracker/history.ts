@@ -37,7 +37,8 @@ export class TradeHistoryService {
         before_base_balance, before_brl_balance, before_base_price, before_base_value,
         before_total_value, before_base_ratio_bps, before_deviation_bps, before_timestamp,
         after_base_balance, after_brl_balance, after_base_price, after_base_value,
-        after_total_value, after_base_ratio_bps, after_deviation_bps, after_timestamp
+        after_total_value, after_base_ratio_bps, after_deviation_bps, after_timestamp,
+        shares_outstanding, nav_per_share_before, nav_per_share_after
       ) VALUES (
         ?, ?, ?, ?, ?, ?,
         ?, ?, ?, ?, ?,
@@ -45,7 +46,8 @@ export class TradeHistoryService {
         ?, ?, ?, ?,
         ?, ?, ?, ?,
         ?, ?, ?, ?,
-        ?, ?, ?, ?
+        ?, ?, ?, ?,
+        ?, ?, ?
       )
     `);
 
@@ -85,6 +87,9 @@ export class TradeHistoryService {
       after?.baseRatioBps ?? null,
       after?.deviationBps ?? null,
       after?.timestamp ?? null,
+      record.sharesOutstanding ?? null,
+      record.navPerShareBefore ?? null,
+      record.navPerShareAfter ?? null,
     );
 
     logger.debug('Trade record persisted', { id: record.id, exchange: record.exchange });
@@ -135,6 +140,9 @@ export class TradeHistoryService {
       realizedGainBrl: row.realized_gain_brl,
       tradeDateBRT: row.trade_date_brt,
       baseAsset: row.base_asset ?? null,
+      sharesOutstanding: row.shares_outstanding ?? null,
+      navPerShareBefore: row.nav_per_share_before ?? null,
+      navPerShareAfter: row.nav_per_share_after ?? null,
       portfolioBefore: {
         baseBalance: row.before_base_balance,
         brlBalance: row.before_brl_balance,
@@ -202,8 +210,9 @@ export class TradeHistoryService {
     const stmt = this.db.prepare(`
       INSERT OR REPLACE INTO portfolio_snapshots (
         date_brt, timestamp, total_value_brl, base_balance, brl_balance,
-        base_price, base_ratio_bps, effective_threshold_bps, rebalanced_today, exchange, base_asset
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        base_price, base_ratio_bps, effective_threshold_bps, rebalanced_today, exchange, base_asset,
+        total_shares_outstanding, nav_per_share
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     stmt.run(
@@ -218,6 +227,8 @@ export class TradeHistoryService {
       snapshot.rebalancedToday ? 1 : 0,
       snapshot.exchange,
       snapshot.baseAsset ?? null,
+      snapshot.sharesOutstanding,
+      snapshot.navPerShare,
     );
 
     logger.debug('Portfolio snapshot persisted', { date: snapshot.dateBRT });
@@ -261,6 +272,8 @@ export class TradeHistoryService {
       rebalancedToday: row.rebalanced_today === 1,
       exchange: row.exchange,
       baseAsset: row.base_asset ?? null,
+      sharesOutstanding: row.total_shares_outstanding ?? 0,
+      navPerShare: row.nav_per_share ?? 0,
     } as PortfolioSnapshot));
   }
 }

@@ -15,7 +15,7 @@ The repo contains **only the CEX bot** — the Solana on-chain vault implementat
 | Instance | Exchange | Symbol | Config | Deployment |
 |---|---|---|---|---|
 | `hype-mb` | Mercado Bitcoin | HYPE-BRL | `bot/configs/hype-mb.yaml` | Local PM2 **and** GitHub Actions (rebalancer, scan, dashboard) |
-| *(template)* | Coinbase | BTC-USDC | `bot/configs/coinbase-shannon-1.yaml.template` | Not yet instantiated — needs real Trade-permissioned CDP credentials; adapter live-tested for auth/balances/market-data/PTAX, order placement not yet exercised live |
+| `coinbase-shannon-1` | Coinbase | BTC-USDC (bootstraps/rotates via scanner) | `bot/configs/coinbase-shannon-1.yaml` (git-tracked, real config; `.yaml.template` remains as the scaffold) | Live on local PM2, running real (non-dry-run) trades since 2026-06-24; not mirrored to GitHub Actions (commented out of all four workflows) |
 
 Only `hype-mb` is mirrored to GitHub Actions; other instances are local-only and not visible to CI. All four workflows are matrix-based and ready to add another instance to (just uncomment its entry) — they're just not actively running anything beyond `hype-mb` yet.
 
@@ -199,7 +199,7 @@ Everything that ships output to somewhere external to the bot, mirroring the `ad
 - `telegram.ts` — Telegram Bot API client (messages, interactive buttons)
 - `daily-digest.ts` — Builds and sends a daily portfolio summary via `telegram.ts`; runs on the rebalancer's poll loop, so it only fires in the **local PM2 process** (GitHub Actions runs `--once` and exits, never reaching the scheduled-digest check)
 - `scan-reporter.ts` — Formats scanner output and sends it via `telegram.ts`
-- `dashboard.ts` — Reads the SQLite DB, renders the retro HTML dashboard; dual-purpose as a library and CLI (`npm run dashboard -- --config <path>`), invoked by `dashboard.yml` to publish to GitHub Pages
+- `dashboard.ts` — Reads the SQLite DB, renders the retro HTML dashboard; dual-purpose as a library and CLI (`npm run dashboard -- --config <path>`), invoked by `dashboard.yml` to publish to GitHub Pages. Resolves `current_symbol` from the DB (same as `index.ts`) before fetching a live price — an instance that has rotated (see asset rotation below) trades a different symbol than its YAML default, and fetching the YAML symbol's price would compare the wrong asset entirely. `fetchCurrentPrice()` and the client-side 30s live-refresh script are both exchange-aware: Mercado Bitcoin's and Binance's public ticker APIs are queried directly; Coinbase has no public endpoint for its actual USDC-quoted pairs (`api.exchange.coinbase.com` only lists USD pairs, and the "BASE-USD" substitution is deliberate — see the comment in `fetchCurrentPrice()`), so its USD price is PTAX-converted via `FxRateService` server-side, with that PTAX rate baked into the page as a constant for the client-side refresh (browser-side BACEN fetches would likely hit CORS).
 
 ### Scanner (`bot/src/scanner/`)
 Cross-pair volatility scanner — ranks candidate symbols on an exchange by recent volatility, trend direction, and liquidity to help pick what to trade next. `scan.ts` is the CLI entry (`npm run scan`); used by `scan.yml` (daily, both `hype-mb` and `coinbase-shannon-1`) and locally via cron scripts (`bot/scan-mb-daily.sh`, `bot/scan-coinbase-daily.sh`). Each candidate's score is `MAD × (1 + rollingReturn) × liquidityWeight`; candidates with a clearly negative trend (`computeNormalizedTrendSlope()` in `math.ts`, an OLS regression slope normalized by mean price) are filtered out entirely — only sideways-or-up candidates qualify — and `liquidityWeight` (0..1, saturating at `liquidityFullWeightBrl`) dampens thin markets beyond the hard `minVolumeBrl` floor.
@@ -228,6 +228,20 @@ For an instance with `bootstrapViaScan: true` (e.g. `coinbase-shannon-1`), `Reba
 - Every SELL: use current average, record realized gain for tax
 - Persisted in `cost_basis.json` (key: "SOL")
 
+### Fund-Share (NAV-per-share) Ledger
+**File:** `core/tracker/shares.ts` (`ShareLedgerService`)
+
+Lets an instance's `total_value_brl` grow or shrink from external BRL deposits/withdrawals without those flows being misread as trading performance — the problem otherwise afflicting every return/CAGR/drawdown/Sharpe/benchmark calculation in `metrics.ts`, `pnl.ts`, `dashboard.ts`, and `reporting/report-builder.ts`, all of which derive "return" from raw `total_value_brl` deltas. Single-owner design (no per-investor ledger) — one share count per instance:
+
+- Every `PortfolioSnapshot` (written by `RebalancerBot.persistSnapshot()` every poll cycle) carries `sharesOutstanding`/`navPerShare` alongside `totalValueBrl`. `navPerShare = totalValueBrl / sharesOutstanding` moves purely with trading performance between flows.
+- **Deposit/withdrawal:** `npm run record-flow -- --config <path> --type deposit|withdrawal --brl <amount>` (script: `scripts/record-capital-flow.ts`). Issues/redeems shares at the nav/share prevailing **just before** the flow, so nav/share itself is unaffected by the flow's size — a standard unitization technique. **Run the script before actually moving the money** (it reads the live pre-flow balance as the strike price); pass `--already-moved` if the transfer already happened and the live balance already reflects it.
+- **Bootstrap:** a genuinely fresh instance (no snapshot history, zero value) seeds nav/share at an arbitrary 1.00 baseline on its first-ever snapshot (only the ratio to later nav/share values — i.e. returns — is ever meaningful).
+- **Backfill:** an *existing* instance's pre-feature snapshot history isn't left blank — `backfillShares()` (`db.ts`, called on every startup, idempotent via `WHERE nav_per_share IS NULL`) anchors the instance at a fixed `DEFAULT_INITIAL_SHARES` (100, `constants.ts`) shares as of the first snapshot with positive `total_value_brl`, and rescales every other un-backfilled row against that same (constant, since no flows existed yet) share count — nav/share = `total_value_brl ÷ 100` throughout the backfilled span. This reproduces the instance's existing `total_value_brl` return shape in nav/share terms rather than discarding its history the moment this feature ships — important for `hype-mb`, which already has ~2 months of real trading history before this feature existed. The first time it runs for an instance (`capital_flows` still empty), it also inserts a genesis `DEPOSIT` row into `capital_flows` for the anchor's `total_value_brl` — the instance's original funding becomes a real ledger entry (100 shares issued at nav/share = anchor value ÷ 100), not just something implicit in the snapshot columns. `ShareLedgerService`'s own live bootstrap (`resolveShareBasis()`) uses the same `DEFAULT_INITIAL_SHARES` convention for the equivalent live case — a fresh instance whose exchange account already held a balance before its first cycle ran.
+- `metrics.ts` (`computeMetrics()`) and `pnl.ts` (`printReport()`) compute return/CAGR/drawdown/Sharpe from the `navPerShare` series (filtered to `navPerShare > 0`), not raw `total_value_brl` — a deposit/withdrawal no longer shows up as a performance swing in `--report` output.
+- `publishers/dashboard.ts`'s `RETURN`/`NET GAIN` KPIs, the client-side 30s live-refresh script, and the "Shannon's Demon" line in the STRATEGY SCOREBOARD chart/table are all nav/share-based too — the passive 50/50 and all-in benchmarks are unaffected (they're synthetic, price-only, and never experience a flow). `netGain` is `initialTotal × navReturn`, i.e. the flow-adjusted % return re-expressed in BRL scaled to the original starting AUM, not a raw AUM delta. All of it falls back to the pre-fund-share raw `total_value_brl` delta if `nav_per_share` isn't populated yet for that instance (dashboard.ts is a read-only renderer — `backfillShares()` runs as part of the bot's own startup in `index.ts`, not here, so a dashboard generated before the bot's first post-deploy cycle degrades gracefully instead of showing nonsense).
+- The dashboard's score bar also has dedicated `SHARE PRICE` (live nav/share, updates every 30s) and `OUTSTANDING SHARES` (static per page load — only changes when a flow is recorded, so regenerate the dashboard after `record-flow` to see the new count) tiles. The TRADE HISTORY table has matching `SHARE PRICE`/`SHARES O/S` reference columns per trade, sourced from `trades.nav_per_share_before`/`shares_outstanding` (see "Database Architecture" → `trades` table) — populated by `RebalancerBot.stampShareState()` on every trade going forward, shown as `—` for trades that predate the feature (not backfilled, unlike `portfolio_snapshots`, since nothing downstream depends on historical trades having it — it's a reference field, not an input to any return/CAGR/Sharpe calculation).
+- `reporting/report-builder.ts`'s `monthly.monthlyReturnPct` and `monthly.maxDrawdownPct` (the per-month figures — `cumulative.*` already goes through `MetricsService`, so it inherited the phase-2 fix for free) are nav/share-based with the same total_value_brl fallback. `monthly.startValueBrl`/`endValueBrl` are deliberately left as raw AUM — they're rendered as "Portfolio Start/End", not "Return", so a dollar jump from a deposit next to an unmoved return % is expected and correct, the same AUM-vs-return split used everywhere else in this feature.
+
 ### History & Persistence
 **Files:**
 - `core/tracker/db.ts` — SQLite singleton (`getDb()`), schema migrations, WAL + FK pragmas
@@ -243,7 +257,7 @@ For an instance with `bootstrapViaScan: true` (e.g. `coinbase-shannon-1`), `Reba
 
 **File:** `bot/src/core/tracker/db.ts`
 
-The bot's primary datastore is a SQLite database (`bot/data/shannonfi.db`) managed by `better-sqlite3`. All three tracker services (`TradeHistoryService`, `CostBasisService`, `TaxService`) obtain a shared connection through the `getDb()` singleton.
+The bot's primary datastore is a SQLite database (`bot/data/shannonfi.db`) managed by `better-sqlite3`. All tracker services (`TradeHistoryService`, `CostBasisService`, `TaxService`, `ShareLedgerService`) obtain a shared connection through the `getDb()` singleton.
 
 ### Singleton & Initialization
 
@@ -306,6 +320,9 @@ Every rebalance (real or dry-run) is a single row with 31 columns capturing the 
 | `after_base_ratio_bps` | INTEGER | SOL weight post-trade |
 | `after_deviation_bps` | INTEGER | Residual deviation post-trade |
 | `after_timestamp` | TEXT | ISO 8601 fill confirmation time |
+| `shares_outstanding` | REAL | Fund-share accounting — shares outstanding at trade time; a trade itself never changes this (only a recorded capital flow does). Nullable, not backfilled for pre-existing trades — see `ShareLedgerService.stampShareState()` in `rebalancer.ts` |
+| `nav_per_share_before` | REAL | nav/share computed from `before_total_value` |
+| `nav_per_share_after` | REAL | nav/share computed from `after_total_value`; null if `after_total_value` is null |
 
 **Indexes:** `idx_trades_date (trade_date_brt)`, `idx_trades_status (status)`
 
@@ -327,6 +344,8 @@ One row per calendar day (BRT). The primary key is `date_brt`, so `INSERT OR REP
 | `effective_threshold_bps` | INTEGER | Adaptive or static threshold active that day |
 | `rebalanced_today` | INTEGER | `1` if at least one trade executed today |
 | `exchange` | TEXT | Default `'mercadobitcoin'` |
+| `total_shares_outstanding` | REAL | Fund-share accounting — nullable; `backfillShares()` fills pre-existing rows on next startup, see below |
+| `nav_per_share` | REAL | `total_value_brl / total_shares_outstanding` — nullable, same as above |
 
 **Index:** `idx_snapshots_date (date_brt)`
 
@@ -369,6 +388,25 @@ Single-row table (one row per asset; currently only `'SOL'`). Stores the running
 
 Initialized on every startup with `INSERT OR IGNORE INTO cost_basis (asset) VALUES ('SOL')`, so the row is always present even on a fresh database.
 
+#### `capital_flows`
+
+One row per deposit/withdrawal, written by `ShareLedgerService.recordCapitalFlow()` (see "Fund-Share (NAV-per-share) Ledger" above). Never touched by the trading engine itself — only by the manual `record-flow` CLI, and by `backfillShares()`'s one-time genesis `DEPOSIT` row for an instance's pre-existing history (see "Backfill" above) — both `hype-mb` and `coinbase-shannon-1` have exactly this one genesis row as of this writing, nothing more.
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | TEXT PK | UUID |
+| `timestamp` / `date_brt` | TEXT | ISO 8601 / `YYYY-MM-DD` BRT |
+| `type` | TEXT | `'DEPOSIT'` or `'WITHDRAWAL'` |
+| `brl_amount` | REAL | Flow size |
+| `nav_per_share_before` | REAL | Nav/share used to price the shares issued/redeemed |
+| `shares_delta` | REAL | Positive for deposit, negative for withdrawal |
+| `total_shares_after` | REAL | Running total, avoids recomputation drift |
+| `total_value_brl_before` / `total_value_brl_after` | REAL | Portfolio value immediately either side of the flow (audit trail) |
+| `exchange` | TEXT | |
+| `note` | TEXT | Optional free text |
+
+**Index:** `idx_capital_flows_date (date_brt)`
+
 #### `trades` / `portfolio_snapshots` — `base_asset` column
 
 Both tables also carry a `base_asset TEXT` column (additive migration), recording which asset each row belongs to. Needed because an instance's active symbol can change over time via asset rotation (see `docs/dynamic-asset-rotation-plan.md`) — without this, historical rows would be ambiguous about which asset's price/quantity they're recording. Legacy rows are backfilled with the instance's pre-rotation asset via `backfillBaseAsset()`, called on every startup (no-op once already populated).
@@ -385,13 +423,14 @@ Full design rationale, the blind spots this surfaced, and what's still manual (a
 
 ### Dual-Write Strategy
 
-All three tracker services write to SQLite as the primary store, then append to rolling JSON files as a human-readable backup:
+All tracker services write to SQLite as the primary store, then append to rolling JSON files as a human-readable backup:
 
 | Service | SQLite table(s) | JSON file(s) | JSON retention |
 |---------|----------------|--------------|----------------|
 | `TradeHistoryService` | `trades`, `portfolio_snapshots` | `trade_history.json`, `portfolio_snapshots.json` | 15 days (configurable via `jsonRetentionDays`) |
 | `CostBasisService` | `cost_basis` | `cost_basis.json` | Full history (small file) |
 | `TaxService` | `tax_events` | `tax_events.json` | 15 days |
+| `ShareLedgerService` | `capital_flows` | `capital_flows.json` | 15 days |
 
 JSON files are a failsafe and audit trail. If `shannonfi.db` is lost or corrupted, the last 15 days of state can be reconstructed from the JSON backups. Records older than the retention window exist only in SQLite.
 
@@ -466,15 +505,19 @@ Secrets stored in GitHub repo settings:
 
 ## Testing
 
-**File:** `bot/tests/`, ~65 unit tests (vitest)
+**File:** `bot/tests/`, 135 unit tests (vitest)
 
-**Test Categories:**
+**Test Categories (partial list):**
 - `math.test.ts` — ratio, threshold, trade calc
 - `config.test.ts` — schema validation
 - `tax.test.ts` — exemption logic, deadlines
 - `cost-basis.test.ts` — AVCO tracking
 - `history.test.ts` — trade persistence
 - `adapter.test.ts` — mocked MB API responses
+- `db.test.ts` — schema migrations, `backfillBaseAsset()`, `backfillShares()`
+- `shares.test.ts` — `ShareLedgerService` nav/share bootstrap, deposits, withdrawals
+- `metrics.test.ts` / `pnl.test.ts` — nav/share-based return, unaffected by capital flows
+- `rebalancer.test.ts` — full cycle logic, including asset rotation
 
 **Run:**
 ```bash

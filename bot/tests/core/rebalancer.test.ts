@@ -7,6 +7,7 @@ import { CostBasisService } from '../../src/core/tracker/costbasis';
 import { TaxService } from '../../src/core/tracker/tax';
 import { VolatilityService } from '../../src/core/tracker/volatility';
 import { MetricsService } from '../../src/core/tracker/metrics';
+import { ShareLedgerService } from '../../src/core/tracker/shares';
 import { Config } from '../../src/config';
 import { getDb, getDbConfig, setDbConfig } from '../../src/core/tracker/db';
 import { runAssetScan } from '../../src/scanner/run-scan';
@@ -81,6 +82,9 @@ function makeTradeRecord(overrides: Partial<TradeRecord> = {}): TradeRecord {
     dryRun: true,
     realizedGainBrl: null,
     tradeDateBRT: null,
+    sharesOutstanding: null,
+    navPerShareBefore: null,
+    navPerShareAfter: null,
     ...overrides,
   };
 }
@@ -152,8 +156,12 @@ function makeBot(
     printReport: vi.fn(),
   } as unknown as MetricsService;
 
+  const shares = {
+    getShareState: vi.fn().mockReturnValue({ sharesOutstanding: 1, navPerShare: 6000 }),
+  } as unknown as ShareLedgerService;
+
   const config = { ...testConfig, ...configOverrides };
-  const bot = new RebalancerBot(adapter, history, pnl, costBasis, tax, volatility, metrics, config, adapterFactory);
+  const bot = new RebalancerBot(adapter, history, pnl, costBasis, tax, volatility, metrics, shares, config, adapterFactory);
   return { bot, adapter, history, pnl, costBasis, tax, config };
 }
 
@@ -218,6 +226,26 @@ describe('RebalancerBot', () => {
     await bot.checkAndRebalance();
     expect(history.appendTrade).toHaveBeenCalled();
     expect(pnl.logRebalance).toHaveBeenCalled();
+  });
+
+  it('stamps fund-share fields (sharesOutstanding, navPerShareBefore/After) onto the persisted trade', async () => {
+    const { bot, adapter, history } = makeBot();
+    vi.mocked(adapter.getPortfolio).mockResolvedValue(makePortfolio());
+    vi.mocked(adapter.executeTrade).mockResolvedValue(
+      makeTradeRecord({
+        portfolioAfter: makePortfolio({ totalValueBrl: 5900 }),
+      }),
+    );
+    await bot.checkAndRebalance();
+    // makeBot()'s mocked ShareLedgerService always returns { sharesOutstanding: 1, navPerShare: 6000 }
+    // regardless of the totalValueBrl passed in, so before/after both resolve to 6000 here.
+    expect(history.appendTrade).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sharesOutstanding: 1,
+        navPerShareBefore: 6000,
+        navPerShareAfter: 6000,
+      }),
+    );
   });
 
   it('respects cooldown from prior trade', async () => {
@@ -403,9 +431,10 @@ describe('RebalancerBot — asset rotation', () => {
     const tax = new TaxService(dbPath, 0);
     const volatility = { computeAdaptiveThresholdBps: vi.fn().mockResolvedValue(100) } as unknown as VolatilityService;
     const metrics = { computeMetrics: vi.fn().mockReturnValue({}), printReport: vi.fn() } as unknown as MetricsService;
+    const shares = new ShareLedgerService(dbPath, 0);
     const config: Config = { ...testConfig, dbPath, symbol: 'SOL-BRL', useAdaptiveThreshold: false };
 
-    const bot = new RebalancerBot(oldAdapter, history, pnl, costBasis, tax, volatility, metrics, config, adapterFactory);
+    const bot = new RebalancerBot(oldAdapter, history, pnl, costBasis, tax, volatility, metrics, shares, config, adapterFactory);
 
     await bot.checkAndRebalance();
 
@@ -535,9 +564,10 @@ describe('RebalancerBot — autonomous weekly rotation', () => {
     const tax = new TaxService(dbPath, 0);
     const volatility = { computeAdaptiveThresholdBps: vi.fn().mockResolvedValue(100) } as unknown as VolatilityService;
     const metrics = { computeMetrics: vi.fn().mockReturnValue({}), printReport: vi.fn() } as unknown as MetricsService;
+    const shares = new ShareLedgerService(dbPath, 0);
     const config: Config = { ...testConfig, dbPath, symbol: 'SOL-BRL', bootstrapViaScan: true, autonomousWeeklyRotation: true, minPortfolioValueBrl: 1 };
 
-    const bot = new RebalancerBot(adapter, history, pnl, costBasis, tax, volatility, metrics, config, adapterFactory);
+    const bot = new RebalancerBot(adapter, history, pnl, costBasis, tax, volatility, metrics, shares, config, adapterFactory);
 
     await bot.checkAndRebalance();
 
@@ -580,9 +610,10 @@ describe('RebalancerBot — autonomous weekly rotation', () => {
     const tax = new TaxService(dbPath, 0);
     const volatility = { computeAdaptiveThresholdBps: vi.fn().mockResolvedValue(100) } as unknown as VolatilityService;
     const metrics = { computeMetrics: vi.fn().mockReturnValue({}), printReport: vi.fn() } as unknown as MetricsService;
+    const shares = new ShareLedgerService(dbPath, 0);
     const config: Config = { ...testConfig, dbPath, symbol: 'SOL-BRL', autonomousWeeklyRotation: true, minPortfolioValueBrl: 1 };
 
-    const bot = new RebalancerBot(adapter, history, pnl, costBasis, tax, volatility, metrics, config, adapterFactory);
+    const bot = new RebalancerBot(adapter, history, pnl, costBasis, tax, volatility, metrics, shares, config, adapterFactory);
 
     await bot.checkAndRebalance();
 
@@ -605,10 +636,11 @@ describe('RebalancerBot — autonomous weekly rotation', () => {
     const tax = new TaxService(dbPath, 0);
     const volatility = { computeAdaptiveThresholdBps: vi.fn().mockResolvedValue(100) } as unknown as VolatilityService;
     const metrics = { computeMetrics: vi.fn().mockReturnValue({}), printReport: vi.fn() } as unknown as MetricsService;
+    const shares = new ShareLedgerService(dbPath, 0);
     const config: Config = { ...testConfig, dbPath, symbol: 'SOL-BRL', autonomousWeeklyRotation: true, minPortfolioValueBrl: 1_000_000 };
     const adapterFactory = vi.fn();
 
-    const bot = new RebalancerBot(adapter, history, pnl, costBasis, tax, volatility, metrics, config, adapterFactory);
+    const bot = new RebalancerBot(adapter, history, pnl, costBasis, tax, volatility, metrics, shares, config, adapterFactory);
 
     await bot.checkAndRebalance();
 
@@ -630,6 +662,7 @@ describe('RebalancerBot — autonomous weekly rotation', () => {
     const tax = new TaxService(dbPath, 0);
     const volatility = { computeAdaptiveThresholdBps: vi.fn().mockResolvedValue(100) } as unknown as VolatilityService;
     const metrics = { computeMetrics: vi.fn().mockReturnValue({}), printReport: vi.fn() } as unknown as MetricsService;
+    const shares = new ShareLedgerService(dbPath, 0);
     const config: Config = { ...testConfig, dbPath, symbol: 'SOL-BRL', autonomousWeeklyRotation: true, minPortfolioValueBrl: 1_000_000 };
 
     // Pre-mark this week as already decided.
@@ -640,7 +673,7 @@ describe('RebalancerBot — autonomous weekly rotation', () => {
     monday.setUTCDate(monday.getUTCDate() - ((dow + 6) % 7));
     setDbConfig('autonomous_rotation_last_week_brt', monday.toISOString().slice(0, 10), dbPath);
 
-    const bot = new RebalancerBot(adapter, history, pnl, costBasis, tax, volatility, metrics, config, vi.fn());
+    const bot = new RebalancerBot(adapter, history, pnl, costBasis, tax, volatility, metrics, shares, config, vi.fn());
     await bot.checkAndRebalance();
 
     expect(scanSpy).not.toHaveBeenCalled();

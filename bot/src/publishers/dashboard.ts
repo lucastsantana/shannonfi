@@ -12,8 +12,10 @@
 import axios from 'axios';
 import * as fs from 'fs';
 import * as path from 'path';
-import { loadConfig } from '../config';
-import { getDb } from '../core/tracker/db';
+import { Config, loadConfig } from '../config';
+import { getDb, getDbConfig } from '../core/tracker/db';
+import { ShareLedgerService } from '../core/tracker/shares';
+import { FxRateService } from '../core/tracker/fxrate';
 import { GOOGLE_FONTS_HTML, DARK_THEME_VARS, SHARED_TEXT_CLASSES } from './theme';
 
 // ─── Row types ────────────────────────────────────────────────────────────────
@@ -33,6 +35,8 @@ interface TradeRow {
   after_deviation_bps: number;
   trade_date_brt: string;
   status: string;
+  shares_outstanding: number | null;
+  nav_per_share_before: number | null;
 }
 
 interface SnapshotRow {
@@ -46,6 +50,7 @@ interface SnapshotRow {
   effective_threshold_bps: number;
   rebalanced_today: number;
   base_asset: string | null;
+  nav_per_share: number | null;
 }
 
 interface CostBasisRow {
@@ -99,9 +104,12 @@ interface BenchmarkStats {
 }
 
 interface DashboardData {
+  dbPath: string;
   symbol: string;
   baseAsset: string;
+  exchange: Config['exchange'];
   exchangeName: string;
+  ptaxRate: number | null;
   hasRotated: boolean;     // true if this instance's history spans more than one base asset
   allInLabel: string;      // "ALL-IN ${baseAsset}" normally; a rotation-aware label once hasRotated
   trades: TradeRow[];
@@ -120,13 +128,43 @@ interface DashboardData {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-async function fetchCurrentPrice(symbol: string): Promise<number | null> {
+/**
+ * Fetches the current base-asset price in BRL from whichever exchange this instance
+ * trades on, using only public (no-credential) endpoints — dashboard.ts intentionally
+ * never needs Trade-permissioned keys. Coinbase has no BRL pairs (see coinbase/adapter.ts's
+ * file header): its public ticker returns a USDC price, converted to BRL with the same
+ * PTAX rate (FxRateService) the live adapter uses. Returns null on any failure — callers
+ * already fall back to the last recorded snapshot price.
+ */
+async function fetchCurrentPrice(config: Config): Promise<number | null> {
   try {
+    if (config.exchange === 'coinbase') {
+      // The public Coinbase Exchange ticker API only lists USD-quoted products — the
+      // USDC pair this instance actually trades (e.g. BTC-USDC) comes back "delisted"
+      // there even though it's live on Advanced Trade. USDC is already treated as 1:1
+      // with USD throughout this codebase (see coinbase/adapter.ts), so substituting
+      // the quote currency here is exactly that same convention, not a new one.
+      const baseAsset = config.symbol.split('-')[0]!;
+      const res = await axios.get<{ price: string }>(
+        `https://api.exchange.coinbase.com/products/${baseAsset}-USD/ticker`,
+        { timeout: 6000, headers: { 'User-Agent': 'shannonfi-dashboard' } },
+      );
+      const usdPrice = parseFloat(res.data.price);
+      return Number.isFinite(usdPrice) ? usdPrice : null;
+    }
+    if (config.exchange === 'binance') {
+      const res = await axios.get<{ price: string }>(
+        'https://api.binance.com/api/v3/ticker/price',
+        { params: { symbol: config.symbol.replace('-', '') }, timeout: 6000 },
+      );
+      const price = parseFloat(res.data.price);
+      return Number.isFinite(price) ? price : null;
+    }
     const res = await axios.get<Array<{ pair: string; last: string }>>(
       'https://api.mercadobitcoin.net/api/v4/tickers',
-      { params: { symbols: symbol }, timeout: 6000 },
+      { params: { symbols: config.symbol }, timeout: 6000 },
     );
-    const ticker = res.data.find((t) => t.pair === symbol);
+    const ticker = res.data.find((t) => t.pair === config.symbol);
     return ticker ? parseFloat(ticker.last) : null;
   } catch {
     return null;
@@ -159,6 +197,11 @@ function fmtBrl(n: number, plus = false): string {
 function fmtPct(n: number): string {
   const p = (n * 100).toFixed(2);
   return n >= 0 ? `+${p}%` : `${p}%`;
+}
+
+/** Nav/share (a synthetic per-unit price, not a raw cash amount) needs more precision than fmtBrl's 2 decimals. */
+function fmtShare(n: number): string {
+  return `R$${n.toFixed(4)}`;
 }
 
 function gainCls(n: number): string {
@@ -251,14 +294,27 @@ function generateHtml(d: DashboardData): string {
   const liveBrl     = lastSnap?.brl_balance  ?? 0;
   const liveBaseVal = liveBase * livePrice;
   const liveTotal   = liveBaseVal + liveBrl;
-  const liveReturn  = d.initialTotal > 0 ? (liveTotal - d.initialTotal) / d.initialTotal : 0;
+
+  // Return/gain are nav/share-based (capital-flow-adjusted) whenever available — a
+  // deposit/withdrawal moves liveTotal but not nav/share, unlike the old raw-delta
+  // formula. Falls back to the raw totalValueBrl delta if nav/share hasn't been
+  // backfilled yet for this instance (see ShareLedgerService, backfillShares()).
+  const initialNavPerShare = d.snapshots[0]?.nav_per_share ?? null;
+  const shares = new ShareLedgerService(d.dbPath, 0);
+  const liveShareState = shares.getShareState(liveTotal);
+  const liveNavPerShare = liveShareState.navPerShare;
+  const liveSharesOutstanding = liveShareState.sharesOutstanding;
+  const liveReturn = initialNavPerShare && initialNavPerShare > 0
+    ? (liveNavPerShare / initialNavPerShare) - 1
+    : (d.initialTotal > 0 ? (liveTotal - d.initialTotal) / d.initialTotal : 0);
+  const netGain = d.initialTotal * liveReturn;
+
   const liveDevSmaller = Math.min(liveBaseVal, liveBrl);
   const liveDev        = liveDevSmaller > 0
     ? Math.round((Math.abs(liveBaseVal - liveBrl) / liveDevSmaller) * 10_000)
     : 0;
   const avgCost     = d.costBasis?.average_cost_brl ?? 0;
   const totalBase   = d.costBasis?.total_base ?? 0;
-  const netGain     = d.initialTotal > 0 ? liveTotal - d.initialTotal : 0;
   const tradeCount  = d.trades.length;
 
   const retCls   = liveReturn >= 0 ? 'gain' : 'loss';
@@ -319,6 +375,8 @@ function generateHtml(d: DashboardData): string {
           <td class="num loss">&#8722;${fmtBrl(t.fee_brl)}</td>
           <td class="num">${gainCell}</td>
           <td class="num dim">${t.before_deviation_bps ?? '—'}&#8594;${t.after_deviation_bps ?? '—'}</td>
+          <td class="num dim">${t.nav_per_share_before != null ? fmtShare(t.nav_per_share_before) : '—'}</td>
+          <td class="num dim">${t.shares_outstanding != null ? t.shares_outstanding.toFixed(4) : '—'}</td>
         </tr>`;
   }).join('');
 
@@ -548,7 +606,7 @@ function generateHtml(d: DashboardData): string {
     /* ── Score bar ──────────────────────────────────── */
     .scores {
       display: grid;
-      grid-template-columns: repeat(5, 1fr);
+      grid-template-columns: repeat(7, 1fr);
       border: 1px solid var(--b);
       margin-bottom: 16px;
       background: var(--p);
@@ -828,7 +886,9 @@ function generateHtml(d: DashboardData): string {
     @media (max-width: 900px) {
       .panels { grid-template-columns: 1fr; }
       .scores { grid-template-columns: repeat(3, 1fr); }
-      .scores .score:nth-child(3) { border-right: none; }
+      /* 7 tiles wrap into rows of 3,3,1 — nth-child(3n) removes the border from every
+         row-last tile (3, 6); the lone 7th tile is already handled by :last-child. */
+      .scores .score:nth-child(3n) { border-right: none; }
       .chart-wrap { height: 320px; }
     }
 
@@ -840,6 +900,9 @@ function generateHtml(d: DashboardData): string {
       .hdr-meta { font-size: .76em; letter-spacing: 1.5px; gap: 3px 6px; }
       .hdr-gen  { font-size: .74em; gap: 3px 8px; }
       .scores { grid-template-columns: repeat(2, 1fr); }
+      /* Rows of 2,2,2,1: restore child 3's border (it's row-FIRST at 2 columns, even
+         though the 900px breakpoint's 3n rule removed it for a 3-column row); 2n already
+         covers every row-last tile (2, 4, 6) correctly, child 7 handled by :last-child. */
       .scores .score:nth-child(3) { border-right: 1px solid var(--b); }
       .scores .score:nth-child(2n) { border-right: none; }
       .score { padding: 10px 4px; }
@@ -902,11 +965,19 @@ function generateHtml(d: DashboardData): string {
   </div>
   <div class="score">
     <div class="score-lbl">&#128200; NET GAIN</div>
-    <div class="score-val ${gainCls(netGain)}" data-live="net-gain" data-base-class="score-val" data-initial="${d.initialTotal.toFixed(2)}">${fmtBrl(netGain, true)}</div>
+    <div class="score-val ${gainCls(netGain)}" data-live="net-gain" data-base-class="score-val">${fmtBrl(netGain, true)}</div>
   </div>
   <div class="score">
     <div class="score-lbl">&#127919; RETURN</div>
     <div class="score-val ${retCls}" data-live="return" data-base-class="score-val">${fmtPct(liveReturn)}</div>
+  </div>
+  <div class="score">
+    <div class="score-lbl">&#128178; SHARE PRICE</div>
+    <div class="score-val" data-live="share-price">${fmtShare(liveNavPerShare)}</div>
+  </div>
+  <div class="score">
+    <div class="score-lbl">&#129518; OUTSTANDING SHARES</div>
+    <div class="score-val">${liveSharesOutstanding.toFixed(4)}</div>
   </div>
   <div class="score">
     <div class="score-lbl">&#9889; REBALANCES</div>
@@ -919,8 +990,10 @@ function generateHtml(d: DashboardData): string {
 </div>
 <div class="fn-inline fn-inline-group">
   <p><strong class="cyan">PORTFOLIO</strong> &mdash; current total value: live ${d.baseAsset} balance &times; live price, plus BRL cash on hand. Recomputed every 30s from the public ticker.</p>
-  <p><strong class="cyan">NET GAIN</strong> &mdash; realized gain from closed SELL trades, minus all exchange fees paid across every trade. Does not include unrealized (mark-to-market) gains on the base asset currently held &mdash; see RETURN for that.</p>
-  <p><strong class="cyan">RETURN</strong> &mdash; (current PORTFOLIO minus INITIAL portfolio value at the first recorded snapshot) divided by INITIAL. Updates live; includes unrealized gains/losses on the held position.</p>
+  <p><strong class="cyan">NET GAIN</strong> &mdash; RETURN (see below) expressed in BRL, scaled to the INITIAL portfolio value. Includes unrealized (mark-to-market) gains/losses on the base asset currently held.</p>
+  <p><strong class="cyan">RETURN</strong> &mdash; nav-per-share performance since the first recorded snapshot: capital-flow-adjusted, so deposits/withdrawals into the portfolio don't get counted as trading gains/losses the way a raw value comparison would. Updates live; includes unrealized gains/losses on the held position. Falls back to a raw INITIAL-vs-current comparison if this instance predates fund-share accounting.</p>
+  <p><strong class="cyan">SHARE PRICE</strong> &mdash; nav/share: PORTFOLIO divided by OUTSTANDING SHARES. Deposits/withdrawals issue or redeem shares at this price without moving it, so it only changes from trading performance. Updates live. An instance's initial funding is anchored at 100 shares (see OUTSTANDING SHARES), so this bootstraps to the initial portfolio value &divide; 100 rather than a round number.</p>
+  <p><strong class="cyan">OUTSTANDING SHARES</strong> &mdash; total shares issued so far. An instance starts at 100 shares as of its first recorded funding; only changes after that when a deposit or withdrawal is recorded (<code>npm run record-flow</code>) — never from a trade itself. Static for this page load; regenerate the dashboard after recording a flow to see the new count.</p>
   <p><strong class="cyan">REBALANCES</strong> &mdash; count of executed trades (FILLED or DRY_RUN) since the bot started tracking this instance.</p>
 </div>
 
@@ -1019,13 +1092,15 @@ function generateHtml(d: DashboardData): string {
           <th scope="col" class="num">FEE</th>
           <th scope="col" class="num">GAIN / LOSS</th>
           <th scope="col" class="num">DEV BPS</th>
+          <th scope="col" class="num">SHARE PRICE</th>
+          <th scope="col" class="num">SHARES O/S</th>
         </tr>
       </thead>
       <tbody>${tradeRows}</tbody>
     </table>
   </div>
   <div class="fn-inline">
-    <p><strong class="cyan">TRADE HISTORY</strong> &mdash; DEV BPS shows the deviation immediately before &#8594; immediately after each trade, i.e. how off-target the portfolio was right before it fired and how close to 50/50 it landed afterward.</p>
+    <p><strong class="cyan">TRADE HISTORY</strong> &mdash; DEV BPS shows the deviation immediately before &#8594; immediately after each trade, i.e. how off-target the portfolio was right before it fired and how close to 50/50 it landed afterward. <strong class="cyan">SHARE PRICE</strong> and <strong class="cyan">SHARES O/S</strong> are reference values: nav/share and shares outstanding at the moment of that trade (a trade itself never changes the share count — only a recorded deposit/withdrawal does). Shown as &#8212; for trades recorded before fund-share accounting existed.</p>
   </div>
 </section>
 
@@ -1140,8 +1215,41 @@ var ALLIN_LABEL = '${d.allInLabel}';
 var BBAL  = ${liveBase};
 var QBAL  = ${liveBrl};
 var INIT  = ${d.initialTotal};
+// Fund-share (nav/share) baseline for capital-flow-adjusted return — see ShareLedgerService.
+// SHARES is the shares-outstanding count as of page generation; it only changes when a
+// deposit/withdrawal is recorded (a manual, out-of-band action), so treating it as constant
+// between 30s refreshes is safe — the page just needs regenerating after a flow to pick up
+// a new SHARES value. NAV0 null means this instance predates fund-share accounting.
+var NAV0   = ${initialNavPerShare != null ? initialNavPerShare : 'null'};
+var SHARES = ${liveSharesOutstanding};
 var BENCH = ${benchJson};
-var API   = 'https://api.mercadobitcoin.net/api/v4/tickers?symbols=' + SYM;
+
+// Live-price polling: which public ticker to hit, and how to read its response, both
+// depend on which exchange this instance trades on. Coinbase has no BRL pairs — PTAX is
+// baked in at generation time (BACEN has no browser-friendly CORS story) rather than
+// fetched client-side, and only refreshed each time the dashboard is regenerated.
+var EXCHANGE = '${d.exchange}';
+var PTAX = ${d.ptaxRate != null ? d.ptaxRate : 'null'};
+var API =
+  // Coinbase Exchange's public ticker only lists USD pairs — BASE-USD, not the traded
+  // BASE-USDC symbol (see fetchCurrentPrice()'s comment server-side for why USD is safe
+  // to substitute here).
+  EXCHANGE === 'coinbase' ? 'https://api.exchange.coinbase.com/products/' + BASE + '-USD/ticker' :
+  EXCHANGE === 'binance'  ? 'https://api.binance.com/api/v3/ticker/price?symbol=' + SYM.replace('-', '') :
+  'https://api.mercadobitcoin.net/api/v4/tickers?symbols=' + SYM;
+
+function parseTickerPrice(json) {
+  if (EXCHANGE === 'coinbase') {
+    var usd = parseFloat(json.price);
+    return (isFinite(usd) && PTAX) ? usd * PTAX : null;
+  }
+  if (EXCHANGE === 'binance') {
+    var p = parseFloat(json.price);
+    return isFinite(p) ? p : null;
+  }
+  var tick = json.find(function (t) { return t.pair === SYM; });
+  return tick ? parseFloat(tick.last) : null;
+}
 
 // ── Theme-aware color reader ─────────────────────────────────────────────────
 // Chart.js draws to a <canvas>, which can't resolve CSS var() itself — colors
@@ -1392,13 +1500,13 @@ function repaintChartForTheme() {
   function refresh() {
     fetch(API)
       .then(function (r) { return r.json(); })
-      .then(function (arr) {
-        var tick = arr.find(function (t) { return t.pair === SYM; });
-        if (!tick) return;
-        var price = parseFloat(tick.last);
+      .then(function (json) {
+        var price = parseTickerPrice(json);
+        if (price == null) return;
         var bval  = BBAL * price;
         var tot   = bval + QBAL;
-        var ret   = (tot - INIT) / INIT;
+        var navNow = SHARES > 0 ? tot / SHARES : 0;
+        var ret   = (NAV0 && NAV0 > 0) ? (navNow / NAV0) - 1 : (tot - INIT) / INIT;
         var rc    = gC(ret);
 
         document.querySelectorAll('[data-live="price"]').forEach(function (el) {
@@ -1428,11 +1536,13 @@ function repaintChartForTheme() {
           el.className = (el.dataset.baseClass || '') + ' ' + dc;
         });
         document.querySelectorAll('[data-live="net-gain"]').forEach(function (el) {
-          var init = parseFloat(el.dataset.initial || '0');
-          var ng = tot - init;
+          var ng = INIT * ret;
           var ngc = ng >= 0 ? 'gain' : 'loss';
           el.textContent = (ng >= 0 ? '+' : '') + 'R$' + ng.toFixed(2);
           el.className = (el.dataset.baseClass || '') + ' ' + ngc;
+        });
+        document.querySelectorAll('[data-live="share-price"]').forEach(function (el) {
+          el.textContent = 'R$' + navNow.toFixed(4);
         });
         var now = new Date();
         var brtMs = now.getTime() - 3 * 60 * 60 * 1000;
@@ -1532,7 +1642,14 @@ async function main(): Promise<void> {
   const outIdx  = args.indexOf('--output');
   const outArg  = outIdx  !== -1 ? args[outIdx  + 1] : undefined;
 
-  const config    = loadConfig(cfgPath);
+  const config = loadConfig(cfgPath);
+
+  // The DB, not the YAML file, is the source of truth for which symbol this instance
+  // is *currently* trading — asset rotation updates current_symbol without a restart
+  // (see index.ts, which does this same resolution; dashboard.ts is a separate process
+  // reading the same DB, so it needs to do it too, or it fetches the wrong asset's
+  // live price entirely once a rotation has happened).
+  config.symbol = getDbConfig('current_symbol', config.symbol, config.dbPath) ?? config.symbol;
   const baseAsset = config.symbol.split('-')[0]!;
 
   console.log(`\n=== Dashboard Generator: ${config.symbol} ===`);
@@ -1543,13 +1660,14 @@ async function main(): Promise<void> {
   const trades = db.prepare(`
     SELECT id, timestamp, direction, base_amount_filled, brl_amount_filled, fill_price,
            fee_brl, realized_gain_brl, before_total_value, after_total_value,
-           before_deviation_bps, after_deviation_bps, trade_date_brt, status
+           before_deviation_bps, after_deviation_bps, trade_date_brt, status,
+           shares_outstanding, nav_per_share_before
     FROM trades WHERE status IN ('FILLED','DRY_RUN') ORDER BY timestamp ASC
   `).all() as TradeRow[];
 
   const snapshots = db.prepare(`
     SELECT date_brt, timestamp, total_value_brl, base_balance, brl_balance, base_price,
-           base_ratio_bps, effective_threshold_bps, rebalanced_today, base_asset
+           base_ratio_bps, effective_threshold_bps, rebalanced_today, base_asset, nav_per_share
     FROM portfolio_snapshots ORDER BY date_brt ASC
   `).all() as SnapshotRow[];
 
@@ -1566,7 +1684,13 @@ async function main(): Promise<void> {
   console.log(`Trades: ${trades.length}  Snapshots: ${snapshots.length}`);
 
   process.stdout.write('Fetching live price... ');
-  const currentPrice = await fetchCurrentPrice(config.symbol);
+  // Coinbase's public ticker returns a USD price — PTAX-convert it to BRL, same
+  // conversion the live adapter applies (FxRateService). Also baked into the page for
+  // the client-side 30s refresh, so it doesn't need a (likely CORS-blocked) browser-side
+  // BACEN fetch — see the "Baked-in constants" script block below.
+  const ptaxRate = config.exchange === 'coinbase' ? await new FxRateService().getUsdBrlRate() : null;
+  const rawPrice = await fetchCurrentPrice(config);
+  const currentPrice = rawPrice != null ? rawPrice * (ptaxRate ?? 1) : null;
   const lastSnap     = snapshots[snapshots.length - 1];
   console.log(currentPrice
     ? `R$${currentPrice.toFixed(2)} (last snapshot: R$${lastSnap?.base_price.toFixed(2) ?? '—'})`
@@ -1584,6 +1708,17 @@ async function main(): Promise<void> {
   const initialTotal = firstSnap?.total_value_brl ?? 0;
   const initialPrice = firstSnap?.base_price      ?? 1;
 
+  // nav/share (fund-share accounting — see ShareLedgerService) rebased onto initialTotal
+  // so the "Shannon's Demon" line stays comparable in BRL terms to the 50/50 and all-in
+  // benchmarks, but tracks true trading performance rather than raw total_value_brl —
+  // which would otherwise jump on every deposit/withdrawal as if it were a trading gain.
+  // Falls back to raw total_value_brl if nav/share hasn't been backfilled yet (dashboard.ts
+  // is a read-only renderer; backfillShares() runs as part of the bot's own startup, not here).
+  const initialNavPerShare = firstSnap?.nav_per_share ?? null;
+  const navAvailable = initialNavPerShare != null && initialNavPerShare > 0;
+  const shannonValueFor = (s: SnapshotRow): number =>
+    navAvailable ? initialTotal * ((s.nav_per_share ?? initialNavPerShare!) / initialNavPerShare!) : s.total_value_brl;
+
   const distinctAssets = new Set(snapshots.map((s) => s.base_asset).filter((a): a is string => !!a));
   const hasRotated = distinctAssets.size > 1;
 
@@ -1598,7 +1733,7 @@ async function main(): Promise<void> {
   let prevPrice       = initialPrice;
 
   const benchmark: BenchmarkRow[] = snapshots.map((s, i) => {
-    const shannon       = s.total_value_brl;
+    const shannon       = shannonValueFor(s);
     const currentAsset  = s.base_asset ?? baseAsset;
     const rotatedHere   = i > 0 && currentAsset !== prevAsset;
 
@@ -1630,7 +1765,10 @@ async function main(): Promise<void> {
   });
 
   if (currentPrice && lastSnap && Math.abs(currentPrice - lastSnap.base_price) > 0.005) {
-    const shannon = lastSnap.base_balance * currentPrice + lastSnap.brl_balance;
+    const liveTotalForBench = lastSnap.base_balance * currentPrice + lastSnap.brl_balance;
+    const shannon = navAvailable
+      ? initialTotal * (new ShareLedgerService(config.dbPath, 0).getShareState(liveTotalForBench).navPerShare / initialNavPerShare!)
+      : liveTotalForBench;
     const bhHalf  = runningHalfQty * currentPrice + runningHalfBrl;
     const bhAllIn = runningAllInQty * currentPrice;
     benchmark.push({
@@ -1667,12 +1805,16 @@ async function main(): Promise<void> {
   const todayBRT   = toDateBRT(new Date().toISOString());
   const daysActive = firstSnap ? daysElapsed(firstSnap.date_brt, todayBRT) : 0;
 
-  const exchangeName = config.exchange === 'mercadobitcoin' ? 'Mercado Bitcoin' : 'Binance';
+  const exchangeName =
+    config.exchange === 'mercadobitcoin' ? 'Mercado Bitcoin'
+    : config.exchange === 'binance' ? 'Binance'
+    : 'Coinbase';
 
   const allInLabel = hasRotated ? 'ALL-IN (ROLLING)' : `ALL-IN ${baseAsset}`;
 
   const data: DashboardData = {
-    symbol: config.symbol, baseAsset, exchangeName, hasRotated, allInLabel,
+    dbPath: config.dbPath,
+    symbol: config.symbol, baseAsset, exchange: config.exchange, exchangeName, ptaxRate, hasRotated, allInLabel,
     trades, snapshots, costBasis: costBasis ?? null, currentPrice,
     generatedAt: toBRT(new Date().toISOString()),
     benchmark, benchmarkStats, initialTotal, totalRealizedGain, totalFees, daysActive, monthlySales,

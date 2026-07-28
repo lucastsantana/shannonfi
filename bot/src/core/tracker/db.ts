@@ -7,7 +7,9 @@
 import Database from 'better-sqlite3';
 import path from 'path';
 import fs from 'fs';
+import { v4 as uuidv4 } from 'uuid';
 import { logger } from './logger';
+import { DEFAULT_INITIAL_SHARES } from '../../constants';
 
 let instance: Database.Database | null = null;
 let lastPath: string | null = null;
@@ -113,6 +115,73 @@ export function backfillBaseAsset(baseAsset: string, dbPath?: string): void {
 }
 
 /**
+ * Backfill fund-share accounting (nav_per_share/total_shares_outstanding) on
+ * portfolio_snapshots rows that predate ShareLedgerService (nav_per_share IS NULL).
+ * Anchors the instance at DEFAULT_INITIAL_SHARES (100) shares as of the first snapshot
+ * with a positive total_value_brl, and rescales every other un-backfilled row against
+ * that same share count — since no capital_flows exist yet for a not-yet-backfilled
+ * instance, shares outstanding is constant across the whole backfilled span, so this
+ * exactly reproduces (in nav/share terms) the total_value_brl return shape the instance
+ * already had, rather than discarding pre-feature history.
+ *
+ * The first time this runs for an instance (capital_flows is still empty), it also
+ * records that anchor's total_value_brl as a genesis DEPOSIT in capital_flows — the
+ * instance's original funding becomes a real, browsable ledger entry (100 shares issued
+ * at nav/share = anchor value ÷ 100) rather than something only implicit in the
+ * snapshot columns.
+ *
+ * Idempotent (only touches NULL snapshot rows; only ever inserts one genesis flow) —
+ * safe to call on every startup. No-op if every un-backfilled row still has zero value
+ * (nothing to anchor to yet; retried next run).
+ */
+export function backfillShares(dbPath?: string): void {
+  const db = getDb(dbPath);
+  const rows = db
+    .prepare('SELECT date_brt, timestamp, total_value_brl, exchange FROM portfolio_snapshots WHERE nav_per_share IS NULL ORDER BY date_brt ASC')
+    .all() as { date_brt: string; timestamp: string; total_value_brl: number; exchange: string }[];
+  if (rows.length === 0) return;
+
+  const anchor = rows.find((r) => r.total_value_brl > 0);
+  if (!anchor) return;
+
+  const shares = DEFAULT_INITIAL_SHARES;
+  const navPerShareAtAnchor = anchor.total_value_brl / shares;
+  const existingFlows = (db.prepare('SELECT COUNT(*) as n FROM capital_flows').get() as { n: number }).n;
+
+  const updateSnapshot = db.prepare(
+    'UPDATE portfolio_snapshots SET total_shares_outstanding = ?, nav_per_share = ? WHERE date_brt = ?',
+  );
+  const insertGenesisFlow = db.prepare(`
+    INSERT INTO capital_flows (
+      id, timestamp, date_brt, type, brl_amount, nav_per_share_before, shares_delta,
+      total_shares_after, total_value_brl_before, total_value_brl_after, exchange, note
+    ) VALUES (?, ?, ?, 'DEPOSIT', ?, ?, ?, ?, 0, ?, ?, ?)
+  `);
+
+  const tx = db.transaction(() => {
+    for (const r of rows) {
+      updateSnapshot.run(shares, r.total_value_brl / shares, r.date_brt);
+    }
+    if (existingFlows === 0) {
+      insertGenesisFlow.run(
+        uuidv4(), anchor.timestamp, anchor.date_brt, anchor.total_value_brl,
+        navPerShareAtAnchor, shares, shares, anchor.total_value_brl, anchor.exchange,
+        'Backfilled: initial portfolio value recorded as the inception deposit',
+      );
+    }
+  });
+  tx();
+
+  logger.info('Backfilled fund-share accounting for pre-existing snapshots', {
+    rowsBackfilled: rows.length,
+    anchorDateBRT: anchor.date_brt,
+    initialShares: shares,
+    navPerShareAtAnchor,
+    genesisFlowRecorded: existingFlows === 0,
+  });
+}
+
+/**
  * Add a column to a table if it doesn't already exist. No-op if present
  * (idempotent) — safe to call on every startup, same as runMigrations() itself.
  */
@@ -166,7 +235,13 @@ function runMigrations(db: Database.Database): void {
       after_total_value   REAL,
       after_base_ratio_bps INTEGER,
       after_deviation_bps INTEGER,
-      after_timestamp     TEXT
+      after_timestamp     TEXT,
+
+      -- fund-share accounting (see ShareLedgerService) — populated by RebalancerBot,
+      -- null for trades recorded before this feature existed
+      shares_outstanding    REAL,
+      nav_per_share_before  REAL,
+      nav_per_share_after   REAL
     );
 
     CREATE TABLE IF NOT EXISTS portfolio_snapshots (
@@ -180,7 +255,24 @@ function runMigrations(db: Database.Database): void {
       effective_threshold_bps INTEGER NOT NULL,
       rebalanced_today      INTEGER NOT NULL DEFAULT 0,
       exchange              TEXT NOT NULL DEFAULT 'mercadobitcoin',
-      base_asset            TEXT
+      base_asset            TEXT,
+      total_shares_outstanding REAL,
+      nav_per_share          REAL
+    );
+
+    CREATE TABLE IF NOT EXISTS capital_flows (
+      id                     TEXT PRIMARY KEY,
+      timestamp              TEXT NOT NULL,
+      date_brt               TEXT NOT NULL,
+      type                   TEXT NOT NULL,
+      brl_amount             REAL NOT NULL,
+      nav_per_share_before   REAL NOT NULL,
+      shares_delta           REAL NOT NULL,
+      total_shares_after     REAL NOT NULL,
+      total_value_brl_before REAL NOT NULL,
+      total_value_brl_after  REAL NOT NULL,
+      exchange               TEXT NOT NULL,
+      note                   TEXT
     );
 
     CREATE TABLE IF NOT EXISTS tax_events (
@@ -245,6 +337,7 @@ function runMigrations(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_scans_timestamp ON scans(timestamp);
     CREATE INDEX IF NOT EXISTS idx_scans_status ON scans(status);
     CREATE INDEX IF NOT EXISTS idx_pending_rotation_status ON pending_rotation(status);
+    CREATE INDEX IF NOT EXISTS idx_capital_flows_date ON capital_flows(date_brt);
   `);
 
   // Migrate direction strings from legacy 'BUY_SOL'/'SELL_SOL' to 'BUY_BASE'/'SELL_BASE'
@@ -277,6 +370,18 @@ function runMigrations(db: Database.Database): void {
   addColumnIfMissing(db, 'pending_rotation', 'liquidation_trade_id', 'TEXT');
   addColumnIfMissing(db, 'pending_rotation', 'reacquisition_trade_id', 'TEXT');
   addColumnIfMissing(db, 'pending_rotation', 'requested_by', "TEXT NOT NULL DEFAULT 'telegram_manual'");
+
+  // Fund-share (NAV-per-share) accounting: additive columns for instances that predate
+  // this feature. portfolio_snapshots rows are backfilled by backfillShares() (see
+  // below in this file) so the return/CAGR/drawdown series stays continuous; trades
+  // rows are NOT backfilled — they're a per-trade reference/audit field for the
+  // dashboard's trade table, nothing downstream depends on historical trades having
+  // them, so older trades simply show blank rather than a fabricated value.
+  addColumnIfMissing(db, 'portfolio_snapshots', 'total_shares_outstanding', 'REAL');
+  addColumnIfMissing(db, 'portfolio_snapshots', 'nav_per_share', 'REAL');
+  addColumnIfMissing(db, 'trades', 'shares_outstanding', 'REAL');
+  addColumnIfMissing(db, 'trades', 'nav_per_share_before', 'REAL');
+  addColumnIfMissing(db, 'trades', 'nav_per_share_after', 'REAL');
 
   logger.info('Database schema initialized');
 }
