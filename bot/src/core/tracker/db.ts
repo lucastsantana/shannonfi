@@ -130,55 +130,94 @@ export function backfillBaseAsset(baseAsset: string, dbPath?: string): void {
  * at nav/share = anchor value ÷ 100) rather than something only implicit in the
  * snapshot columns.
  *
- * Idempotent (only touches NULL snapshot rows; only ever inserts one genesis flow) —
- * safe to call on every startup. No-op if every un-backfilled row still has zero value
- * (nothing to anchor to yet; retried next run).
+ * Separately (and on every call, not gated by the snapshot-backfill above having
+ * anything left to do), also backfills trades.shares_outstanding/nav_per_share_before/
+ * nav_per_share_after for any trade still missing them, using whichever capital_flows
+ * row was in effect as of that trade's timestamp — this is what makes the dashboard's
+ * trade-history table show real reference values for trades that predate
+ * ShareLedgerService, rather than leaving them blank forever. Purely a reference field:
+ * nothing else in the engine reads trades.shares_outstanding, so getting this slightly
+ * wrong for an edge case is not a correctness risk the way the snapshot backfill is.
+ *
+ * Idempotent (only touches NULL rows; only ever inserts one genesis flow) — safe to
+ * call on every startup.
  */
 export function backfillShares(dbPath?: string): void {
   const db = getDb(dbPath);
   const rows = db
     .prepare('SELECT date_brt, timestamp, total_value_brl, exchange FROM portfolio_snapshots WHERE nav_per_share IS NULL ORDER BY date_brt ASC')
     .all() as { date_brt: string; timestamp: string; total_value_brl: number; exchange: string }[];
-  if (rows.length === 0) return;
 
   const anchor = rows.find((r) => r.total_value_brl > 0);
-  if (!anchor) return;
+  if (anchor) {
+    const shares = DEFAULT_INITIAL_SHARES;
+    const navPerShareAtAnchor = anchor.total_value_brl / shares;
+    const existingFlows = (db.prepare('SELECT COUNT(*) as n FROM capital_flows').get() as { n: number }).n;
 
-  const shares = DEFAULT_INITIAL_SHARES;
-  const navPerShareAtAnchor = anchor.total_value_brl / shares;
-  const existingFlows = (db.prepare('SELECT COUNT(*) as n FROM capital_flows').get() as { n: number }).n;
+    const updateSnapshot = db.prepare(
+      'UPDATE portfolio_snapshots SET total_shares_outstanding = ?, nav_per_share = ? WHERE date_brt = ?',
+    );
+    const insertGenesisFlow = db.prepare(`
+      INSERT INTO capital_flows (
+        id, timestamp, date_brt, type, brl_amount, nav_per_share_before, shares_delta,
+        total_shares_after, total_value_brl_before, total_value_brl_after, exchange, note
+      ) VALUES (?, ?, ?, 'DEPOSIT', ?, ?, ?, ?, 0, ?, ?, ?)
+    `);
 
-  const updateSnapshot = db.prepare(
-    'UPDATE portfolio_snapshots SET total_shares_outstanding = ?, nav_per_share = ? WHERE date_brt = ?',
-  );
-  const insertGenesisFlow = db.prepare(`
-    INSERT INTO capital_flows (
-      id, timestamp, date_brt, type, brl_amount, nav_per_share_before, shares_delta,
-      total_shares_after, total_value_brl_before, total_value_brl_after, exchange, note
-    ) VALUES (?, ?, ?, 'DEPOSIT', ?, ?, ?, ?, 0, ?, ?, ?)
-  `);
+    const tx = db.transaction(() => {
+      for (const r of rows) {
+        updateSnapshot.run(shares, r.total_value_brl / shares, r.date_brt);
+      }
+      if (existingFlows === 0) {
+        insertGenesisFlow.run(
+          uuidv4(), anchor.timestamp, anchor.date_brt, anchor.total_value_brl,
+          navPerShareAtAnchor, shares, shares, anchor.total_value_brl, anchor.exchange,
+          'Backfilled: initial portfolio value recorded as the inception deposit',
+        );
+      }
+    });
+    tx();
 
-  const tx = db.transaction(() => {
-    for (const r of rows) {
-      updateSnapshot.run(shares, r.total_value_brl / shares, r.date_brt);
-    }
-    if (existingFlows === 0) {
-      insertGenesisFlow.run(
-        uuidv4(), anchor.timestamp, anchor.date_brt, anchor.total_value_brl,
-        navPerShareAtAnchor, shares, shares, anchor.total_value_brl, anchor.exchange,
-        'Backfilled: initial portfolio value recorded as the inception deposit',
-      );
-    }
-  });
-  tx();
+    logger.info('Backfilled fund-share accounting for pre-existing snapshots', {
+      rowsBackfilled: rows.length,
+      anchorDateBRT: anchor.date_brt,
+      initialShares: shares,
+      navPerShareAtAnchor,
+      genesisFlowRecorded: existingFlows === 0,
+    });
+  }
 
-  logger.info('Backfilled fund-share accounting for pre-existing snapshots', {
-    rowsBackfilled: rows.length,
-    anchorDateBRT: anchor.date_brt,
-    initialShares: shares,
-    navPerShareAtAnchor,
-    genesisFlowRecorded: existingFlows === 0,
-  });
+  // The share count "in effect" for a trade is the latest capital_flows row at or before
+  // its timestamp — except an instance's very first trade always fires a few minutes
+  // *before* its first snapshot (persistSnapshot() runs at the end of the cycle the trade
+  // was part of), so it will always predate the genesis flow by construction, not as some
+  // rare fluke. Falling back to the earliest flow overall covers that: there's no share
+  // count change between an instance's true inception and that first recorded flow, so
+  // the genesis count applies retroactively to anything before it too.
+  const tradesBackfilled = db.prepare(`
+    UPDATE trades
+    SET
+      shares_outstanding = COALESCE(
+        (SELECT total_shares_after FROM capital_flows cf WHERE cf.timestamp <= trades.timestamp ORDER BY cf.timestamp DESC LIMIT 1),
+        (SELECT total_shares_after FROM capital_flows cf ORDER BY cf.timestamp ASC LIMIT 1)
+      ),
+      nav_per_share_before = before_total_value / COALESCE(
+        (SELECT total_shares_after FROM capital_flows cf WHERE cf.timestamp <= trades.timestamp ORDER BY cf.timestamp DESC LIMIT 1),
+        (SELECT total_shares_after FROM capital_flows cf ORDER BY cf.timestamp ASC LIMIT 1)
+      ),
+      nav_per_share_after = CASE WHEN after_total_value IS NOT NULL THEN after_total_value / COALESCE(
+        (SELECT total_shares_after FROM capital_flows cf WHERE cf.timestamp <= trades.timestamp ORDER BY cf.timestamp DESC LIMIT 1),
+        (SELECT total_shares_after FROM capital_flows cf ORDER BY cf.timestamp ASC LIMIT 1)
+      ) ELSE NULL END
+    WHERE shares_outstanding IS NULL
+      AND EXISTS (SELECT 1 FROM capital_flows)
+  `).run();
+
+  if (tradesBackfilled.changes > 0) {
+    logger.info('Backfilled fund-share reference fields on pre-existing trades', {
+      tradesBackfilled: tradesBackfilled.changes,
+    });
+  }
 }
 
 /**

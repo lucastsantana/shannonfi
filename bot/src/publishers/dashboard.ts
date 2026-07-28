@@ -376,7 +376,7 @@ function generateHtml(d: DashboardData): string {
           <td class="num">${gainCell}</td>
           <td class="num dim">${t.before_deviation_bps ?? '—'}&#8594;${t.after_deviation_bps ?? '—'}</td>
           <td class="num dim">${t.nav_per_share_before != null ? fmtShare(t.nav_per_share_before) : '—'}</td>
-          <td class="num dim">${t.shares_outstanding != null ? t.shares_outstanding.toFixed(4) : '—'}</td>
+          <td class="num dim">${t.shares_outstanding != null ? t.shares_outstanding.toFixed(2) : '—'}</td>
         </tr>`;
   }).join('');
 
@@ -977,7 +977,7 @@ function generateHtml(d: DashboardData): string {
   </div>
   <div class="score">
     <div class="score-lbl">&#129518; OUTSTANDING SHARES</div>
-    <div class="score-val">${liveSharesOutstanding.toFixed(4)}</div>
+    <div class="score-val">${liveSharesOutstanding.toFixed(2)}</div>
   </div>
   <div class="score">
     <div class="score-lbl">&#9889; REBALANCES</div>

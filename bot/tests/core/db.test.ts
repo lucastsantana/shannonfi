@@ -149,4 +149,87 @@ describe('db migrations — fund-share accounting backfill', () => {
     const row = db.prepare("SELECT nav_per_share FROM portfolio_snapshots WHERE date_brt = '2026-06-01'").get() as { nav_per_share: number | null };
     expect(row.nav_per_share).toBeNull();
   });
+
+  function insertTrade(
+    db: ReturnType<typeof getDb>,
+    id: string,
+    timestamp: string,
+    beforeTotalValue: number,
+    afterTotalValue: number | null,
+  ) {
+    db.prepare(`
+      INSERT INTO trades (
+        id, client_order_id, exchange, timestamp, direction, brl_amount_target, status, dry_run,
+        before_base_balance, before_brl_balance, before_base_price, before_base_value, before_total_value,
+        before_base_ratio_bps, before_deviation_bps, before_timestamp,
+        after_base_balance, after_brl_balance, after_base_price, after_base_value, after_total_value,
+        after_base_ratio_bps, after_deviation_bps, after_timestamp
+      ) VALUES (
+        ?, 'c1', 'mercadobitcoin', ?, 'BUY_BASE', 100, 'FILLED', 0,
+        0, ?, 10, 0, ?,
+        0, 0, ?,
+        ?, ?, ?, ?, ?,
+        ?, ?, ?
+      )
+    `).run(
+      id, timestamp, beforeTotalValue, beforeTotalValue, timestamp,
+      afterTotalValue != null ? 1 : null, afterTotalValue, afterTotalValue != null ? 10 : null, afterTotalValue, afterTotalValue,
+      afterTotalValue != null ? 0 : null, afterTotalValue != null ? 0 : null, afterTotalValue != null ? timestamp : null,
+    );
+  }
+
+  it('backfills trades.shares_outstanding/nav_per_share_before/after using the applicable capital_flows entry', () => {
+    const path = uniqueMemDbPath();
+    const db = getDb(path);
+    insertSnapshot(db, '2026-06-01', 1000); // anchor: 100 shares, nav/share = 10
+    insertTrade(db, 't1', '2026-06-02T00:00:00Z', 1000, 1100);
+
+    backfillShares(path);
+
+    const trade = db.prepare('SELECT shares_outstanding, nav_per_share_before, nav_per_share_after FROM trades WHERE id = ?').get('t1') as
+      { shares_outstanding: number; nav_per_share_before: number; nav_per_share_after: number };
+    expect(trade.shares_outstanding).toBe(100);
+    expect(trade.nav_per_share_before).toBeCloseTo(10, 6);  // 1000 / 100
+    expect(trade.nav_per_share_after).toBeCloseTo(11, 6);   // 1100 / 100
+  });
+
+  it('leaves nav_per_share_after NULL for a trade with no portfolioAfter recorded', () => {
+    const path = uniqueMemDbPath();
+    const db = getDb(path);
+    insertSnapshot(db, '2026-06-01', 1000);
+    insertTrade(db, 't1', '2026-06-02T00:00:00Z', 1000, null);
+
+    backfillShares(path);
+
+    const trade = db.prepare('SELECT nav_per_share_after FROM trades WHERE id = ?').get('t1') as { nav_per_share_after: number | null };
+    expect(trade.nav_per_share_after).toBeNull();
+  });
+
+  it('falls back to the earliest capital_flows entry for a trade that predates it (e.g. the instance\'s very first trade, which always fires a few minutes before its first snapshot)', () => {
+    const path = uniqueMemDbPath();
+    const db = getDb(path);
+    insertSnapshot(db, '2026-06-01', 1000); // genesis flow lands at this timestamp
+    insertTrade(db, 'before-genesis', '2026-05-31T00:00:00Z', 500, 500); // strictly before the genesis flow's timestamp
+    insertTrade(db, 't1', '2026-06-02T00:00:00Z', 1000, 1100);
+
+    backfillShares(path);
+    backfillShares(path); // second call should be a no-op, not throw or duplicate work
+
+    const before = db.prepare('SELECT shares_outstanding, nav_per_share_before FROM trades WHERE id = ?').get('before-genesis') as
+      { shares_outstanding: number | null; nav_per_share_before: number | null };
+    expect(before.shares_outstanding).toBe(100); // falls back to the genesis flow's share count
+    expect(before.nav_per_share_before).toBeCloseTo(5, 6); // 500 / 100
+
+    const after = db.prepare('SELECT shares_outstanding FROM trades WHERE id = ?').get('t1') as { shares_outstanding: number | null };
+    expect(after.shares_outstanding).toBe(100);
+  });
+
+  it('leaves trades untouched when capital_flows is completely empty', () => {
+    const path = uniqueMemDbPath();
+    const db = getDb(path);
+    insertTrade(db, 't1', '2026-06-02T00:00:00Z', 1000, 1100); // no snapshot ever inserted — nothing to anchor to
+    backfillShares(path);
+    const row = db.prepare('SELECT shares_outstanding FROM trades WHERE id = ?').get('t1') as { shares_outstanding: number | null };
+    expect(row.shares_outstanding).toBeNull();
+  });
 });
