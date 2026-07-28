@@ -16,6 +16,7 @@ import { getDb, getDbConfig, setDbConfig } from './tracker/db';
 import { runAssetScan } from '../scanner/run-scan';
 import { AssetScanner, ScannerAdapter } from '../scanner/scanner';
 import { AssetCandidate, ScanResult } from '../scanner/types';
+import { syncMbCapitalFlows, MbCapitalFlowAdapter } from './capital-flow-sync';
 
 // Small delay between sequential API calls during a rebalance execution,
 // to avoid hitting MB's 60 req/60s limit when multiple calls fire back-to-back.
@@ -35,18 +36,24 @@ interface PendingRotationRow {
  * the adapter — this class never touches USD, FX rates, or exchange credentials.
  *
  * Request budget per cycle (Mercado Bitcoin, no rebalance):
+ *   - syncMbCapitalFlows() → 2 auth requests (list deposits, list withdrawals; see
+ *     capital-flow-sync.ts) — runs unconditionally, ahead of the lazy-eval guards
+ *     below, since a deposit/withdrawal needs recording regardless of whether a
+ *     rebalance fires this cycle. Plus 1 more auth request (getPortfolio) only if a
+ *     new deposit/withdrawal was actually found (rare).
  *   - getPrice()  → 1 public candle request (no auth)
  *   - All guards pass cheaply via in-memory state (no further requests)
- *   Total: 1 request per cycle
+ *   Total: 3 requests per cycle (Mercado Bitcoin only; other exchanges skip the sync)
  *
  * Request budget per cycle (Mercado Bitcoin, rebalance triggered):
+ *   - syncMbCapitalFlows() → 2-3 requests, as above
  *   - getPrice()       → 1 public candle request
  *   - getPortfolio()   → 1 auth request (balances; price reused)
  *   - getCandles()     → 1 request (volatility; cached after first call each day)
  *   - createOrder()    → 1 request
  *   - pollOrderFill()  → up to 10 requests at 3s intervals (30s max)
  *   - getPortfolio()   → 1 request (post-trade snapshot)
- *   Total: ~15 requests worst-case, well within 60 req/60s
+ *   Total: ~18 requests worst-case, well within 60 req/60s
  *
  * Guards (in execution order):
  *   1. drift threshold  — checked against price only; no balance fetch needed
@@ -166,6 +173,11 @@ export class RebalancerBot {
     const todayBRT = new Date().toLocaleDateString('en-CA', {
       timeZone: 'America/Sao_Paulo',
     });
+
+    // ── Auto-detect deposits/withdrawals made directly on the exchange (Mercado
+    // Bitcoin only) and record them as capital flows — first thing, so this cycle's
+    // own snapshot/trade share accounting already reflects any new flow. ──────────
+    await this.syncMbCapitalFlowsIfApplicable();
 
     // ── Autonomous instances decide for themselves first (may insert a freshly
     // APPROVED pending_rotation row) — then the existing execution check immediately
@@ -576,6 +588,27 @@ export class RebalancerBot {
     tradeRecord.navPerShareAfter = tradeRecord.portfolioAfter
       ? this.shares.getShareState(tradeRecord.portfolioAfter.totalValueBrl).navPerShare
       : null;
+  }
+
+  /**
+   * Mercado Bitcoin only (see capital-flow-sync.ts for why). A sync failure (transient
+   * API error, etc.) must not abort the cycle — it's bookkeeping, not core trading
+   * logic — so it's caught and logged rather than propagated.
+   */
+  private async syncMbCapitalFlowsIfApplicable(): Promise<void> {
+    if (this.config.exchange !== 'mercadobitcoin') return;
+    try {
+      await syncMbCapitalFlows(
+        this.adapter as unknown as MbCapitalFlowAdapter,
+        this.shares,
+        this.config.dbPath,
+        this.config.exchange,
+      );
+    } catch (err) {
+      logger.warn('Mercado Bitcoin capital-flow sync failed, continuing cycle', {
+        error: (err as Error).message,
+      });
+    }
   }
 
   /**

@@ -248,6 +248,45 @@ describe('RebalancerBot', () => {
     );
   });
 
+  it('attempts the Mercado Bitcoin capital-flow sync on every cycle', async () => {
+    const { bot, adapter } = makeBot();
+    (adapter as any).listFiatDeposits = vi.fn().mockResolvedValue([]);
+    (adapter as any).listWithdrawals = vi.fn().mockResolvedValue([]);
+    vi.mocked(adapter.getPortfolio).mockResolvedValue(
+      makePortfolio({ baseValueBrl: 3000, brlBalance: 3000, totalValueBrl: 6000, baseRatioBps: 5000, deviationBps: 0 }),
+    );
+
+    await bot.checkAndRebalance();
+
+    expect((adapter as any).listFiatDeposits).toHaveBeenCalled();
+    expect((adapter as any).listWithdrawals).toHaveBeenCalled();
+  });
+
+  it('never attempts the capital-flow sync for a non-Mercado-Bitcoin instance', async () => {
+    const { bot, adapter } = makeBot({}, { exchange: 'coinbase' } as Partial<Config>);
+    (adapter as any).listFiatDeposits = vi.fn().mockResolvedValue([]);
+    (adapter as any).listWithdrawals = vi.fn().mockResolvedValue([]);
+    vi.mocked(adapter.getPortfolio).mockResolvedValue(
+      makePortfolio({ baseValueBrl: 3000, brlBalance: 3000, totalValueBrl: 6000, baseRatioBps: 5000, deviationBps: 0 }),
+    );
+
+    await bot.checkAndRebalance();
+
+    expect((adapter as any).listFiatDeposits).not.toHaveBeenCalled();
+    expect((adapter as any).listWithdrawals).not.toHaveBeenCalled();
+  });
+
+  it('a capital-flow sync failure does not abort the cycle', async () => {
+    const { bot, adapter, history } = makeBot();
+    (adapter as any).listFiatDeposits = vi.fn().mockRejectedValue(new Error('MB API down'));
+    (adapter as any).listWithdrawals = vi.fn().mockResolvedValue([]);
+    vi.mocked(adapter.getPortfolio).mockResolvedValue(makePortfolio());
+    vi.mocked(adapter.executeTrade).mockResolvedValue(makeTradeRecord());
+
+    await expect(bot.checkAndRebalance()).resolves.not.toThrow();
+    expect(history.appendTrade).toHaveBeenCalled();
+  });
+
   it('respects cooldown from prior trade', async () => {
     const thirtyMinsAgo = Date.now() - 30 * 60 * 1000;
     const { bot, adapter } = makeBot({

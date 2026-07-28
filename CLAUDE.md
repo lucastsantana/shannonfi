@@ -186,6 +186,8 @@ Two implementations, selected by `config.exchange` in `bot/src/index.ts`:
 3. Return executed trade with fill price & fee
 4. Per-attempt try-catch: transient 400s don't abort, only final retry throws
 
+**Capital-flow auto-detection:** `adapter.ts` also exposes `listFiatDeposits()`/`listWithdrawals()` — NOT on the `ExchangeAdapter` interface (same "concrete-adapter-only" pattern as `getCandlesWithVolume()`/`getTickersForSymbols()`, which are scanner-specific). These wrap MB's real wallet API (`GET .../wallet/fiat/BRL/deposits`, `GET .../wallet/BRL/withdraw` — confirmed against MB's actual OpenAPI spec, not just the docs page) and list every BRL deposit/withdrawal on the account, however it was made (PIX transfer, MB's own app — not just ones the API itself initiated). `core/capital-flow-sync.ts`'s `syncMbCapitalFlows()` polls both every cycle from `RebalancerBot.checkAndRebalance()` (gated on `config.exchange === 'mercadobitcoin'`, and only there — no equivalent exists for Binance/Coinbase), tracks two checkpoints in `config` (`mb_last_synced_deposit_id`, `mb_last_synced_withdrawal_id`), and auto-calls `ShareLedgerService.recordCapitalFlow()` for any new `CREDITED` deposit or `status: 2` (done) withdrawal — so a PIX top-up or a withdrawal made directly on MB's app gets reflected in NAV/share accounting without a manual `record-flow` CLI call. A sync failure is caught and logged, never aborts the cycle (see `RebalancerBot.syncMbCapitalFlowsIfApplicable()`).
+
 ### Binance Adapter
 **Files:**
 - `adapter.ts` — Main interface impl, dry-run logic
@@ -413,7 +415,7 @@ Both tables also carry a `base_asset TEXT` column (additive migration), recordin
 
 #### `config`, `scans`, `pending_rotation` — asset rotation
 
-- `config` — generic key/value store (`getDbConfig`/`setDbConfig` in `db.ts`). `current_symbol` is the one key actually used today: the DB, not the YAML file, is the source of truth for which symbol an instance is currently trading once rotation is in play.
+- `config` — generic key/value store (`getDbConfig`/`setDbConfig` in `db.ts`). `current_symbol` is the DB (not the YAML file) as the source of truth for which symbol an instance is currently trading once rotation is in play. `mb_last_synced_deposit_id`/`mb_last_synced_withdrawal_id` are the capital-flow auto-detection checkpoints (Mercado Bitcoin only — see "Mercado Bitcoin Adapter" above).
 - `scans` — one row per daily scanner run, full ranked candidate list as a JSON blob (`scan_data`), plus `status` (`COMPLETED` → `APPROVED` once a human picks a candidate via Telegram).
 - `pending_rotation` — one row per rotation request/execution: `from_symbol`, `to_symbol`, `status` (`APPROVED` → `COMPLETED`/`FAILED`), `scan_id`, `liquidation_trade_id`, `reacquisition_trade_id` (links back to the two `trades` rows a rotation produces), `requested_by`.
 
@@ -505,7 +507,7 @@ Secrets stored in GitHub repo settings:
 
 ## Testing
 
-**File:** `bot/tests/`, 135 unit tests (vitest)
+**File:** `bot/tests/`, 155 unit tests (vitest)
 
 **Test Categories (partial list):**
 - `math.test.ts` — ratio, threshold, trade calc
@@ -516,6 +518,7 @@ Secrets stored in GitHub repo settings:
 - `adapter.test.ts` — mocked MB API responses
 - `db.test.ts` — schema migrations, `backfillBaseAsset()`, `backfillShares()`
 - `shares.test.ts` — `ShareLedgerService` nav/share bootstrap, deposits, withdrawals
+- `capital-flow-sync.test.ts` — MB deposit/withdrawal auto-detection, checkpoints, malformed-entry handling
 - `metrics.test.ts` / `pnl.test.ts` — nav/share-based return, unaffected by capital flows
 - `rebalancer.test.ts` — full cycle logic, including asset rotation
 

@@ -2,6 +2,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { MbClient } from './client';
 import { MbEndpoints } from './endpoints';
 import { ExchangeAdapter, CandleResolution, Portfolio, TradeRecord } from '../types';
+import { MbFiatDeposit, MbWithdrawal } from './raw-types';
 import { computeBaseRatioBps, computeDeviationBps, brlToBase, isSlippageAcceptable } from '../../math';
 import { logger } from '../../core/tracker/logger';
 import {
@@ -281,6 +282,27 @@ export class MercadoBitcoinAdapter implements ExchangeAdapter {
       vol: ticker.vol,
       last: ticker.last,
     }));
+  }
+
+  /**
+   * Lists BRL fiat deposits for this account (id, amount, status, created_at, ...).
+   * NOT on the ExchangeAdapter interface — capital-flow-sync-specific (see
+   * core/capital-flow-sync.ts), same pattern as getCandlesWithVolume() below being
+   * scanner-specific. Costs 1 authenticated request.
+   */
+  async listFiatDeposits(limit?: number): Promise<MbFiatDeposit[]> {
+    const accountId = await this.getAccountId();
+    return this.endpoints.listFiatDeposits(accountId, 'BRL', limit);
+  }
+
+  /**
+   * Lists BRL withdrawals for this account (id, quantity, status, created_at, ...).
+   * NOT on the ExchangeAdapter interface — capital-flow-sync-specific.
+   * Costs 1 authenticated request.
+   */
+  async listWithdrawals(pageSize?: number): Promise<MbWithdrawal[]> {
+    const accountId = await this.getAccountId();
+    return this.endpoints.listWithdrawals(accountId, 'BRL', pageSize);
   }
 
   private async pollOrderFill(accountId: string, orderId: string) {

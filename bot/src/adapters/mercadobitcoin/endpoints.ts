@@ -8,6 +8,8 @@ import {
   MbCandlesResponse,
   MbCandleResolution,
   MbTickersResponse,
+  MbFiatDeposit,
+  MbWithdrawal,
 } from './raw-types';
 export class MbEndpoints {
   constructor(private client: MbClient, private symbol: string) {}
@@ -52,5 +54,17 @@ export class MbEndpoints {
   async getTickersForSymbols(symbols: string[]): Promise<MbTickersResponse> {
     const symbolsParam = symbols.join(',');
     return this.client.getPublic<MbTickersResponse>('/tickers', { symbols: symbolsParam });
+  }
+
+  async listFiatDeposits(accountId: string, symbol: string, limit?: number): Promise<MbFiatDeposit[]> {
+    const params: Record<string, number> = {};
+    if (limit !== undefined) params.limit = limit;
+    return this.client.get<MbFiatDeposit[]>(`/accounts/${accountId}/wallet/fiat/${symbol}/deposits`, params);
+  }
+
+  async listWithdrawals(accountId: string, symbol: string, pageSize?: number): Promise<MbWithdrawal[]> {
+    const params: Record<string, number> = {};
+    if (pageSize !== undefined) params.page_size = pageSize;
+    return this.client.get<MbWithdrawal[]>(`/accounts/${accountId}/wallet/${symbol}/withdraw`, params);
   }
 }

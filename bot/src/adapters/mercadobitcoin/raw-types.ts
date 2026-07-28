@@ -108,4 +108,40 @@ export interface MbTicker {
 // Note: /tickers endpoint returns an array, not an object
 export type MbTickersResponse = MbTicker[];
 
+// ─── GET /api/v4/accounts/{accountId}/wallet/fiat/{symbol}/deposits ──────────
+
+export interface MbFiatDepositSource {
+  bank_code?: string;
+  bank_name?: string;
+  account_branch?: string;
+  account_number?: string;
+}
+
+export interface MbFiatDeposit {
+  id: number;
+  amount: string;        // BRL, parse as float
+  coin: string;          // "BRL"
+  status: string;        // e.g. "CREDITED"
+  transferType: string;  // e.g. "pix"
+  source?: MbFiatDepositSource;
+  created_at: number;    // unix seconds
+  updated_at: number;
+}
+
+// ─── GET /api/v4/accounts/{accountId}/wallet/{symbol}/withdraw ───────────────
+
+// 1 = open, 2 = done, 3 = canceled
+export type MbWithdrawStatus = 1 | 2 | 3;
+
+export interface MbWithdrawal {
+  id: number;
+  coin: string;           // "BRL" for fiat withdrawals
+  quantity: string;       // gross amount debited from the account, parse as float
+  net_quantity: string;   // quantity minus fee — what actually arrives at the destination
+  fee: string;
+  status: MbWithdrawStatus;
+  created_at: string;     // unix seconds, as a string
+  updated_at: string;
+}
+
 // Portfolio, TradeRecord, and PortfolioSnapshot are defined in ../types.ts
