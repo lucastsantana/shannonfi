@@ -39,6 +39,16 @@ interface TradeRow {
   nav_per_share_before: number | null;
 }
 
+interface CapitalFlowRow {
+  id: string;
+  timestamp: string;
+  date_brt: string;
+  type: string;
+  brl_amount: number;
+  nav_per_share_before: number | null;
+  total_shares_after: number | null;
+}
+
 interface SnapshotRow {
   date_brt: string;
   timestamp: string;
@@ -113,6 +123,7 @@ interface DashboardData {
   hasRotated: boolean;     // true if this instance's history spans more than one base asset
   allInLabel: string;      // "ALL-IN ${baseAsset}" normally; a rotation-aware label once hasRotated
   trades: TradeRow[];
+  capitalFlows: CapitalFlowRow[];
   snapshots: SnapshotRow[];
   costBasis: CostBasisRow | null;
   currentPrice: number | null;
@@ -351,7 +362,46 @@ function generateHtml(d: DashboardData): string {
         </tr>`).join('');
 
   // ── Trade history rows (newest first) ───────────────────────────────────────
-  const tradeRows = [...d.trades].reverse().map((t, i) => {
+  // Deposits/withdrawals aren't trades — they never change the base-asset position
+  // themselves, only shares_outstanding — but showing them in the same timeline,
+  // highlighted distinctly (magenta accent, INFLOW/OUTFLOW instead of BUY/SELL),
+  // makes it obvious when a capital flow (not trading performance) moved the
+  // portfolio, right alongside whatever rebalance trade it may have triggered.
+  type TimelineEvent =
+    | { kind: 'trade'; ts: string; tradeNum: number; t: TradeRow }
+    | { kind: 'flow'; ts: string; f: CapitalFlowRow };
+
+  const timelineEvents: TimelineEvent[] = [
+    ...d.trades.map((t, i): TimelineEvent => ({ kind: 'trade', ts: t.timestamp, tradeNum: i + 1, t })),
+    ...d.capitalFlows.map((f): TimelineEvent => ({ kind: 'flow', ts: f.timestamp, f })),
+  ].sort((a, b) => a.ts.localeCompare(b.ts));
+
+  const tradeRows = [...timelineEvents].reverse().map((e) => {
+    if (e.kind === 'flow') {
+      const f        = e.f;
+      const isDeposit = f.type === 'DEPOSIT';
+      const fCls     = isDeposit ? 'cyan' : 'yel';
+      const fEmoji   = isDeposit ? '&#128176;' : '&#127974;';
+      const fLabel   = isDeposit ? 'INFLOW' : 'OUTFLOW';
+      const sign     = isDeposit ? '+' : '&#8722;';
+      const timeStr  = toBRT(f.timestamp).slice(11);
+      const dateStr  = (f.date_brt ?? '').slice(5);
+      return `
+        <tr class="flow-row">
+          <td class="dim">&#9670;</td>
+          <td>${dateStr} <small class="dim">${timeStr}</small></td>
+          <td class="${fCls}">${fEmoji} ${fLabel}</td>
+          <td class="num dim">&#8212;</td>
+          <td class="num dim">&#8212;</td>
+          <td class="num ${fCls}">${sign}${fmtBrl(Math.abs(f.brl_amount))}</td>
+          <td class="num dim">&#8212;</td>
+          <td class="num dim">&#8212;</td>
+          <td class="num dim">&#8212;</td>
+          <td class="num dim">${f.nav_per_share_before != null ? fmtShare(f.nav_per_share_before) : '—'}</td>
+          <td class="num dim">${f.total_shares_after != null ? f.total_shares_after.toFixed(2) : '—'}</td>
+        </tr>`;
+    }
+    const t        = e.t;
     const isBuy    = t.direction === 'BUY_BASE';
     const dCls     = isBuy ? 'buy' : 'sell';
     const dEmoji   = isBuy ? '&#128200;' : '&#128201;';
@@ -361,7 +411,7 @@ function generateHtml(d: DashboardData): string {
     const gainCell = !isBuy
       ? `<span class="${gainCls(gain)}">${fmtBrl(gain, true)}</span>`
       : '<span class="dim">&#8212;</span>';
-    const num      = (tradeCount - i).toString().padStart(2, '0');
+    const num      = e.tradeNum.toString().padStart(2, '0');
     const timeStr  = toBRT(t.timestamp).slice(11);
     const dateStr  = (t.trade_date_brt ?? '').slice(5);
     return `
@@ -719,6 +769,8 @@ function generateHtml(d: DashboardData): string {
     .tbl thead th.ctr { text-align: center; }
     .tbl tbody tr     { border-bottom: 1px solid rgba(var(--b-rgb),.32); transition: background .12s ease, border-color .3s ease; }
     .tbl tbody tr:hover { background: rgba(var(--G-rgb),.08); }
+    .tbl tbody tr.flow-row { background: rgba(var(--m-rgb),.09); border-left: 3px solid var(--m); }
+    .tbl tbody tr.flow-row:hover { background: rgba(var(--m-rgb),.17); }
     .tbl td {
       padding: 5px 9px;
       border-right: 1px solid rgba(var(--b-rgb),.28);
@@ -1078,7 +1130,7 @@ function generateHtml(d: DashboardData): string {
 
 <!-- ═══  TRADE HISTORY  ══════════════════════════════════════════════════════ -->
 <section class="sec" aria-label="Trade History">
-  <div class="sec-hdr">&#9889; TRADE HISTORY <span class="sec-sub">&#9472; ${tradeCount} REBALANCES EXECUTED &#183; NEWEST FIRST</span></div>
+  <div class="sec-hdr">&#9889; TRADE HISTORY <span class="sec-sub">&#9472; ${tradeCount} REBALANCES EXECUTED${d.capitalFlows.length > 0 ? ` &#183; ${d.capitalFlows.length} CAPITAL FLOW${d.capitalFlows.length === 1 ? '' : 'S'}` : ''} &#183; NEWEST FIRST</span></div>
   <div class="tbl-wrap">
     <table class="tbl">
       <thead>
@@ -1100,7 +1152,7 @@ function generateHtml(d: DashboardData): string {
     </table>
   </div>
   <div class="fn-inline">
-    <p><strong class="cyan">TRADE HISTORY</strong> &mdash; DEV BPS shows the deviation immediately before &#8594; immediately after each trade, i.e. how off-target the portfolio was right before it fired and how close to 50/50 it landed afterward. <strong class="cyan">SHARE PRICE</strong> and <strong class="cyan">SHARES O/S</strong> are reference values: nav/share and shares outstanding at the moment of that trade (a trade itself never changes the share count — only a recorded deposit/withdrawal does). Shown as &#8212; for trades recorded before fund-share accounting existed.</p>
+    <p><strong class="cyan">TRADE HISTORY</strong> &mdash; DEV BPS shows the deviation immediately before &#8594; immediately after each trade, i.e. how off-target the portfolio was right before it fired and how close to 50/50 it landed afterward. <strong class="cyan">SHARE PRICE</strong> and <strong class="cyan">SHARES O/S</strong> are reference values: nav/share and shares outstanding at the moment of that trade (a trade itself never changes the share count — only a recorded deposit/withdrawal does). Shown as &#8212; for trades recorded before fund-share accounting existed. Highlighted rows marked <span class="cyan">&#128176; INFLOW</span> / <span class="yel">&#127974; OUTFLOW</span> are recorded deposits/withdrawals, not trades &mdash; shown in the same timeline so it's clear when a capital flow, not trading performance, moved the portfolio.</p>
   </div>
 </section>
 
@@ -1671,6 +1723,13 @@ async function main(): Promise<void> {
     FROM portfolio_snapshots ORDER BY date_brt ASC
   `).all() as SnapshotRow[];
 
+  // Deposits/withdrawals — surfaced in the trade history timeline as their own
+  // highlighted rows (see tradeRows below), distinct from a regular rebalance trade.
+  const capitalFlows = db.prepare(`
+    SELECT id, timestamp, date_brt, type, brl_amount, nav_per_share_before, total_shares_after
+    FROM capital_flows ORDER BY timestamp ASC
+  `).all() as CapitalFlowRow[];
+
   const taxEvents = db.prepare(`
     SELECT trade_id, trade_date_brt, month_brt, direction,
            traded_volume_brl, realized_gain_brl, cum_monthly_sales_brl, exempt
@@ -1815,7 +1874,7 @@ async function main(): Promise<void> {
   const data: DashboardData = {
     dbPath: config.dbPath,
     symbol: config.symbol, baseAsset, exchange: config.exchange, exchangeName, ptaxRate, hasRotated, allInLabel,
-    trades, snapshots, costBasis: costBasis ?? null, currentPrice,
+    trades, capitalFlows, snapshots, costBasis: costBasis ?? null, currentPrice,
     generatedAt: toBRT(new Date().toISOString()),
     benchmark, benchmarkStats, initialTotal, totalRealizedGain, totalFees, daysActive, monthlySales,
   };
