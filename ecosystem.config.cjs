@@ -28,28 +28,17 @@
 
 module.exports = {
   apps: [
-    // ─── Existing instance: HYPE-BRL on Mercado Bitcoin ──────────────────────
-    // History preserved in: bot/data/hype-mb/
-    {
-      name: 'hype-mb',
-      script: './start-instance.sh',
-      cwd: './bot',
-      args: 'hype-mb',
-      // Restart behavior
-      watch: false,                     // Don't auto-restart on code changes
-      autorestart: true,                // Auto-restart on crash
-      max_memory_restart: '500M',       // Restart if using > 500M RAM
-      // Logging
-      out_file: 'logs/hype-mb.log',
-      error_file: 'logs/hype-mb-error.log',
-      log_date_format: 'YYYY-MM-DD HH:mm:ss Z',
-      // Process management
-      merge_logs: true,
-      // Environment
-      env: {
-        NODE_ENV: 'production',
-      },
-    },
+    // ─── hype-mb is intentionally NOT run here ───────────────────────────────
+    // GitHub Actions (rebalancer.yml/scan.yml/dashboard.yml) is the sole runner for
+    // hype-mb as of 2026-08-02. Running it here too would resume the dual-writer
+    // split-brain that caused a real R$40 PIX deposit to go undetected: local PM2 and
+    // GH Actions each polled the same live MB account against their own independent
+    // SQLite file (local disk vs. GH Actions artifact), with their own separate
+    // mb_last_synced_deposit_id checkpoint and capital_flows ledger, and no
+    // synchronization between the two. Do not uncomment/re-add an entry for hype-mb
+    // here without first stopping the GitHub Actions matrix entry (or otherwise
+    // picking a single authoritative runner) — see CLAUDE.md's Deployment Modes.
+    // History preserved in: bot/data/hype-mb/ (now stale as of the PM2 stop)
 
     // ─── Coinbase: USDC-quoted, autonomous weekly asset rotation ───────────────
     // Data stored in: bot/data/coinbase-shannon-1/
