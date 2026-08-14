@@ -130,6 +130,16 @@ interface DashboardData {
   generatedAt: string;
   benchmark: BenchmarkRow[];
   benchmarkStats: BenchmarkStats;
+  // 50/50 and all-in benchmark running quantities as of the last historical snapshot
+  // (before any generation-time "live" row) — baked into the page so the client-side
+  // 30s refresh can recompute both passive benchmarks (and hence the whole STRATEGY
+  // SCOREBOARD table + chart) for the current live price without a server round-trip.
+  // Only valid for a single continuous base asset; the live refresh skips recompute
+  // entirely when hasRotated is true rather than trying to replicate the rotation
+  // roll-forward logic client-side.
+  runHalfQty: number;
+  runHalfBrl: number;
+  runAllInQty: number;
   initialTotal: number;
   totalRealizedGain: number;
   totalFees: number;
@@ -320,6 +330,16 @@ function generateHtml(d: DashboardData): string {
     : (d.initialTotal > 0 ? (liveTotal - d.initialTotal) / d.initialTotal : 0);
   const netGain = d.initialTotal * liveReturn;
 
+  // Net cash ever contributed (deposits minus withdrawals), independent of nav/share.
+  // Distinct from d.initialTotal (only the FIRST funding, before any later deposit) —
+  // shown as its own stat so PORTFOLIO can be sanity-checked against real money moved,
+  // without conflating that raw comparison with the nav/share-based RETURN/NET GAIN
+  // above (which are deliberately flow-invariant — see ShareLedgerService).
+  const totalInvested = d.capitalFlows.reduce(
+    (s, f) => s + (f.type === 'DEPOSIT' ? f.brl_amount : -f.brl_amount),
+    0,
+  );
+
   const liveDevSmaller = Math.min(liveBaseVal, liveBrl);
   const liveDev        = liveDevSmaller > 0
     ? Math.round((Math.abs(liveBaseVal - liveBrl) / liveDevSmaller) * 10_000)
@@ -346,19 +366,19 @@ function generateHtml(d: DashboardData): string {
 
   // ── Benchmark stats rows ─────────────────────────────────────────────────────
   const statRows = [
-    { label: "&#9878; SHANNON'S DEMON", cls: 'mag', s: d.benchmarkStats.shannon },
-    { label: '50/50 BUY-AND-HOLD',      cls: 'gain', s: d.benchmarkStats.bh50 },
-    { label: d.allInLabel,   cls: 'yel', s: d.benchmarkStats.allIn },
+    { key: 'shannon', label: "&#9878; SHANNON'S DEMON", cls: 'mag', s: d.benchmarkStats.shannon },
+    { key: 'bh50',    label: '50/50 BUY-AND-HOLD',      cls: 'gain', s: d.benchmarkStats.bh50 },
+    { key: 'allin',   label: d.allInLabel,               cls: 'yel', s: d.benchmarkStats.allIn },
   ].map((row) => `
-        <tr>
+        <tr data-bench-row="${row.key}">
           <td class="${row.cls}">${row.label}</td>
-          <td class="num ${gainCls(row.s.windowReturn)}">${fmtPct(row.s.windowReturn)}</td>
-          <td class="num ${gainCls(row.s.annualizedReturn)}">${fmtPct(row.s.annualizedReturn)}</td>
-          <td class="num">${fmtPct(row.s.annualizedVol)}</td>
-          <td class="num ${gainCls(row.s.sharpe)}">${fmtRatio(row.s.sharpe)}</td>
-          <td class="num ${gainCls(row.s.sortino)}">${fmtRatio(row.s.sortino)}</td>
-          <td class="num loss">${fmtPct(-row.s.valueAtRisk95)}</td>
-          <td class="num loss">${fmtPct(-row.s.maxDrawdown)}</td>
+          <td class="num ${gainCls(row.s.windowReturn)}" data-cell="window">${fmtPct(row.s.windowReturn)}</td>
+          <td class="num ${gainCls(row.s.annualizedReturn)}" data-cell="ann-return">${fmtPct(row.s.annualizedReturn)}</td>
+          <td class="num" data-cell="ann-vol">${fmtPct(row.s.annualizedVol)}</td>
+          <td class="num ${gainCls(row.s.sharpe)}" data-cell="sharpe">${fmtRatio(row.s.sharpe)}</td>
+          <td class="num ${gainCls(row.s.sortino)}" data-cell="sortino">${fmtRatio(row.s.sortino)}</td>
+          <td class="num loss" data-cell="var95">${fmtPct(-row.s.valueAtRisk95)}</td>
+          <td class="num loss" data-cell="maxdd">${fmtPct(-row.s.maxDrawdown)}</td>
         </tr>`).join('');
 
   // ── Trade history rows (newest first) ───────────────────────────────────────
@@ -1016,6 +1036,10 @@ function generateHtml(d: DashboardData): string {
     <div class="score-val cyan" data-live="total">R$${liveTotal.toFixed(2)}</div>
   </div>
   <div class="score">
+    <div class="score-lbl">&#128181; TOTAL INVESTED</div>
+    <div class="score-val">${fmtBrl(totalInvested)}</div>
+  </div>
+  <div class="score">
     <div class="score-lbl">&#128200; NET GAIN</div>
     <div class="score-val ${gainCls(netGain)}" data-live="net-gain" data-base-class="score-val">${fmtBrl(netGain, true)}</div>
   </div>
@@ -1042,8 +1066,9 @@ function generateHtml(d: DashboardData): string {
 </div>
 <div class="fn-inline fn-inline-group">
   <p><strong class="cyan">PORTFOLIO</strong> &mdash; current total value: live ${d.baseAsset} balance &times; live price, plus BRL cash on hand. Recomputed every 30s from the public ticker.</p>
-  <p><strong class="cyan">NET GAIN</strong> &mdash; RETURN (see below) expressed in BRL, scaled to the INITIAL portfolio value. Includes unrealized (mark-to-market) gains/losses on the base asset currently held.</p>
-  <p><strong class="cyan">RETURN</strong> &mdash; nav-per-share performance since the first recorded snapshot: capital-flow-adjusted, so deposits/withdrawals into the portfolio don't get counted as trading gains/losses the way a raw value comparison would. Updates live; includes unrealized gains/losses on the held position. Falls back to a raw INITIAL-vs-current comparison if this instance predates fund-share accounting.</p>
+  <p><strong class="cyan">TOTAL INVESTED</strong> &mdash; net cash ever moved into this instance (deposits minus withdrawals, including its original funding). This is the honest "money in" figure to compare PORTFOLIO against &mdash; unlike RETURN/NET GAIN below, it's not adjusted for nav/share.</p>
+  <p><strong class="cyan">NET GAIN</strong> &mdash; RETURN (see below) expressed in BRL, scaled to the ORIGINAL first-funding amount shown in the footer (not TOTAL INVESTED above) &mdash; a later deposit/withdrawal changes TOTAL INVESTED but doesn't rescale this figure, since its purpose is to track trading performance, not cash flow. Includes unrealized (mark-to-market) gains/losses on the base asset currently held.</p>
+  <p><strong class="cyan">RETURN</strong> &mdash; nav-per-share performance since the first recorded snapshot: capital-flow-adjusted, so deposits/withdrawals into the portfolio don't get counted as trading gains/losses the way a raw value comparison would. This means RETURN and NET GAIN generally will <em>not</em> match a simple PORTFOLIO&nbsp;&minus;&nbsp;TOTAL INVESTED calculation whenever a flow has occurred &mdash; that's expected, not an error; both figures are correct for what they each measure. Updates live; includes unrealized gains/losses on the held position. Falls back to a raw first-funding-vs-current comparison if this instance predates fund-share accounting.</p>
   <p><strong class="cyan">SHARE PRICE</strong> &mdash; nav/share: PORTFOLIO divided by OUTSTANDING SHARES. Deposits/withdrawals issue or redeem shares at this price without moving it, so it only changes from trading performance. Updates live. An instance's initial funding is anchored at 100 shares (see OUTSTANDING SHARES), so this bootstraps to the initial portfolio value &divide; 100 rather than a round number.</p>
   <p><strong class="cyan">OUTSTANDING SHARES</strong> &mdash; total shares issued so far. An instance starts at 100 shares as of its first recorded funding; only changes after that when a deposit or withdrawal is recorded (<code>npm run record-flow</code>) — never from a trade itself. Static for this page load; regenerate the dashboard after recording a flow to see the new count.</p>
   <p><strong class="cyan">REBALANCES</strong> &mdash; count of executed trades (FILLED or DRY_RUN) since the bot started tracking this instance.</p>
@@ -1058,7 +1083,8 @@ function generateHtml(d: DashboardData): string {
     <div class="sr"><span class="sl">LIVE PRICE</span><span class="sv yel" data-live="price">R$${livePrice.toFixed(2)}</span></div>
     <div class="sr"><span class="sl">BASE VALUE</span><span class="sv" data-live="base-value">${fmtBrl(liveBaseVal)}</span></div>
     <div class="sr"><span class="sl">&#9472;&#9472; TOTAL &#9472;&#9472;</span><span class="sv big" data-live="total">${fmtBrl(liveTotal)}</span></div>
-    <div class="sr"><span class="sl">RETURN</span><span class="sv ${retCls}" data-live="return-detail" data-base-class="sv">${fmtPct(liveReturn)} vs R$${d.initialTotal.toFixed(2)}</span></div>
+    <div class="sr"><span class="sl">RETURN</span><span class="sv ${retCls}" data-live="return-detail" data-base-class="sv">${fmtPct(liveReturn)} vs R$${d.initialTotal.toFixed(2)} initial funding</span></div>
+    <div class="sr"><span class="sl">TOTAL INVESTED</span><span class="sv">${fmtBrl(totalInvested)}</span></div>
     <div class="sr"><span class="sl">COST BASIS</span><span class="sv">R$${avgCost.toFixed(2)} / ${d.baseAsset}</span></div>
     <div class="fn-inline">
       <p><strong class="cyan">LIVE PRICE</strong> &mdash; fetched from the exchange's public ticker API every 30 seconds client-side; falls back to the last recorded snapshot price if the fetch fails.</p>
@@ -1106,7 +1132,7 @@ function generateHtml(d: DashboardData): string {
     </table>
   </div>
   <div class="fn-inline">
-    <p><strong class="cyan">STRATEGY SCOREBOARD</strong> &mdash; compares this bot's actual performance against two passive benchmarks computed from the same price history: a 50/50 buy-and-hold that never rebalances, and a 100%-${d.baseAsset} buy-and-hold. ANN. = annualized (scaled to a 1-year period from the actual sampling window). Sharpe and Sortino both assume a 0% risk-free rate. <strong class="cyan">VaR (95%)</strong> is the historical (empirical) per-period loss such that 95% of observed periods did not lose more &mdash; a higher magnitude means fatter downside tails. <strong class="cyan">MAX DRAWDOWN</strong> is the worst peak-to-trough decline over the whole window. Full methodology in the STRATEGY tab.</p>
+    <p><strong class="cyan">STRATEGY SCOREBOARD</strong> &mdash; compares this bot's actual performance against two passive benchmarks computed from the same price history: a 50/50 buy-and-hold that never rebalances, and a 100%-${d.baseAsset} buy-and-hold. ANN. = annualized (scaled to a 1-year period from the actual sampling window). Sharpe and Sortino both assume a 0% risk-free rate. <strong class="cyan">VaR (95%)</strong> is the historical (empirical) per-period loss such that 95% of observed periods did not lose more &mdash; a higher magnitude means fatter downside tails. <strong class="cyan">MAX DRAWDOWN</strong> is the worst peak-to-trough decline over the whole window. Full methodology in the STRATEGY tab.${d.hasRotated ? '' : ' Recomputed every 30s from the live price, same as the KPI cards above &mdash; this table and the chart below never lag behind them.'}</p>
   </div>
   <div class="chart-wrap">
     <div class="range-btns" role="group" aria-label="Chart time range">
@@ -1235,7 +1261,8 @@ function generateHtml(d: DashboardData): string {
 <!-- ═══  FOOTER  ════════════════════════════════════════════════════════════ -->
 <footer class="ftr" role="contentinfo">
   SHANNON'S DEMON &#9612; ${d.symbol} &#9612; ${d.exchangeName.toUpperCase()} &nbsp;&#183;&nbsp;
-  INITIAL: R$${d.initialTotal.toFixed(2)} on ${d.snapshots[0]?.date_brt ?? '—'} &nbsp;&#183;&nbsp;
+  FIRST FUNDED: R$${d.initialTotal.toFixed(2)} on ${d.snapshots[0]?.date_brt ?? '—'} &nbsp;&#183;&nbsp;
+  TOTAL INVESTED: ${fmtBrl(totalInvested)} &nbsp;&#183;&nbsp;
   <span style="color:var(--B)">shannonfi v1.0</span>
 </footer>
 <div class="credits">
@@ -1275,6 +1302,15 @@ var INIT  = ${d.initialTotal};
 var NAV0   = ${initialNavPerShare != null ? initialNavPerShare : 'null'};
 var SHARES = ${liveSharesOutstanding};
 var BENCH = ${benchJson};
+// 50/50 and all-in benchmark running quantities as of the last historical snapshot —
+// lets the 30s refresh recompute both passive benchmarks (and the whole scoreboard
+// table + chart) for the live price. HAS_ROTATED disables this: the rotation
+// roll-forward logic (see dashboard.ts server-side) isn't replicated client-side, so a
+// rotated instance's scoreboard/chart stay frozen at last generation instead of drifting.
+var HAS_ROTATED = ${d.hasRotated};
+var RUN_HALF_QTY  = ${d.runHalfQty};
+var RUN_HALF_BRL  = ${d.runHalfBrl};
+var RUN_ALLIN_QTY = ${d.runAllInQty};
 
 // Live-price polling: which public ticker to hit, and how to read its response, both
 // depend on which exchange this instance trades on. Coinbase has no BRL pairs — PTAX is
@@ -1325,6 +1361,7 @@ function chartTheme() {
 // ── Strategy chart ──────────────────────────────────────────────────────────
 var benchChart  = null;
 var activeBench = BENCH; // rows currently plotted (post range-filter); tooltip callbacks read from this
+var currentRangeKey = 'inception'; // kept in sync with the range buttons so the 30s live refresh re-applies the same filter
 
 function buildBenchDatasets(rows, th) {
   return {
@@ -1538,16 +1575,128 @@ function repaintChartForTheme() {
       if (btn.getAttribute('aria-pressed') === 'true') return;
       btns.forEach(function (b) { b.setAttribute('aria-pressed', 'false'); });
       btn.setAttribute('aria-pressed', 'true');
-      applyRange(btn.getAttribute('data-range'));
+      currentRangeKey = btn.getAttribute('data-range');
+      applyRange(currentRangeKey);
     });
   });
 })();
+
+// ── Strategy scoreboard + chart live recompute ───────────────────────────────
+// Client-side port of computeStrategyStats() / computeValueAtRisk95() / computeMaxDrawdown()
+// (bot/src/publishers/dashboard.ts, server-side) so the STRATEGY SCOREBOARD table and the
+// benchmark chart can update on the same 30s tick as the KPI cards, instead of staying frozen
+// at whatever price was current the last time GitHub Actions regenerated this page.
+function computeVaR95(returns) {
+  if (returns.length === 0) return 0;
+  var sorted = returns.slice().sort(function (a, b) { return a - b; });
+  var idx = Math.min(Math.floor(0.05 * sorted.length), sorted.length - 1);
+  return Math.max(0, -sorted[idx]);
+}
+
+function computeMaxDD(values) {
+  var peak = values.length ? values[0] : 0;
+  var maxDD = 0;
+  for (var i = 0; i < values.length; i++) {
+    if (values[i] > peak) peak = values[i];
+    if (peak > 0) maxDD = Math.max(maxDD, (peak - values[i]) / peak);
+  }
+  return maxDD;
+}
+
+function daysElapsedJS(fromDate, toDate) {
+  return Math.round(
+    (new Date(toDate + 'T12:00:00Z').getTime() - new Date(fromDate + 'T12:00:00Z').getTime()) / 86400000,
+  );
+}
+
+function computeStratStats(values, dates) {
+  var n = values.length;
+  if (n < 2 || values[0] === 0) {
+    return { windowReturn: 0, annualizedReturn: 0, annualizedVol: 0, sharpe: 0, sortino: 0, valueAtRisk95: 0, maxDrawdown: 0 };
+  }
+  var windowReturn = values[n - 1] / values[0] - 1;
+  var totalDays = Math.max(1, daysElapsedJS(dates[0], dates[n - 1]));
+  var annualizedReturn = Math.pow(1 + windowReturn, 365 / totalDays) - 1;
+
+  var periodReturns = [];
+  for (var i = 1; i < n; i++) periodReturns.push(values[i] / values[i - 1] - 1);
+
+  var periodsPerYear = (365 * periodReturns.length) / totalDays;
+  var mean = periodReturns.reduce(function (s, r) { return s + r; }, 0) / periodReturns.length;
+  var variance = periodReturns.reduce(function (s, r) { return s + Math.pow(r - mean, 2); }, 0) / periodReturns.length;
+  var annualizedVol = Math.sqrt(variance * periodsPerYear);
+
+  var downsideVariance = periodReturns.reduce(function (s, r) { return s + Math.pow(Math.min(r, 0), 2); }, 0) / periodReturns.length;
+  var annualizedDownsideDev = Math.sqrt(downsideVariance * periodsPerYear);
+
+  var sharpe = annualizedVol > 0 ? annualizedReturn / annualizedVol : 0;
+  var sortino = annualizedDownsideDev > 0 ? annualizedReturn / annualizedDownsideDev : 0;
+
+  return {
+    windowReturn: windowReturn, annualizedReturn: annualizedReturn, annualizedVol: annualizedVol,
+    sharpe: sharpe, sortino: sortino,
+    valueAtRisk95: computeVaR95(periodReturns), maxDrawdown: computeMaxDD(values),
+  };
+}
+
+function fRatio(n) {
+  if (!isFinite(n)) return '—';
+  var v = n.toFixed(2);
+  return n >= 0 ? '+' + v : v;
+}
+
+function setStatCell(row, cellKey, text, cls) {
+  var td = row.querySelector('td[data-cell="' + cellKey + '"]');
+  if (!td) return;
+  td.textContent = text;
+  td.className = 'num' + (cls ? ' ' + cls : '');
+}
+
+function updateStatRow(rowKey, stats, fP, gC) {
+  var row = document.querySelector('tr[data-bench-row="' + rowKey + '"]');
+  if (!row) return;
+  setStatCell(row, 'window',     fP(stats.windowReturn),     gC(stats.windowReturn));
+  setStatCell(row, 'ann-return', fP(stats.annualizedReturn), gC(stats.annualizedReturn));
+  setStatCell(row, 'ann-vol',    fP(stats.annualizedVol),    null);
+  setStatCell(row, 'sharpe',     fRatio(stats.sharpe),       gC(stats.sharpe));
+  setStatCell(row, 'sortino',    fRatio(stats.sortino),      gC(stats.sortino));
+  setStatCell(row, 'var95',      fP(-stats.valueAtRisk95),   'loss');
+  setStatCell(row, 'maxdd',      fP(-stats.maxDrawdown),     'loss');
+}
 
 // ── Live price updates (every 30 s) ─────────────────────────────────────────
 (function () {
   function fB(n) { return 'R$' + Math.abs(n).toFixed(2); }
   function fP(n) { var p = (n * 100).toFixed(2); return (n >= 0 ? '+' : '') + p + '%'; }
   function gC(n) { return n > 0.005 ? 'gain' : n < -0.005 ? 'loss' : 'neut'; }
+
+  function refreshScoreboard(price, ret) {
+    if (HAS_ROTATED || !BENCH.length) return; // rotation roll-forward isn't replicated client-side; leave frozen
+
+    var shannonVal = INIT * (1 + ret); // matches server's shannonValueFor(): nav/share ratio rebased onto INIT
+    var bh50Val  = RUN_HALF_QTY * price + RUN_HALF_BRL;
+    var bhAllVal = RUN_ALLIN_QTY * price;
+
+    var todayBRT = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    var lastRow = BENCH[BENCH.length - 1];
+    var liveRow = {
+      date: todayBRT, price: price,
+      shannon: shannonVal, bh50: bh50Val, bhAll: bhAllVal,
+      rebalanced: false, isLive: true,
+      baseAsset: lastRow ? lastRow.baseAsset : BASE,
+    };
+    if (lastRow && lastRow.isLive) {
+      BENCH[BENCH.length - 1] = liveRow;
+    } else {
+      BENCH.push(liveRow);
+    }
+
+    updateStatRow('shannon', computeStratStats(BENCH.map(function (r) { return r.shannon; }), BENCH.map(function (r) { return r.date; })), fP, gC);
+    updateStatRow('bh50',    computeStratStats(BENCH.map(function (r) { return r.bh50; }),    BENCH.map(function (r) { return r.date; })), fP, gC);
+    updateStatRow('allin',   computeStratStats(BENCH.map(function (r) { return r.bhAll; }),   BENCH.map(function (r) { return r.date; })), fP, gC);
+
+    if (benchChart) applyRange(currentRangeKey);
+  }
 
   function refresh() {
     fetch(API)
@@ -1560,6 +1709,8 @@ function repaintChartForTheme() {
         var navNow = SHARES > 0 ? tot / SHARES : 0;
         var ret   = (NAV0 && NAV0 > 0) ? (navNow / NAV0) - 1 : (tot - INIT) / INIT;
         var rc    = gC(ret);
+
+        refreshScoreboard(price, ret);
 
         document.querySelectorAll('[data-live="price"]').forEach(function (el) {
           el.textContent = 'R$' + price.toFixed(2);
@@ -1575,7 +1726,7 @@ function repaintChartForTheme() {
           el.className = (el.dataset.baseClass || '') + ' ' + rc;
         });
         document.querySelectorAll('[data-live="return-detail"]').forEach(function (el) {
-          el.textContent = fP(ret) + ' vs R$' + INIT.toFixed(2);
+          el.textContent = fP(ret) + ' vs R$' + INIT.toFixed(2) + ' initial funding';
           el.className = (el.dataset.baseClass || '') + ' ' + rc;
         });
         document.querySelectorAll('[data-live="deviation"]').forEach(function (el) {
@@ -1876,7 +2027,9 @@ async function main(): Promise<void> {
     symbol: config.symbol, baseAsset, exchange: config.exchange, exchangeName, ptaxRate, hasRotated, allInLabel,
     trades, capitalFlows, snapshots, costBasis: costBasis ?? null, currentPrice,
     generatedAt: toBRT(new Date().toISOString()),
-    benchmark, benchmarkStats, initialTotal, totalRealizedGain, totalFees, daysActive, monthlySales,
+    benchmark, benchmarkStats,
+    runHalfQty: runningHalfQty, runHalfBrl: runningHalfBrl, runAllInQty: runningAllInQty,
+    initialTotal, totalRealizedGain, totalFees, daysActive, monthlySales,
   };
 
   const html = generateHtml(data);
