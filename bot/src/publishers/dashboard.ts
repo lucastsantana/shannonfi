@@ -325,10 +325,19 @@ function generateHtml(d: DashboardData): string {
   const liveShareState = shares.getShareState(liveTotal);
   const liveNavPerShare = liveShareState.navPerShare;
   const liveSharesOutstanding = liveShareState.sharesOutstanding;
-  const liveReturn = initialNavPerShare && initialNavPerShare > 0
-    ? (liveNavPerShare / initialNavPerShare) - 1
+  const usingNavReturn = initialNavPerShare != null && initialNavPerShare > 0;
+  const liveReturn = usingNavReturn
+    ? (liveNavPerShare / initialNavPerShare!) - 1
     : (d.initialTotal > 0 ? (liveTotal - d.initialTotal) / d.initialTotal : 0);
   const netGain = d.initialTotal * liveReturn;
+  // "vs R$X initial funding" is only an accurate description of liveReturn in the
+  // fallback (pre-fund-share) branch above, where it's literally (liveTotal - initialTotal)
+  // / initialTotal. In the nav/share branch it's a flow-adjusted ratio, not a comparison
+  // to any single BRL figure — saying "vs R$X" there is misleading once a later deposit/
+  // withdrawal has moved TOTAL INVESTED away from that first-funding number.
+  const returnDetailNote = usingNavReturn
+    ? 'since inception, flow-adjusted'
+    : `vs R$${d.initialTotal.toFixed(2)} initial funding`;
 
   // Net cash ever contributed (deposits minus withdrawals), independent of nav/share.
   // Distinct from d.initialTotal (only the FIRST funding, before any later deposit) —
@@ -1084,7 +1093,7 @@ function generateHtml(d: DashboardData): string {
     <div class="sr"><span class="sl">LIVE PRICE</span><span class="sv yel" data-live="price">R$${livePrice.toFixed(2)}</span></div>
     <div class="sr"><span class="sl">BASE VALUE</span><span class="sv" data-live="base-value">${fmtBrl(liveBaseVal)}</span></div>
     <div class="sr"><span class="sl">&#9472;&#9472; TOTAL &#9472;&#9472;</span><span class="sv big" data-live="total">${fmtBrl(liveTotal)}</span></div>
-    <div class="sr"><span class="sl">RETURN</span><span class="sv ${retCls}" data-live="return-detail" data-base-class="sv">${fmtPct(liveReturn)} vs R$${d.initialTotal.toFixed(2)} initial funding</span></div>
+    <div class="sr"><span class="sl">RETURN</span><span class="sv ${retCls}" data-live="return-detail" data-base-class="sv">${fmtPct(liveReturn)} ${returnDetailNote}</span></div>
     <div class="sr"><span class="sl">TOTAL INVESTED</span><span class="sv">${fmtBrl(totalInvested)}</span></div>
     <div class="sr"><span class="sl">COST BASIS</span><span class="sv">R$${avgCost.toFixed(2)} / ${d.baseAsset}</span></div>
     <div class="fn-inline">
@@ -1708,8 +1717,12 @@ function updateStatRow(rowKey, stats, fP, gC) {
         var bval  = BBAL * price;
         var tot   = bval + QBAL;
         var navNow = SHARES > 0 ? tot / SHARES : 0;
-        var ret   = (NAV0 && NAV0 > 0) ? (navNow / NAV0) - 1 : (tot - INIT) / INIT;
+        var usingNavReturn = NAV0 && NAV0 > 0;
+        var ret   = usingNavReturn ? (navNow / NAV0) - 1 : (tot - INIT) / INIT;
         var rc    = gC(ret);
+        // Same "vs R$X" caveat as the server render above: only accurate wording in the
+        // fallback branch — see returnDetailNote in generateHtml().
+        var returnDetailNote = usingNavReturn ? 'since inception, flow-adjusted' : ('vs R$' + INIT.toFixed(2) + ' initial funding');
 
         refreshScoreboard(price, ret);
 
@@ -1727,7 +1740,7 @@ function updateStatRow(rowKey, stats, fP, gC) {
           el.className = (el.dataset.baseClass || '') + ' ' + rc;
         });
         document.querySelectorAll('[data-live="return-detail"]').forEach(function (el) {
-          el.textContent = fP(ret) + ' vs R$' + INIT.toFixed(2) + ' initial funding';
+          el.textContent = fP(ret) + ' ' + returnDetailNote;
           el.className = (el.dataset.baseClass || '') + ' ' + rc;
         });
         document.querySelectorAll('[data-live="deviation"]').forEach(function (el) {
