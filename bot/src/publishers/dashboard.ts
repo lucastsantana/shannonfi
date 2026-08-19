@@ -674,15 +674,21 @@ function generateHtml(d: DashboardData): string {
     .hdr-gen .unit { white-space: nowrap; }
 
     /* ── Score bar ──────────────────────────────────── */
+    /* 8 tiles total (see the .score divs below) — column counts at every breakpoint
+       are chosen to divide 8 evenly (4 or 2) so the grid always ends on a full row,
+       instead of a lopsided leftover tile. */
     .scores {
       display: grid;
-      grid-template-columns: repeat(7, 1fr);
+      grid-template-columns: repeat(4, 1fr);
       border: 1px solid var(--b);
       margin-bottom: 16px;
       background: var(--p);
     }
     .score { text-align: center; padding: 12px 6px; border-right: 1px solid var(--b); transition: background .15s ease, border-color .3s ease; }
     .score:last-child { border-right: none; }
+    /* 8 tiles / 4 columns = 2 rows of 4; nth-child(4n) removes the border from every
+       row-last tile (4, 8) — 8 is also covered by :last-child above. */
+    .scores .score:nth-child(4n) { border-right: none; }
     .score:hover { background: rgba(var(--G-rgb),.08); }
     .score-lbl { color: var(--d); font-size:.72em; letter-spacing:2px; text-transform:uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .score-val { font-family: var(--ft); font-size: 2.1em; margin-top: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -957,10 +963,6 @@ function generateHtml(d: DashboardData): string {
 
     @media (max-width: 900px) {
       .panels { grid-template-columns: 1fr; }
-      .scores { grid-template-columns: repeat(3, 1fr); }
-      /* 7 tiles wrap into rows of 3,3,1 — nth-child(3n) removes the border from every
-         row-last tile (3, 6); the lone 7th tile is already handled by :last-child. */
-      .scores .score:nth-child(3n) { border-right: none; }
       .chart-wrap { height: 320px; }
     }
 
@@ -971,11 +973,10 @@ function generateHtml(d: DashboardData): string {
       .hdr-sub  { font-size: .78em; letter-spacing: 4px; }
       .hdr-meta { font-size: .76em; letter-spacing: 1.5px; gap: 3px 6px; }
       .hdr-gen  { font-size: .74em; gap: 3px 8px; }
+      /* 8 tiles / 2 columns = 4 rows of 2; nth-child(2n) removes the border from every
+         row-last tile (2, 4, 6) — 8 is also covered by :last-child above. This
+         supersedes the base tier's nth-child(4n) rule (4 and 8 are already even). */
       .scores { grid-template-columns: repeat(2, 1fr); }
-      /* Rows of 2,2,2,1: restore child 3's border (it's row-FIRST at 2 columns, even
-         though the 900px breakpoint's 3n rule removed it for a 3-column row); 2n already
-         covers every row-last tile (2, 4, 6) correctly, child 7 handled by :last-child. */
-      .scores .score:nth-child(3) { border-right: 1px solid var(--b); }
       .scores .score:nth-child(2n) { border-right: none; }
       .score { padding: 10px 4px; }
       .score-val { font-size: 1.5em; }
