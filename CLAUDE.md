@@ -85,11 +85,14 @@ shannonfi/
 │   └── .github/workflows/ → see .github/workflows/ below (top-level, not under bot/)
 │
 ├── reporting/                    # Manual/offline: monthly Markdown + investor PDF report generator
-│   └── src/{monthly-report,pdf-report,html-report,claude-commentary,strategy-deck}.ts
+│   └── src/{monthly-report,pdf-report,html-report,claude-commentary,report-builder,report-types}.ts
 │       # pdf-report.ts renders the dashboard's dark theme (shared via bot/src/publishers/theme.ts)
 │       # to PDF with Playwright; commentary comes from Claude (claude-commentary.ts), falling back
 │       # to the rule-based generateCommentary() in report-builder.ts on any API failure.
-│       # Run by hand; not wired into any workflow.
+│       # Run by hand; not wired into any workflow. No LaTeX/Beamer anywhere in this repo anymore —
+│       # the investor pitch-deck PDF (strategy-deck.ts/latex-strategy.ts) that used it, and the
+│       # backtest/generate_charts.py PNG generator that fed it, were both removed (stale, unused
+│       # since creation — see git history).
 │
 ├── backtest/                     # Historical analysis (Python), offline, manual
 │   ├── shannon_backtest_real.py  # Real exchange price data
@@ -97,9 +100,8 @@ shannonfi/
 │   ├── shannon_full_history.py
 │   ├── shannon_historical_analysis.py
 │   ├── shannon_since_inception.py
-│   ├── generate_charts.py        # PNG charts for reporting/strategy-deck
 │   ├── README.md                 # Backtest guide
-│   └── *.json, *.md              # Results & reports
+│   └── *.json, *.png, *.csv      # Results & chart data
 │
 ├── .github/workflows/             # rebalancer.yml, scan.yml, dashboard.yml, monthly-db-backup.yml
 │                                   # All four currently target the hype-mb instance only
@@ -783,8 +785,12 @@ If `|estWeight − 0.5| ≤ τ`, the balance fetch is skipped for this cycle. Th
   `bot/src/publishers/theme.ts`, so the two never drift) as a static HTML document → `pdf-report.ts`
   rasterizes it with Playwright (`page.pdf()`) to `bot/data/reports/<YYYY-MM>.pdf`
 - One-time setup: `cd reporting && npm run playwright:install` (downloads the Chromium binary)
-- Not wired into any workflow; run by hand. `strategy-deck.ts`/`latex-strategy.ts` (a separate,
-  occasional investor pitch-deck PDF, not the monthly cycle) still use LaTeX/Beamer and are untouched
+- Not wired into any workflow; run by hand. No LaTeX/Beamer dependency anywhere in the repo — the
+  separate investor pitch-deck PDF that used it (`strategy-deck.ts`/`latex-strategy.ts`) was removed:
+  stale since creation (hardcoded backtest data sourced from a doc deleted days later, never
+  refreshed), not wired into `package.json`, and the current dashboard/monthly PDF already cover
+  that need. `backtest/generate_charts.py`, which existed solely to feed it PNG charts, was removed
+  alongside it
 
 ---
 

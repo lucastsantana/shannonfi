@@ -16,9 +16,13 @@ This directory contains historical backtests and analysis of the Shannon's Demon
 - **`shannon_full_history.py`** — Fetches and stores long-term price history for offline backtesting
 - **`shannon_historical_analysis.py`** — Generates summary statistics and comparative analysis across test runs
 - **`shannon_since_inception.py`** — Full backtest from SOL network inception to today (CoinGecko SOL/USD, yfinance USD/BRL and IBOV, BCB CDI rate); outputs `inception_chart.png`/`inception_timeseries.csv`, run twice (with and without the R$34,650/month SELL exemption cap)
-- **`generate_charts.py`** — Renders the strategy-deck PNG charts (performance, drawdown, monthly heatmap) to `data/reports/charts/`, consumed by `reporting/`'s pitch-deck PDF, not by this suite's own output
 
 Install dependencies from `requirements.txt` (`pip install -r requirements.txt`) rather than by hand.
+
+There is no LaTeX/Beamer tooling in this repo. `generate_charts.py` used to live here solely to feed
+PNG charts to `reporting/`'s LaTeX-based investor pitch-deck PDF (`strategy-deck.ts`/`latex-strategy.ts`)
+— both were removed together (stale since creation, no other consumer). This suite's own outputs are
+the JSON/CSV/PNG files listed below, not deck material.
 
 ### Output Data
 
