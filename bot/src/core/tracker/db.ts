@@ -142,6 +142,8 @@ export function backfillBaseAsset(baseAsset: string, dbPath?: string): void {
  * Idempotent (only touches NULL rows; only ever inserts one genesis flow) — safe to
  * call on every startup.
  */
+const GENESIS_FLOW_NOTE = 'Backfilled: initial portfolio value recorded as the inception deposit';
+
 export function backfillShares(dbPath?: string): void {
   const db = getDb(dbPath);
   const rows = db
@@ -172,7 +174,7 @@ export function backfillShares(dbPath?: string): void {
         insertGenesisFlow.run(
           uuidv4(), anchor.timestamp, anchor.date_brt, anchor.total_value_brl,
           navPerShareAtAnchor, shares, shares, anchor.total_value_brl, anchor.exchange,
-          'Backfilled: initial portfolio value recorded as the inception deposit',
+          GENESIS_FLOW_NOTE,
         );
       }
     });
@@ -187,13 +189,36 @@ export function backfillShares(dbPath?: string): void {
     });
   }
 
+  // Self-healing correction: the genesis flow above is timestamped from the first
+  // snapshot, but persistSnapshot() runs at the END of a poll cycle — after that cycle's
+  // trade (if any) has already executed. An instance's real-world starting allocation
+  // is rarely exactly 50/50, so the very first cycle often fires an immediate rebalance,
+  // leaving the genesis "inflow" timestamped a few minutes AFTER that trade. The trade
+  // history timeline (dashboard.ts) sorts strictly by timestamp, so this made the
+  // inception deposit visibly appear after the first rebalance instead of before it —
+  // backwards, since the money has to be in the account before the bot can trade it.
+  // Corrected here (not just at insert time) so it self-heals for instances whose
+  // genesis flow was already inserted by an earlier version of this function.
+  const earliestTrade = db.prepare('SELECT MIN(timestamp) as ts FROM trades').get() as { ts: string | null };
+  if (earliestTrade.ts) {
+    const genesisRow = db
+      .prepare('SELECT id, timestamp FROM capital_flows WHERE note = ? ORDER BY timestamp ASC LIMIT 1')
+      .get(GENESIS_FLOW_NOTE) as { id: string; timestamp: string } | undefined;
+    if (genesisRow && genesisRow.timestamp > earliestTrade.ts) {
+      const correctedTimestamp = new Date(new Date(earliestTrade.ts).getTime() - 1).toISOString();
+      db.prepare('UPDATE capital_flows SET timestamp = ? WHERE id = ?').run(correctedTimestamp, genesisRow.id);
+      logger.info('Corrected genesis capital-flow timestamp to precede the first trade', {
+        genesisId: genesisRow.id,
+        oldTimestamp: genesisRow.timestamp,
+        newTimestamp: correctedTimestamp,
+      });
+    }
+  }
+
   // The share count "in effect" for a trade is the latest capital_flows row at or before
-  // its timestamp — except an instance's very first trade always fires a few minutes
-  // *before* its first snapshot (persistSnapshot() runs at the end of the cycle the trade
-  // was part of), so it will always predate the genesis flow by construction, not as some
-  // rare fluke. Falling back to the earliest flow overall covers that: there's no share
-  // count change between an instance's true inception and that first recorded flow, so
-  // the genesis count applies retroactively to anything before it too.
+  // its timestamp. With the correction above, the genesis flow now predates the first
+  // trade, so this resolves directly for normal cases; the fallback to the earliest flow
+  // overall remains as a defensive catch-all (e.g. no trades exist yet at all).
   const tradesBackfilled = db.prepare(`
     UPDATE trades
     SET

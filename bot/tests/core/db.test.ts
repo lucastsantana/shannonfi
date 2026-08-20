@@ -205,6 +205,45 @@ describe('db migrations — fund-share accounting backfill', () => {
     expect(trade.nav_per_share_after).toBeNull();
   });
 
+  it('corrects the genesis flow\'s timestamp to precede the first trade when persistSnapshot() ran after that trade (the normal day-one ordering)', () => {
+    const path = uniqueMemDbPath();
+    const db = getDb(path);
+    insertSnapshot(db, '2026-06-01', 1000); // persisted at 2026-06-01T00:00:00Z, at the end of day-one's cycle
+    insertTrade(db, 't1', '2026-05-31T23:55:00Z', 900, 1000); // fired a few minutes before that snapshot was written
+
+    backfillShares(path);
+
+    const flow = db.prepare("SELECT timestamp FROM capital_flows WHERE note = 'Backfilled: initial portfolio value recorded as the inception deposit'").get() as { timestamp: string };
+    expect(flow.timestamp).toBe('2026-05-31T23:54:59.999Z'); // 1ms before the trade, not the snapshot's 00:00:00Z
+    expect(flow.timestamp < '2026-05-31T23:55:00Z').toBe(true);
+  });
+
+  it('is idempotent across repeated calls once the genesis timestamp has been corrected', () => {
+    const path = uniqueMemDbPath();
+    const db = getDb(path);
+    insertSnapshot(db, '2026-06-01', 1000);
+    insertTrade(db, 't1', '2026-05-31T23:55:00Z', 900, 1000);
+
+    backfillShares(path);
+    const first = db.prepare("SELECT timestamp FROM capital_flows WHERE note = 'Backfilled: initial portfolio value recorded as the inception deposit'").get() as { timestamp: string };
+    backfillShares(path);
+    const second = db.prepare("SELECT timestamp FROM capital_flows WHERE note = 'Backfilled: initial portfolio value recorded as the inception deposit'").get() as { timestamp: string };
+
+    expect(second.timestamp).toBe(first.timestamp);
+  });
+
+  it('leaves the genesis flow\'s timestamp untouched when it already precedes every trade', () => {
+    const path = uniqueMemDbPath();
+    const db = getDb(path);
+    insertSnapshot(db, '2026-06-01', 1000); // genesis timestamp: 2026-06-01T00:00:00Z
+    insertTrade(db, 't1', '2026-06-02T00:00:00Z', 1000, 1100); // strictly after the genesis flow already
+
+    backfillShares(path);
+
+    const flow = db.prepare("SELECT timestamp FROM capital_flows WHERE note = 'Backfilled: initial portfolio value recorded as the inception deposit'").get() as { timestamp: string };
+    expect(flow.timestamp).toBe('2026-06-01T00:00:00Z');
+  });
+
   it('falls back to the earliest capital_flows entry for a trade that predates it (e.g. the instance\'s very first trade, which always fires a few minutes before its first snapshot)', () => {
     const path = uniqueMemDbPath();
     const db = getDb(path);
