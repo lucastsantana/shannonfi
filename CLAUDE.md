@@ -6,7 +6,7 @@ This is a **multi-exchange, multi-instance trading bot** implementing Shannon's 
 
 The repo contains **only the CEX bot** — the Solana on-chain vault implementation has been removed entirely.
 
-**Exchanges:** Mercado Bitcoin and Coinbase have active or near-active instances; Binance's adapter still exists in the codebase but has no active instance (its only real instance, `btc-binance`, was decommissioned). All three share an `ExchangeAdapter` interface (see `adapters/types.ts`). Coinbase has no BRL-quoted trading pairs — its adapter converts BRL<->USD at the boundary using the daily BACEN PTAX rate (treating USDC as 1:1 with USD; USDC, not USD, is the quote currency it actually trades), so every other layer still operates on plain BRL values. See `docs/coinbase-adapter-plan.md`.
+**Exchanges:** Mercado Bitcoin and Coinbase, sharing an `ExchangeAdapter` interface (see `adapters/types.ts`). Coinbase has no BRL-quoted trading pairs — its adapter converts BRL<->USD at the boundary using the daily BACEN PTAX rate (treating USDC as 1:1 with USD; USDC, not USD, is the quote currency it actually trades), so every other layer still operates on plain BRL values. See `docs/coinbase-adapter-plan.md`. Binance was removed entirely (adapter code, config schema, credentials, docs) — its only real instance, `btc-binance`, was decommissioned and never replaced; there is no remaining Binance code path anywhere in the repo.
 
 **Instances:** Each instance is one `(exchange, symbol)` pair driven by its own config file under `bot/configs/`, with its own SQLite database and JSON backups under `bot/data/<instance>/`. Instances run independently — there is no shared global config or shared database. The *active* symbol for an instance is resolved from its database (`current_symbol`, seeded from the YAML default on first run), not hardcoded — this is what asset rotation (see `docs/dynamic-asset-rotation-plan.md`) updates without a restart.
 
@@ -15,9 +15,9 @@ The repo contains **only the CEX bot** — the Solana on-chain vault implementat
 | Instance | Exchange | Symbol | Config | Deployment |
 |---|---|---|---|---|
 | `hype-mb` | Mercado Bitcoin | HYPE-BRL | `bot/configs/hype-mb.yaml` | GitHub Actions only (rebalancer, scan, dashboard) — local PM2 stopped 2026-08-02, see below |
-| `coinbase-shannon-1` | Coinbase | BTC-USDC (bootstraps/rotates via scanner) | `bot/configs/coinbase-shannon-1.yaml` (git-tracked, real config; `.yaml.template` remains as the scaffold) | Live on local PM2, running real (non-dry-run) trades since 2026-06-24; not mirrored to GitHub Actions (commented out of all four workflows) |
+| `coinbase-shannon-1` | Coinbase | BTC-USDC (bootstraps/rotates via scanner) | `bot/configs/coinbase-shannon-1.yaml` (git-tracked, real config; `.yaml.template` remains as the scaffold) | **Deprecated/stopped.** Ran real (non-dry-run) trades on local PM2 from 2026-06-24 until its local PM2 process was taken down; never mirrored to GitHub Actions. Config, data (`bot/data/coinbase-shannon-1/`), and the Coinbase adapter itself are all kept intact — only this instance's active trading is deprecated, not the exchange integration. |
 
-Only `hype-mb` is mirrored to GitHub Actions; other instances are local-only and not visible to CI. All four workflows are matrix-based and ready to add another instance to (just uncomment its entry) — they're just not actively running anything beyond `hype-mb` yet.
+`hype-mb` is the only instance actively running anywhere (GitHub Actions). `coinbase-shannon-1` is deprecated and not running on either PM2 or GitHub Actions. All four workflows are matrix-based and ready to reactivate a future Coinbase instance on (just uncomment its entry) — none currently run anything beyond `hype-mb`.
 
 **`hype-mb` dual-writer incident (2026-08-02):** `hype-mb` used to run on both local PM2 and GitHub Actions simultaneously. This was a bug, not a supported mode: each side polled the same live MB account against its own independent SQLite file (local disk vs. GH Actions artifact), each with its own `mb_last_synced_deposit_id`/`mb_last_synced_withdrawal_id` checkpoint and `capital_flows` ledger, with zero synchronization between them — exactly the risk `rebalancer.yml`'s own header comment warns about. This caused a real R$40 PIX deposit (landed 2026-07-31) to go undetected by capital-flow auto-detection (see "Capital-flow auto-detection" under the Mercado Bitcoin Adapter section) on the GH Actions side, inflating `nav_per_share`. Local PM2 was stopped for `hype-mb` and its `ecosystem.config.cjs` entry removed (see comment there) — GitHub Actions is now the single authoritative runner. Do not re-enable local PM2 for `hype-mb` without first disabling (or otherwise reconciling with) its GitHub Actions matrix entry.
 
@@ -30,13 +30,12 @@ shannonfi/
 ├── bot/                          # Complete CEX rebalancer (multi-exchange, multi-instance)
 │   ├── src/
 │   │   ├── index.ts              # Entry point; orchestrates rebalance cycle
-│   │   ├── config.ts             # Zod discriminated union (mercadobitcoin | binance | coinbase); loads --config path
+│   │   ├── config.ts             # Zod discriminated union (mercadobitcoin | coinbase); loads --config path
 │   │   ├── math.ts               # Pure functions (ratios, thresholds, trades) — asset-agnostic ("base")
 │   │   ├── constants.ts          # Strategy params, exchange endpoints
 │   │   ├── adapters/
 │   │   │   ├── types.ts          # ExchangeAdapter interface
 │   │   │   ├── mercadobitcoin/   # OAuth2 client, order execution, polling
-│   │   │   ├── binance/          # HMAC-signed client, order execution, polling
 │   │   │   └── coinbase/         # CDP-key JWT-signed client; converts BRL<->USD at the boundary (FxRateService)
 │   │   ├── publishers/           # Everything that ships output somewhere external
 │   │   │   ├── telegram.ts       # Telegram Bot API client (messages, buttons)
@@ -48,7 +47,7 @@ shannonfi/
 │   │   │   ├── scanner.ts        # Ranking logic
 │   │   │   └── types.ts
 │   │   ├── scripts/              # One-off / maintenance CLIs
-│   │   │   ├── setup-check.ts        # Validates exchange credentials
+│   │   │   ├── setup-check.ts        # Validates exchange credentials (mercadobitcoin or coinbase)
 │   │   │   ├── liquidate.ts          # Emergency: sell entire base position to BRL
 │   │   │   ├── reconcile-orders.ts   # Rebuild trade history from exchange order history (MB only)
 │   │   │   ├── recover-orders.ts     # Diagnostic: lists known trades for manual repair
@@ -67,7 +66,8 @@ shannonfi/
 │   │           └── logger.ts
 │   ├── configs/                  # One YAML per instance — naming: {exchange}-{strategy}-{n}
 │   │   ├── hype-mb.yaml          # HYPE-BRL on Mercado Bitcoin (live: GitHub Actions only; pre-convention name)
-│   │   └── coinbase-shannon-1.yaml.template  # Scaffold for a Coinbase instance
+│   │   ├── coinbase-shannon-1.yaml            # BTC-USDC on Coinbase (deprecated/stopped — kept for its trade/tax history)
+│   │   └── coinbase-shannon-1.yaml.template   # Scaffold for a new Coinbase instance
 │   ├── tests/                    # vitest unit tests
 │   ├── data/                     # Persistent local state, gitignored
 │   │   └── <instance>/           # e.g. hype-mb/, coinbase-shannon-1/ — one dir per instance, fully isolated
@@ -79,7 +79,7 @@ shannonfi/
 │   │       ├── portfolio_snapshots.json  # Rolling 15-day JSON backup of daily snapshots
 │   │       └── dashboard.html        # Generated by publishers/dashboard.ts
 │   ├── README.md                 # Full bot setup & tuning guide
-│   ├── ecosystem.config.cjs      # PM2: defines local-only instances (coinbase-shannon-1, ...); hype-mb deliberately excluded, see Deployment Modes
+│   ├── ecosystem.config.cjs      # PM2: no active `apps` entries currently — hype-mb is GitHub-Actions-only and coinbase-shannon-1 is deprecated/stopped, see Deployment Modes
 │   ├── start-instance.sh         # Wrapper: loads creds from GNOME Keyring, launches one instance
 │   ├── package.json
 │   └── .github/workflows/ → see .github/workflows/ below (top-level, not under bot/)
@@ -115,6 +115,9 @@ Deleted (won't exist):
 - PRICING_GUIDE.md (Solana deployment costs)
 - tsconfig.json (root, orphaned)
 - switch-asset.sh, bot/shannonfi.config.yaml(.example) — removed; predated per-instance configs
+- bot/src/adapters/binance/ — removed along with the `binance` config schema variant, keyring
+  credential loading, and every dispatch branch; its only real instance (`btc-binance`) was
+  decommissioned and never replaced (see "Exchanges" above)
 ```
 
 ---
@@ -144,7 +147,7 @@ Deleted (won't exist):
 ## Key Modules
 
 ### `config.ts`
-- **Zod discriminated union** on `exchange`: `mercadobitcoin` | `binance` — each variant has its own credential fields
+- **Zod discriminated union** on `exchange`: `mercadobitcoin` | `coinbase` — each variant has its own credential fields
 - **Fields:** exchange credentials, rebalance threshold, slippage max, dry-run flag, tax settings, `dbPath` (per-instance)
 - **Loads from:** `--config <path>` (required in practice — points at one file under `bot/configs/`)
 
@@ -172,7 +175,7 @@ interface ExchangeAdapter {
 
 Two implementations, selected by `config.exchange` in `bot/src/index.ts`:
 - `adapters/mercadobitcoin/adapter.ts`
-- `adapters/binance/adapter.ts`
+- `adapters/coinbase/adapter.ts`
 
 ### Mercado Bitcoin Adapter
 **Files:**
@@ -188,27 +191,28 @@ Two implementations, selected by `config.exchange` in `bot/src/index.ts`:
 3. Return executed trade with fill price & fee
 4. Per-attempt try-catch: transient 400s don't abort, only final retry throws
 
-**Capital-flow auto-detection:** `adapter.ts` also exposes `listFiatDeposits()`/`listWithdrawals()` — NOT on the `ExchangeAdapter` interface (same "concrete-adapter-only" pattern as `getCandlesWithVolume()`/`getTickersForSymbols()`, which are scanner-specific). These wrap MB's real wallet API (`GET .../wallet/fiat/BRL/deposits`, `GET .../wallet/BRL/withdraw` — confirmed against MB's actual OpenAPI spec, not just the docs page) and list every BRL deposit/withdrawal on the account, however it was made (PIX transfer, MB's own app — not just ones the API itself initiated). `core/capital-flow-sync.ts`'s `syncMbCapitalFlows()` polls both every cycle from `RebalancerBot.checkAndRebalance()` (gated on `config.exchange === 'mercadobitcoin'`, and only there — no equivalent exists for Binance/Coinbase), tracks two checkpoints in `config` (`mb_last_synced_deposit_id`, `mb_last_synced_withdrawal_id`), and auto-calls `ShareLedgerService.recordCapitalFlow()` for any new `CREDITED` deposit or `status: 2` (done) withdrawal — so a PIX top-up or a withdrawal made directly on MB's app gets reflected in NAV/share accounting without a manual `record-flow` CLI call. A sync failure is caught and logged, never aborts the cycle (see `RebalancerBot.syncMbCapitalFlowsIfApplicable()`).
+**Capital-flow auto-detection:** `adapter.ts` also exposes `listFiatDeposits()`/`listWithdrawals()` — NOT on the `ExchangeAdapter` interface (same "concrete-adapter-only" pattern as `getCandlesWithVolume()`/`getTickersForSymbols()`, which are scanner-specific). These wrap MB's real wallet API (`GET .../wallet/fiat/BRL/deposits`, `GET .../wallet/BRL/withdraw` — confirmed against MB's actual OpenAPI spec, not just the docs page) and list every BRL deposit/withdrawal on the account, however it was made (PIX transfer, MB's own app — not just ones the API itself initiated). `core/capital-flow-sync.ts`'s `syncMbCapitalFlows()` polls both every cycle from `RebalancerBot.checkAndRebalance()` (gated on `config.exchange === 'mercadobitcoin'`, and only there — no equivalent exists for Coinbase), tracks two checkpoints in `config` (`mb_last_synced_deposit_id`, `mb_last_synced_withdrawal_id`), and auto-calls `ShareLedgerService.recordCapitalFlow()` for any new `CREDITED` deposit or `status: 2` (done) withdrawal — so a PIX top-up or a withdrawal made directly on MB's app gets reflected in NAV/share accounting without a manual `record-flow` CLI call. A sync failure is caught and logged, never aborts the cycle (see `RebalancerBot.syncMbCapitalFlowsIfApplicable()`).
 
-### Binance Adapter
+### Coinbase Adapter
 **Files:**
-- `adapter.ts` — Main interface impl, dry-run logic
-- `client.ts` — HMAC-SHA256 signed request client
-- `endpoints.ts` — REST API calls (price, balances, place/get orders)
+- `adapter.ts` — Main interface impl, BRL<->USD conversion at the boundary, dry-run logic
+- `client.ts` — HTTP client, signs every request with a freshly-generated JWT (see `jwt.ts`)
+- `jwt.ts` — CDP JWT generation (ES256/EdDSA per key type, ~120s expiry, one JWT per request — see `COINBASE_JWT_EXPIRY_SECONDS`)
+- `endpoints.ts` — REST API calls (Advanced Trade: price, balances, place/get orders, candles)
 
-Same `ExchangeAdapter` contract as Mercado Bitcoin; the rebalancer, tax tracker, and cost-basis tracker are exchange-agnostic and work unmodified against either adapter. Note: `scripts/reconcile-orders.ts` is currently Mercado Bitcoin–only (hard-codes `MbClient`/`MbEndpoints`) — there is no Binance equivalent yet.
+Same `ExchangeAdapter` contract as Mercado Bitcoin; the rebalancer, tax tracker, and cost-basis tracker are exchange-agnostic and work unmodified against either adapter. Coinbase has no BRL-quoted pairs — every product this adapter trades is USDC-quoted (e.g. `BTC-USDC`); it converts BRL<->USD at the boundary via the daily BACEN PTAX rate (`FxRateService`), treating USDC as 1:1 with USD, so the rest of the engine sees plain BRL values (see "Exchanges" above and `docs/coinbase-adapter-plan.md`). Note: `scripts/reconcile-orders.ts` is currently Mercado Bitcoin–only (hard-codes `MbClient`/`MbEndpoints`) — there is no Coinbase equivalent yet.
 
 ### Publishers (`bot/src/publishers/`)
 Everything that ships output to somewhere external to the bot, mirroring the `adapters/` pattern (one concern per file, no forced shared interface since the four publishers don't share a natural call signature):
 - `telegram.ts` — Telegram Bot API client (messages, interactive buttons)
 - `daily-digest.ts` — Builds and sends a daily portfolio summary via `telegram.ts`; runs on the rebalancer's poll loop, so it only fires in the **local PM2 process** (GitHub Actions runs `--once` and exits, never reaching the scheduled-digest check)
 - `scan-reporter.ts` — Formats scanner output and sends it via `telegram.ts`
-- `dashboard.ts` — Reads the SQLite DB, renders the retro HTML dashboard; dual-purpose as a library and CLI (`npm run dashboard -- --config <path>`), invoked by `dashboard.yml` to publish to GitHub Pages. Resolves `current_symbol` from the DB (same as `index.ts`) before fetching a live price — an instance that has rotated (see asset rotation below) trades a different symbol than its YAML default, and fetching the YAML symbol's price would compare the wrong asset entirely. `fetchCurrentPrice()` and the client-side 30s live-refresh script are both exchange-aware: Mercado Bitcoin's and Binance's public ticker APIs are queried directly; Coinbase has no public endpoint for its actual USDC-quoted pairs (`api.exchange.coinbase.com` only lists USD pairs, and the "BASE-USD" substitution is deliberate — see the comment in `fetchCurrentPrice()`), so its USD price is PTAX-converted via `FxRateService` server-side, with that PTAX rate baked into the page as a constant for the client-side refresh (browser-side BACEN fetches would likely hit CORS).
+- `dashboard.ts` — Reads the SQLite DB, renders the retro HTML dashboard; dual-purpose as a library and CLI (`npm run dashboard -- --config <path>`), invoked by `dashboard.yml` to publish to GitHub Pages. Resolves `current_symbol` from the DB (same as `index.ts`) before fetching a live price — an instance that has rotated (see asset rotation below) trades a different symbol than its YAML default, and fetching the YAML symbol's price would compare the wrong asset entirely. `fetchCurrentPrice()` and the client-side 30s live-refresh script are both exchange-aware: Mercado Bitcoin's public ticker API is queried directly; Coinbase has no public endpoint for its actual USDC-quoted pairs (`api.exchange.coinbase.com` only lists USD pairs, and the "BASE-USD" substitution is deliberate — see the comment in `fetchCurrentPrice()`), so its USD price is PTAX-converted via `FxRateService` server-side, with that PTAX rate baked into the page as a constant for the client-side refresh (browser-side BACEN fetches would likely hit CORS).
 
 ### Scanner (`bot/src/scanner/`)
-Cross-pair volatility scanner — ranks candidate symbols on an exchange by recent volatility, trend direction, and liquidity to help pick what to trade next. `scan.ts` is the CLI entry (`npm run scan`); used by `scan.yml` (daily, both `hype-mb` and `coinbase-shannon-1`) and locally via cron scripts (`bot/scan-mb-daily.sh`, `bot/scan-coinbase-daily.sh`). Each candidate's score is `MAD × (1 + rollingReturn) × liquidityWeight`; candidates with a clearly negative trend (`computeNormalizedTrendSlope()` in `math.ts`, an OLS regression slope normalized by mean price) are filtered out entirely — only sideways-or-up candidates qualify — and `liquidityWeight` (0..1, saturating at `liquidityFullWeightBrl`) dampens thin markets beyond the hard `minVolumeBrl` floor.
+Cross-pair volatility scanner — ranks candidate symbols on an exchange by recent volatility, trend direction, and liquidity to help pick what to trade next. `scan.ts` is the CLI entry (`npm run scan`); used by `scan.yml` (daily, `hype-mb` only — `coinbase-shannon-1`'s matrix entry is commented out since that instance is deprecated/stopped) and locally via cron scripts (`bot/scan-mb-daily.sh`, `bot/scan-coinbase-daily.sh`). Each candidate's score is `MAD × (1 + rollingReturn) × liquidityWeight`; candidates with a clearly negative trend (`computeNormalizedTrendSlope()` in `math.ts`, an OLS regression slope normalized by mean price) are filtered out entirely — only sideways-or-up candidates qualify — and `liquidityWeight` (0..1, saturating at `liquidityFullWeightBrl`) dampens thin markets beyond the hard `minVolumeBrl` floor.
 
-For an instance with `bootstrapViaScan: true` (e.g. `coinbase-shannon-1`), `RebalancerBot` triggers a scan itself on its very first cycle instead of trading its YAML-default `symbol` immediately. With `autonomousWeeklyRotation: true` also set, there is **no Telegram approval step at all** for that instance: `checkAndRunAutonomousRotationDecision()` (`core/rebalancer.ts`) picks the first asset immediately on bootstrap, then re-evaluates once a week (right after midnight Sunday→Monday BRT) and switches only if a new top candidate beats the current asset's score by `autonomousRotationMinMarginPct` — inserting an already-`APPROVED` `pending_rotation` row that the existing (Telegram-approval-agnostic) execution path then runs the same cycle. `hype-mb` keeps the original manual Telegram approve/reject flow (`scan-reporter.ts`'s buttons) — autonomous mode is opt-in per instance. See "`config`, `scans`, `pending_rotation` — asset rotation" below and `docs/dynamic-asset-rotation-plan.md`, "Autonomous weekly rotation".
+For an instance with `bootstrapViaScan: true` (e.g. `coinbase-shannon-1`'s config, though that instance is currently deprecated/stopped — see Instances table), `RebalancerBot` triggers a scan itself on its very first cycle instead of trading its YAML-default `symbol` immediately. With `autonomousWeeklyRotation: true` also set, there is **no Telegram approval step at all** for that instance: `checkAndRunAutonomousRotationDecision()` (`core/rebalancer.ts`) picks the first asset immediately on bootstrap, then re-evaluates once a week (right after midnight Sunday→Monday BRT) and switches only if a new top candidate beats the current asset's score by `autonomousRotationMinMarginPct` — inserting an already-`APPROVED` `pending_rotation` row that the existing (Telegram-approval-agnostic) execution path then runs the same cycle. `hype-mb` keeps the original manual Telegram approve/reject flow (`scan-reporter.ts`'s buttons) — autonomous mode is opt-in per instance. See "`config`, `scans`, `pending_rotation` — asset rotation" below and `docs/dynamic-asset-rotation-plan.md`, "Autonomous weekly rotation".
 
 ### Tax Tracker
 **File:** `core/tracker/tax.ts`
@@ -490,8 +494,8 @@ Uses **GNOME Keyring** (`secret-tool`), loaded directly by `core/keyring.ts` —
 ```bash
 secret-tool store --label="..." service mercadobitcoin key clientId
 secret-tool store --label="..." service mercadobitcoin key clientSecret
-secret-tool store --label="..." service binance key apiKey
-secret-tool store --label="..." service binance key apiSecret
+secret-tool store --label="..." service coinbase key keyName
+secret-tool store --label="..." service coinbase key privateKeyPem
 secret-tool store --label="..." service telegram key botToken
 ```
 
@@ -501,6 +505,7 @@ secret-tool store --label="..." service telegram key botToken
 
 Secrets stored in GitHub repo settings:
 - `MB_CLIENT_ID`, `MB_CLIENT_SECRET`
+- `COINBASE_API_KEY_NAME`, `COINBASE_API_KEY_SECRET` (unused today — `hype-mb` is the only instance on GitHub Actions, and it's Mercado Bitcoin; wired into the workflows for whenever a Coinbase instance is mirrored there)
 - `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` (optional)
 
 `core/keyring.ts`'s `getTelegramCredentials()` checks `process.env.TELEGRAM_BOT_TOKEN` first, falling back to keyring — so the same code path works in both environments. Each workflow step passes the relevant secrets as env vars (see `.github/workflows/rebalancer.yml`, `scan.yml`).
@@ -509,7 +514,7 @@ Secrets stored in GitHub repo settings:
 
 ## Testing
 
-**File:** `bot/tests/`, 155 unit tests (vitest)
+**File:** `bot/tests/`, 158 unit tests (vitest)
 
 **Test Categories (partial list):**
 - `math.test.ts` — ratio, threshold, trade calc
@@ -529,7 +534,7 @@ Secrets stored in GitHub repo settings:
 cd bot
 npm test                    # vitest
 npm run build               # tsc
-npm run setup-check         # validate exchange credentials (mercadobitcoin or binance)
+npm run setup-check         # validate exchange credentials (mercadobitcoin or coinbase)
 ```
 
 ---
@@ -752,6 +757,7 @@ If `|estWeight − 0.5| ≤ τ`, the balance fetch is skipped for this cycle. Th
 - Credentials from GNOME Keyring
 - Data files stay local (`.gitignore`d)
 - Manual restart on failure (or PM2 auto-restart)
+- Currently unused: `ecosystem.config.cjs` has no active `apps` entries — `hype-mb` deliberately excludes it (GitHub Actions only) and `coinbase-shannon-1`'s entry was removed when that instance was deprecated. Kept ready for a future local instance.
 
 ### 2. GitHub Actions (hype-mb instance only)
 - `rebalancer.yml` — hourly (`0 * * * *`), single cycle (`--once`) then exits
@@ -760,7 +766,7 @@ If `|estWeight − 0.5| ≤ τ`, the balance fetch is skipped for this cycle. Th
 - `monthly-db-backup.yml` — 1st of each month; archives the SQLite DB as a GitHub Release
 - Credentials from GitHub Secrets; the SQLite DB persists between runs as a GitHub Actions artifact (`hype-mb-database`), downloaded/re-uploaded each run — see "Database Architecture" → artifact-sharing caveats in git history if debugging data loss
 - Telegram notifications on failure (`appleboy/telegram-action`)
-- Other local instances (`coinbase-shannon-1`, ...) are **not** mirrored to GitHub Actions
+- `coinbase-shannon-1` is **not** mirrored to GitHub Actions (deprecated/stopped — see Instances table)
 
 ### 3. Backtest (Python, offline)
 - `shannon_backtest_real.py` — uses public exchange candle API
@@ -828,4 +834,4 @@ If `|estWeight − 0.5| ≤ τ`, the balance fetch is skipped for this cycle. Th
 
 ---
 
-**Last Updated:** 2026-06-23
+**Last Updated:** 2026-08-19

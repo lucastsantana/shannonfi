@@ -1,7 +1,7 @@
 {
   "name": "@shannonfi/bot",
   "version": "1.0.0",
-  "description": "Shannon's Demon rebalancing bot (Mercado Bitcoin, Binance)",
+  "description": "Shannon's Demon rebalancing bot (Mercado Bitcoin, Coinbase)",
   "private": true,
   "main": "dist/index.js",
   "scripts": {
@@ -20,7 +20,6 @@
     "test:coverage": "vitest run --coverage",
     "typecheck": "tsc --noEmit",
     "scan": "ts-node -r tsconfig-paths/register src/scanner/scan.ts",
-    "scan:binance": "ts-node -r tsconfig-paths/register src/scanner/scan.ts",
     "migrate": "ts-node src/scripts/migrate-json-to-db.ts",
     "reconcile": "ts-node src/scripts/reconcile-orders.ts",
     "reconcile:built": "node dist/scripts/reconcile-orders.js",

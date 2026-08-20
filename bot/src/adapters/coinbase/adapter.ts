@@ -9,7 +9,7 @@
  * the daily BACEN PTAX rate (FxRateService), treating USDC as 1:1 with USD for
  * that conversion, so every other layer in the engine (math, cost basis, tax,
  * history, dashboard, reporting) sees plain "BRL" values exactly like the Mercado
- * Bitcoin and Binance adapters provide — it never knows this instance is actually
+ * Bitcoin adapter provides — it never knows this instance is actually
  * trading in USDC underneath.
  *
  * LIVE-TESTED against a real Coinbase account (auth, balances, market data, PTAX
@@ -378,7 +378,7 @@ export class CoinbaseAdapter implements ExchangeAdapter {
   /**
    * Fetch candles with volume data for a specific product (scanner use only).
    * NOT on the ExchangeAdapter interface — duck-typed against scanner.ts's
-   * ScannerAdapter interface, same as the MB/Binance adapters' equivalent method.
+   * ScannerAdapter interface, same as the Mercado Bitcoin adapter's equivalent method.
    * Volume is base-asset-denominated (Coinbase's own units), not converted — same
    * convention as the other two adapters; only `close` is converted to BRL.
    */
@@ -406,8 +406,8 @@ export class CoinbaseAdapter implements ExchangeAdapter {
    * product catalog (~930 SPOT products, ~400 USDC-quoted, verified live — one
    * call, no pagination needed) instead of scanner.ts's hardcoded 15-symbol
    * fallback list. Duck-typed against scanner.ts's optional
-   * ScannerAdapter.listAvailableBaseAssets — MB/Binance adapters don't implement
-   * this, so they keep using the hardcoded list unchanged.
+   * ScannerAdapter.listAvailableBaseAssets — the Mercado Bitcoin adapter doesn't
+   * implement this, so it keeps using the hardcoded list unchanged.
    *
    * Deliberately does NOT pre-filter to only the highest-volume products before
    * scanner.ts scores them — scanner.ts passes a very high maxCandidates (see

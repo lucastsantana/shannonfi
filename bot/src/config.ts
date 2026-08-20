@@ -20,11 +20,6 @@ const MercadoBitcoinSchema = z.object({
   apiBaseUrl: z.string().url().default('https://api.mercadobitcoin.net/api/v4'),
 }).optional().default({});
 
-const BinanceSchema = z.object({
-  // apiBaseUrl is the only config field; credentials come from keyring
-  apiBaseUrl: z.string().url().default('https://api.binance.com'),
-}).optional().default({});
-
 const CoinbaseSchema = z.object({
   // apiBaseUrl is the only config field; credentials (a CDP API key name + private
   // key, not a simple key/secret pair) come from keyring — see core/keyring.ts.
@@ -117,12 +112,6 @@ const MbConfigSchema = CommonConfigSchema.extend({
   neverExceedExemptionLimit: z.boolean().default(false),
 });
 
-const BinanceConfigSchema = CommonConfigSchema.extend({
-  exchange: z.literal('binance'),
-  binance: BinanceSchema,
-  symbol: z.string().regex(/^[A-Z]+-BRL$/, "Symbol must match BASE-BRL format").default('SOL-BRL'),
-});
-
 const CoinbaseConfigSchema = CommonConfigSchema.extend({
   exchange: z.literal('coinbase'),
   coinbase: CoinbaseSchema,
@@ -143,11 +132,10 @@ const CoinbaseConfigSchema = CommonConfigSchema.extend({
 
 // ─── Unified discriminated union ───────────────────────────────────────────────
 
-const ConfigSchema = z.discriminatedUnion('exchange', [MbConfigSchema, BinanceConfigSchema, CoinbaseConfigSchema]);
+const ConfigSchema = z.discriminatedUnion('exchange', [MbConfigSchema, CoinbaseConfigSchema]);
 
 export type Config = z.infer<typeof ConfigSchema>;
 export type MercadoBitcoinConfig = z.infer<typeof MercadoBitcoinSchema>;
-export type BinanceConfig = z.infer<typeof BinanceSchema>;
 export type CoinbaseConfig = z.infer<typeof CoinbaseSchema>;
 export type TelegramConfig = z.infer<typeof TelegramSchema>;
 

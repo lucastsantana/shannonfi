@@ -1,8 +1,8 @@
 /**
  * Coinbase Advanced Trade API client.
  * Authenticates every request with a freshly-signed JWT (see jwt.ts) — unlike
- * Mercado Bitcoin's cached OAuth2 token or Binance's per-request HMAC signature,
- * each Coinbase request needs its own token bound to that exact method+path.
+ * Mercado Bitcoin's cached OAuth2 token, each Coinbase request needs its own
+ * token bound to that exact method+path.
  */
 
 import axios, { AxiosInstance } from 'axios';

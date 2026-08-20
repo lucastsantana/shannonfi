@@ -12,10 +12,6 @@ export interface KeyringCredentials {
     clientId: string;
     clientSecret: string;
   };
-  binance?: {
-    apiKey: string;
-    apiSecret: string;
-  };
   coinbase?: {
     keyName: string;
     privateKeyPem: string;
@@ -60,42 +56,8 @@ export function getMercadoBitcoinCredentials(): { clientId: string; clientSecret
 }
 
 /**
- * Load Binance credentials from GNOME Keyring.
- * Credentials must be stored with:
- *   secret-tool store --label="..." service binance key apiKey
- *   secret-tool store --label="..." service binance key apiSecret
- */
-export function getBinanceCredentials(): { apiKey: string; apiSecret: string } {
-  try {
-    const apiKey = execSync('secret-tool lookup service binance key apiKey 2>/dev/null', {
-      encoding: 'utf-8',
-      stdio: ['pipe', 'pipe', 'ignore'],
-    }).trim();
-
-    const apiSecret = execSync('secret-tool lookup service binance key apiSecret 2>/dev/null', {
-      encoding: 'utf-8',
-      stdio: ['pipe', 'pipe', 'ignore'],
-    }).trim();
-
-    if (!apiKey || !apiSecret) {
-      throw new Error('Credentials not found in keyring');
-    }
-
-    logger.debug('Loaded Binance credentials from keyring');
-    return { apiKey, apiSecret };
-  } catch (err) {
-    throw new Error(
-      'Binance credentials not found in GNOME Keyring.\n' +
-      'Store them with:\n' +
-      '  secret-tool store --label="Binance API Key" service binance key apiKey\n' +
-      '  secret-tool store --label="Binance API Secret" service binance key apiSecret'
-    );
-  }
-}
-
-/**
  * Load Coinbase credentials from GNOME Keyring.
- * Unlike Mercado Bitcoin's clientId/clientSecret or Binance's apiKey/apiSecret, a
+ * Unlike Mercado Bitcoin's clientId/clientSecret, a
  * Coinbase CDP API key is a (keyName, privateKeyPem) pair — the private key is a
  * multi-line PEM block, used to sign a short-lived JWT per request rather than sent
  * directly. secret-tool stores/returns arbitrary multi-line text fine; no special
@@ -176,12 +138,6 @@ export function getAvailableCredentials(): KeyringCredentials {
     credentials.mercadobitcoin = getMercadoBitcoinCredentials();
   } catch (err) {
     // MB credentials not available, skip
-  }
-
-  try {
-    credentials.binance = getBinanceCredentials();
-  } catch (err) {
-    // Binance credentials not available, skip
   }
 
   try {

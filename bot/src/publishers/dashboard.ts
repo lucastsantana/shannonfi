@@ -173,14 +173,6 @@ async function fetchCurrentPrice(config: Config): Promise<number | null> {
       const usdPrice = parseFloat(res.data.price);
       return Number.isFinite(usdPrice) ? usdPrice : null;
     }
-    if (config.exchange === 'binance') {
-      const res = await axios.get<{ price: string }>(
-        'https://api.binance.com/api/v3/ticker/price',
-        { params: { symbol: config.symbol.replace('-', '') }, timeout: 6000 },
-      );
-      const price = parseFloat(res.data.price);
-      return Number.isFinite(price) ? price : null;
-    }
     const res = await axios.get<Array<{ pair: string; last: string }>>(
       'https://api.mercadobitcoin.net/api/v4/tickers',
       { params: { symbols: config.symbol }, timeout: 6000 },
@@ -1333,17 +1325,12 @@ var API =
   // BASE-USDC symbol (see fetchCurrentPrice()'s comment server-side for why USD is safe
   // to substitute here).
   EXCHANGE === 'coinbase' ? 'https://api.exchange.coinbase.com/products/' + BASE + '-USD/ticker' :
-  EXCHANGE === 'binance'  ? 'https://api.binance.com/api/v3/ticker/price?symbol=' + SYM.replace('-', '') :
   'https://api.mercadobitcoin.net/api/v4/tickers?symbols=' + SYM;
 
 function parseTickerPrice(json) {
   if (EXCHANGE === 'coinbase') {
     var usd = parseFloat(json.price);
     return (isFinite(usd) && PTAX) ? usd * PTAX : null;
-  }
-  if (EXCHANGE === 'binance') {
-    var p = parseFloat(json.price);
-    return isFinite(p) ? p : null;
   }
   var tick = json.find(function (t) { return t.pair === SYM; });
   return tick ? parseFloat(tick.last) : null;
@@ -2029,10 +2016,7 @@ async function main(): Promise<void> {
   const todayBRT   = toDateBRT(new Date().toISOString());
   const daysActive = firstSnap ? daysElapsed(firstSnap.date_brt, todayBRT) : 0;
 
-  const exchangeName =
-    config.exchange === 'mercadobitcoin' ? 'Mercado Bitcoin'
-    : config.exchange === 'binance' ? 'Binance'
-    : 'Coinbase';
+  const exchangeName = config.exchange === 'mercadobitcoin' ? 'Mercado Bitcoin' : 'Coinbase';
 
   const allInLabel = hasRotated ? 'ALL-IN (ROLLING)' : `ALL-IN ${baseAsset}`;
 

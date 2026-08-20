@@ -8,7 +8,7 @@ See the root `README.md` for setup and deployment instructions.
 
 | Parameter | Default | Description |
 |---|---|---|
-| `exchange` | — | `mercadobitcoin` (required) |
+| `exchange` | — | `mercadobitcoin` or `coinbase` (required) |
 | `symbol` | `SOL-BRL` | Trading pair, e.g. `HYPE-BRL` |
 | `dbPath` | `./data/shannonfi.db` | SQLite database path |
 | `rebalanceThresholdBps` | `100` | Minimum drift (bps) to trigger rebalance |
@@ -45,7 +45,7 @@ Where MAD is the mean absolute daily return over `volatilityWindowDays`. Cached 
 ```bash
 npm run build           # compile TypeScript
 npm test                # run vitest suite
-npm run scan            # run MB asset scanner (requires --config)
+npm run scan            # run asset scanner for the configured exchange (requires --config)
 ```
 
 ---

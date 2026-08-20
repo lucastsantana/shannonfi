@@ -6,14 +6,20 @@ Volatility-harvesting rebalancer holding HYPE/BRL at 50/50. Sells the outperform
 
 ## Architecture
 
+`hype-mb` runs entirely on GitHub Actions — no local PM2 process (local PM2 was stopped 2026-08-02 to eliminate a dual-writer split-brain risk; see `CLAUDE.md`'s "`hype-mb` dual-writer incident").
+
 | Component | Role |
 |---|---|
-| **Local PM2 (`hype-mb`)** | Live rebalancer — runs 24/7, executes trades, sends Telegram alerts and daily digest at 00:30 BRT |
-| **GitHub Actions** | Daily asset scanner (20:00 UTC) and monthly DB backup |
+| **GitHub Actions — `rebalancer.yml`** | Hourly single-cycle rebalance (`--once`), executes trades, sends Telegram trade notifications |
+| **GitHub Actions — `scan.yml`** | Daily asset scanner (20:00 UTC), posts results to Telegram |
+| **GitHub Actions — `dashboard.yml`** | Regenerates and deploys the GitHub Pages dashboard |
+| **GitHub Actions — `monthly-db-backup.yml`** | Monthly DB snapshot as a GitHub Release |
 
 ---
 
 ## Local PM2 Setup
+
+`hype-mb` itself does **not** run here (GitHub Actions is its sole runner, see above) — this section is for running a new local instance via PM2. `ecosystem.config.cjs` (repo root) currently has no active `apps` entries; add one following its instructions to bring up a new instance.
 
 ### 1. Store credentials in GNOME Keyring
 
@@ -25,12 +31,12 @@ secret-tool store --label="Telegram Token"   service telegram key botToken
 
 ### 2. Configure the instance
 
-Edit `bot/configs/hype-mb.yaml`:
+Create `bot/configs/<exchange>-shannon-<n>.yaml` (e.g. `bot/configs/coinbase-shannon-2.yaml`), following the naming convention `{exchange}-{strategy}-{n}` — copy from `bot/configs/coinbase-shannon-1.yaml.template` as a scaffold:
 
 ```yaml
-exchange: mercadobitcoin
-symbol: HYPE-BRL
-dbPath: ./data/hype-mb/shannonfi.db
+exchange: mercadobitcoin   # or: coinbase
+symbol: SOL-BRL             # BASE-BRL for mercadobitcoin, BASE-USDC for coinbase
+dbPath: ./data/<instance-name>/shannonfi.db
 
 rebalanceThresholdBps: 100
 maxSlippageBps: 100
@@ -51,28 +57,30 @@ telegram:
 
 ### 3. Start with PM2
 
+Add an entry for the new instance to `apps: []` in `ecosystem.config.cjs` (repo root) — follow its own doc comment and the existing (commented-out) `hype-mb`/`coinbase-shannon-1` blocks as examples — then:
+
 ```bash
 npm install && cd bot && npm install && npm run build && cd ..
-pm2 start ecosystem.config.cjs --only hype-mb
+pm2 start ecosystem.config.cjs --only <instance-name>
 pm2 save
 ```
 
-(`ecosystem.config.cjs`, at the repo root, defines every local instance — `hype-mb`, `coinbase-shannon-1`, etc. — each running `bot/start-instance.sh <name>`, which loads that instance's credentials from GNOME Keyring.)
+(Each app entry runs `bot/start-instance.sh <name>`, which loads that instance's credentials from GNOME Keyring.)
 
 ### 4. Useful PM2 commands
 
 ```bash
-pm2 logs hype-mb          # live logs
-pm2 restart hype-mb       # restart after config change
-pm2 stop hype-mb          # stop
-pm2 status                # all instances
+pm2 logs <instance-name>          # live logs
+pm2 restart <instance-name>       # restart after config change
+pm2 stop <instance-name>          # stop
+pm2 status                        # all instances
 ```
 
 ---
 
 ## GitHub Actions Setup
 
-Four workflows run in the cloud, all against the `hype-mb` instance only (other local instances aren't mirrored to GitHub Actions):
+Four workflows run in the cloud, all against the `hype-mb` instance only. `coinbase-shannon-1` is deprecated/stopped and not mirrored here either (its matrix entries are commented out, ready to reactivate for a future Coinbase instance).
 
 | Workflow | Schedule | Purpose |
 |---|---|---|
@@ -89,8 +97,6 @@ Go to **Settings → Secrets and variables → Actions** and add:
 |---|---|
 | `MB_CLIENT_ID` | Mercado Bitcoin client ID |
 | `MB_CLIENT_SECRET` | Mercado Bitcoin client secret |
-| `BINANCE_API_KEY` | Binance API key (only if running a Binance instance via Actions) |
-| `BINANCE_API_SECRET` | Binance API secret |
 | `COINBASE_API_KEY_NAME` | Coinbase CDP API key name (only if running a Coinbase instance via Actions) |
 | `COINBASE_API_KEY_SECRET` | Coinbase CDP private key, full multi-line PEM block |
 | `TELEGRAM_BOT_TOKEN` | Token from @BotFather |
@@ -113,8 +119,8 @@ gh secret set TELEGRAM_CHAT_ID   --body "YOUR_CHAT_ID"
 
 | Event | Sender |
 |---|---|
-| Trade executed | Local PM2 bot (immediate) |
-| Daily digest at 00:30 BRT | Local PM2 bot |
+| Trade executed | GitHub Actions `rebalancer.yml` (within the hourly cycle that executed it) |
+| Daily digest at 00:30 BRT | Not currently sent for `hype-mb` — the digest only fires when a poll cycle happens to land in the 00:30–00:35 BRT window, which `rebalancer.yml`'s on-the-hour cron never does. Local PM2 (when running an instance) would send it. |
 | Asset scanner results | GitHub Actions (daily 20:00 UTC) |
 | Monthly backup confirmation | GitHub Actions (1st of month) |
 

@@ -17,7 +17,6 @@
 
 import { loadConfig } from '../config';
 import { MercadoBitcoinAdapter } from '../adapters/mercadobitcoin/adapter';
-import { BinanceAdapter } from '../adapters/binance/adapter';
 import { CoinbaseAdapter } from '../adapters/coinbase/adapter';
 import { ExchangeAdapter } from '../adapters/types';
 import { ShareLedgerService } from '../core/tracker/shares';
@@ -51,8 +50,6 @@ async function main(): Promise<void> {
   let adapter: ExchangeAdapter;
   if (config.exchange === 'mercadobitcoin') {
     adapter = new MercadoBitcoinAdapter(config.mercadobitcoin, config.dryRun, config.maxSlippageBps, config.symbol);
-  } else if (config.exchange === 'binance') {
-    adapter = new BinanceAdapter(config.binance, config.dryRun, config.maxSlippageBps, config.symbol);
   } else {
     adapter = new CoinbaseAdapter(config.coinbase, config.dryRun, config.maxSlippageBps, config.symbol);
   }

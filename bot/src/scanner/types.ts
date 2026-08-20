@@ -28,7 +28,7 @@ export interface ScanOptions {
   minDataPoints: number;    // skip assets with fewer candles than this, default 10
   returnFloor: number;      // hard filter: skip assets with return < this, default -0.20
   topN: number;             // display top N candidates, default 15
-  quoteCurrency: string;    // 'BRL' for Mercado Bitcoin/Binance, 'USD' for Coinbase
+  quoteCurrency: string;    // 'BRL' for Mercado Bitcoin, 'USD' for Coinbase
   minTrendSlope: number;    // hard filter: reject candidates trending down past this (computeNormalizedTrendSlope units), default -0.0005 (~-1.5%/30d)
   liquidityFullWeightBrl: number; // avgDailyVolumeBrl at which liquidityWeight saturates to 1.0, default 50_000
 }

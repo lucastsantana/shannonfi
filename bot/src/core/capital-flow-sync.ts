@@ -7,7 +7,7 @@
  * Mercado Bitcoin-only: MB's wallet API exposes list endpoints for both directions
  * (GET .../wallet/fiat/BRL/deposits, GET .../wallet/BRL/withdraw) that return every
  * deposit/withdrawal on the account, not just ones the API itself initiated. No
- * equivalent has been found/wired up for Binance or Coinbase.
+ * equivalent has been found/wired up for Coinbase.
  *
  * Called every cycle from RebalancerBot.checkAndRebalance() when config.exchange is
  * 'mercadobitcoin' — cheap (two small paginated list requests) and needs to run

@@ -10,7 +10,6 @@
 
 import { loadConfig } from './config';
 import { MercadoBitcoinAdapter } from './adapters/mercadobitcoin/adapter';
-import { BinanceAdapter } from './adapters/binance/adapter';
 import { CoinbaseAdapter } from './adapters/coinbase/adapter';
 import { ExchangeAdapter } from './adapters/types';
 import { RebalancerBot } from './core/rebalancer';
@@ -61,17 +60,11 @@ async function main(): Promise<void> {
     if (config.exchange === 'mercadobitcoin') {
       return new MercadoBitcoinAdapter(config.mercadobitcoin, config.dryRun, config.maxSlippageBps, symbol);
     }
-    if (config.exchange === 'binance') {
-      return new BinanceAdapter(config.binance, config.dryRun, config.maxSlippageBps, symbol);
-    }
     return new CoinbaseAdapter(config.coinbase, config.dryRun, config.maxSlippageBps, symbol);
   };
 
   const adapter = buildAdapter(config.symbol);
-  const exchangeLabel =
-    config.exchange === 'mercadobitcoin' ? 'Mercado Bitcoin'
-    : config.exchange === 'binance' ? 'Binance'
-    : 'Coinbase';
+  const exchangeLabel = config.exchange === 'mercadobitcoin' ? 'Mercado Bitcoin' : 'Coinbase';
 
   // ── Build services ─────────────────────────────────────────────────────────
   const retentionDays = config.jsonRetentionDays ?? 15;

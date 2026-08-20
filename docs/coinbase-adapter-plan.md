@@ -7,6 +7,11 @@ account (auth, balances, market data, PTAX conversion). **USDC, not USD, is the
 supported quote currency** — see "Implementation Notes — Live Testing Findings"
 below for why this changed from the original USD-first plan. GitHub Actions
 generalized from day one. Order placement/fill polling not yet exercised live.
+**Historical note:** this plan predates Binance's full removal from the codebase —
+the "Context" section and the many MB/Binance comparisons below (Binance's HTTP 451
+restriction on GitHub Actions runners was the actual motivation for evaluating
+Coinbase) reflect the architecture as it stood when this was written, not the
+current state (see `CLAUDE.md`'s "Exchanges"). Kept as-is for the reasoning trail.
 
 ## Context
 

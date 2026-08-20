@@ -14,13 +14,13 @@ export interface ScannerAdapter {
   // Optional: discover the tradable base-asset universe dynamically from the
   // exchange's own product catalog (e.g. CoinbaseAdapter.listAvailableBaseAssets,
   // ranked by the exchange's own 24h volume and capped to `maxCandidates`).
-  // Adapters that don't implement this (Mercado Bitcoin, Binance) fall back to
+  // Adapters that don't implement this (Mercado Bitcoin) fall back to
   // the hardcoded KNOWN_BASE_ASSETS list below unchanged.
   listAvailableBaseAssets?(maxCandidates: number): Promise<string[]>;
 }
 
 // Fallback base assets when the adapter has no dynamic discovery — also still
-// used by Mercado Bitcoin/Binance. Some may not exist on every exchange (e.g.
+// used by Mercado Bitcoin. Some may not exist on every exchange (e.g.
 // listed on Mercado Bitcoin but not yet on Coinbase) — scoreSymbol() failures
 // are caught per-symbol and skipped (see the catch in scan() below), so an
 // incomplete list costs a few wasted lookups, not correctness.
@@ -67,8 +67,8 @@ export class AssetScanner {
     logger.info('Asset scanner starting', { windowDays: options.windowDays });
     const startTime = Date.now();
 
-    // Discover symbols quoted in this instance's quote currency (BRL for MB/Binance,
-    // USDC for Coinbase) — the same base-asset universe, just suffixed differently.
+    // Discover symbols quoted in this instance's quote currency (BRL for Mercado
+    // Bitcoin, USDC for Coinbase) — the same base-asset universe, just suffixed differently.
     const quoteCurrency = options.quoteCurrency;
     const unavailable = UNAVAILABLE_BASE_ASSETS[quoteCurrency] ?? new Set<string>();
 

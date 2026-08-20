@@ -19,7 +19,7 @@ jobs:
       matrix:
         instance:
           - hype-mb
-          # - coinbase-shannon-1   # uncomment once this instance is live
+          # - coinbase-shannon-1   # deprecated/stopped, see CLAUDE.md's Instances table
 
     steps:
       - name: Checkout code

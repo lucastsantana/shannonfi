@@ -12,8 +12,6 @@
 import { loadConfig } from '../config';
 import { MbClient } from '../adapters/mercadobitcoin/client';
 import { MbEndpoints } from '../adapters/mercadobitcoin/endpoints';
-import { BinanceClient } from '../adapters/binance/client';
-import { BinanceEndpoints } from '../adapters/binance/endpoints';
 import { CoinbaseClient } from '../adapters/coinbase/client';
 import { CoinbaseEndpoints } from '../adapters/coinbase/endpoints';
 import { FxRateService } from '../core/tracker/fxrate';
@@ -44,32 +42,6 @@ function getMbCredentialsFromKeyring(): { clientId: string; clientSecret: string
       'Store them with:\n' +
       '  secret-tool store service mercadobitcoin key clientId\n' +
       '  secret-tool store service mercadobitcoin key clientSecret',
-    );
-  }
-}
-
-function getBinanceCredentialsFromKeyring(): { apiKey: string; apiSecret: string } {
-  try {
-    const apiKey = execSync('secret-tool lookup service binance key apiKey 2>/dev/null', {
-      encoding: 'utf-8',
-      stdio: ['pipe', 'pipe', 'ignore'],
-    }).trim();
-    const apiSecret = execSync('secret-tool lookup service binance key apiSecret 2>/dev/null', {
-      encoding: 'utf-8',
-      stdio: ['pipe', 'pipe', 'ignore'],
-    }).trim();
-
-    if (!apiKey || !apiSecret) {
-      throw new Error('Credentials not found in keyring');
-    }
-
-    return { apiKey, apiSecret };
-  } catch {
-    throw new Error(
-      'Binance credentials not found in GNOME Keyring.\n' +
-      'Store them with:\n' +
-      '  secret-tool store service binance key apiKey\n' +
-      '  secret-tool store service binance key apiSecret',
     );
   }
 }
@@ -108,57 +80,6 @@ async function checkMercadoBitcoin(): Promise<void> {
   console.log(`   OK — ${candles.t.length} daily candles. Latest close: R$${parseFloat(lastClose).toFixed(2)}/${baseAsset}`);
 
   const totalBrl = brlBalance + baseBalance * parseFloat(lastClose);
-  if (totalBrl < loadConfig(CONFIG_PATH).minPortfolioValueBrl) {
-    console.warn(`   WARN — Total portfolio R$${totalBrl.toFixed(2)} is below minPortfolioValueBrl (R$${loadConfig(CONFIG_PATH).minPortfolioValueBrl})`);
-  }
-}
-
-async function checkBinance(): Promise<void> {
-  const config = loadConfig(CONFIG_PATH);
-  if (config.exchange !== 'binance') return;
-
-  const { apiKey, apiSecret } = getBinanceCredentialsFromKeyring();
-  const apiBaseUrl = config.binance.apiBaseUrl;
-
-  const client = new BinanceClient(apiKey, apiSecret, apiBaseUrl);
-  const endpoints = new BinanceEndpoints(client);
-
-  console.log('\n2. Testing Binance API authentication...');
-  const account = await endpoints.getAccount();
-  console.log(`   OK — Authenticated. Account Type: ${account.accountType}`);
-
-  const baseAsset = config.symbol.split('-')[0]!;
-
-  console.log('\n3. Fetching balances...');
-  const baseBalance = parseFloat(account.balances.find((b) => b.asset === baseAsset)?.free ?? '0');
-  const brlBalance = parseFloat(account.balances.find((b) => b.asset === 'BRL')?.free ?? '0');
-  console.log(`   ${baseAsset} balance: ${baseBalance.toFixed(6)} ${baseAsset}`);
-  console.log(`   BRL balance: R$${brlBalance.toFixed(2)}`);
-
-  if (brlBalance + baseBalance === 0) {
-    console.warn('   WARN — All balances are zero');
-  }
-
-  console.log(`\n4. Checking ${config.symbol} market (recent candles)...`);
-  const binanceSymbol = config.symbol.replace('-', '');
-  const klines = await endpoints.getKlines(binanceSymbol, '1d', 7);
-  if (!klines || klines.length === 0) {
-    console.error('   FAIL — No candle data returned from Binance');
-    process.exit(1);
-  }
-  const lastKline = klines[klines.length - 1];
-  if (!lastKline || !lastKline[4]) {
-    console.error('   FAIL — Invalid kline format from Binance');
-    process.exit(1);
-  }
-  const lastClose = parseFloat(lastKline[4]);
-  if (!Number.isFinite(lastClose) || lastClose <= 0) {
-    console.error(`   FAIL — Invalid close price from Binance: ${lastKline[4]}`);
-    process.exit(1);
-  }
-  console.log(`   OK — ${klines.length} daily candles. Latest close: R$${lastClose.toFixed(2)}/${baseAsset}`);
-
-  const totalBrl = brlBalance + baseBalance * lastClose;
   if (totalBrl < loadConfig(CONFIG_PATH).minPortfolioValueBrl) {
     console.warn(`   WARN — Total portfolio R$${totalBrl.toFixed(2)} is below minPortfolioValueBrl (R$${loadConfig(CONFIG_PATH).minPortfolioValueBrl})`);
   }
@@ -256,8 +177,6 @@ async function runSetupCheck(): Promise<void> {
 
   if (config.exchange === 'mercadobitcoin') {
     await checkMercadoBitcoin();
-  } else if (config.exchange === 'binance') {
-    await checkBinance();
   } else {
     await checkCoinbase();
   }

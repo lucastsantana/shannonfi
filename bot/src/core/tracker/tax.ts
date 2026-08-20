@@ -25,7 +25,7 @@ export interface TaxEvent {
   cumMonthlyGainBrl: number;      // running SELL gains this month
   exempt: boolean;                // true if cumMonthlySalesBrl <= R$35,000
   paymentDeadline: string | null; // last BR business day of following month, or null if exempt
-  exchange: 'mercadobitcoin' | 'binance' | 'coinbase';
+  exchange: 'mercadobitcoin' | 'coinbase';
 }
 
 export interface MonthlySummary {
@@ -224,7 +224,7 @@ export class TaxService {
     grossProceedsBrl: number;
     costBasisBrl: number;
     realizedGainBrl: number;
-    exchange: 'mercadobitcoin' | 'binance' | 'coinbase';
+    exchange: 'mercadobitcoin' | 'coinbase';
   }): TaxEvent {
     const monthBRT = params.tradeDateBRT.slice(0, 7);
     const priorSales = this.getMonthlySalesBrl(monthBRT);

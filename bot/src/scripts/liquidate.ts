@@ -11,7 +11,6 @@
 
 import { loadConfig } from '../config';
 import { MercadoBitcoinAdapter } from '../adapters/mercadobitcoin/adapter';
-import { BinanceAdapter } from '../adapters/binance/adapter';
 import { CoinbaseAdapter } from '../adapters/coinbase/adapter';
 import { ExchangeAdapter } from '../adapters/types';
 import { TradeHistoryService } from '../core/tracker/history';
@@ -37,13 +36,6 @@ async function main(): Promise<void> {
   if (config.exchange === 'mercadobitcoin') {
     adapter = new MercadoBitcoinAdapter(
       config.mercadobitcoin,
-      dryRun,
-      config.maxSlippageBps,
-      config.symbol,
-    );
-  } else if (config.exchange === 'binance') {
-    adapter = new BinanceAdapter(
-      config.binance,
       dryRun,
       config.maxSlippageBps,
       config.symbol,

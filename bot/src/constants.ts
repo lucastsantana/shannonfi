@@ -22,16 +22,10 @@ export const MAX_SLIPPAGE_BPS = 100;
 export const MB_FILL_POLL_INTERVAL_MS = 3_000;
 export const MB_FILL_POLL_MAX_ATTEMPTS = 10;         // 30s total
 
-// ─── Binance ──────────────────────────────────────────────────────────────────
-export const BINANCE_API_BASE = 'https://api.binance.com';
-// Binance market orders fill synchronously — polling is a safety fallback only
-export const BINANCE_FILL_POLL_INTERVAL_MS = 1_000;
-export const BINANCE_FILL_POLL_MAX_ATTEMPTS = 5;     // 5s total
-
 // ─── Coinbase ─────────────────────────────────────────────────────────────────
 export const COINBASE_API_BASE = 'https://api.coinbase.com';
 // market_market_ioc orders are immediate-or-cancel, but don't assume synchronous
-// fill the way the Binance adapter does — poll like Mercado Bitcoin.
+// fill — poll like Mercado Bitcoin.
 export const COINBASE_FILL_POLL_INTERVAL_MS = 2_000;
 export const COINBASE_FILL_POLL_MAX_ATTEMPTS = 10;   // 20s total
 // CDP JWT claims are short-lived by Coinbase's own design (~120s); regenerated fresh

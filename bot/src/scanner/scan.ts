@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Unified asset scanner CLI for Shannon's Demon bot.
- * Works with Mercado Bitcoin, Binance, and Coinbase exchanges.
+ * Works with Mercado Bitcoin and Coinbase exchanges.
  *
  * Usage:
  *   # Mercado Bitcoin
@@ -17,7 +17,6 @@ import path from 'path';
 import { loadConfig } from '../config';
 import { getDb, getDbConfig, setDbConfig, backfillBaseAsset } from '../core/tracker/db';
 import { MercadoBitcoinAdapter } from '../adapters/mercadobitcoin/adapter';
-import { BinanceAdapter } from '../adapters/binance/adapter';
 import { CoinbaseAdapter } from '../adapters/coinbase/adapter';
 import { TelegramService } from '../publishers/telegram';
 import { AssetScanner } from './scanner';
@@ -123,14 +122,6 @@ async function main(): Promise<void> {
         activeSymbol,
       );
       logger.info('Initialized Mercado Bitcoin adapter');
-    } else if (config.exchange === 'binance') {
-      adapter = new BinanceAdapter(
-        config.binance || {},
-        config.dryRun || false,
-        config.maxSlippageBps || 100,
-        activeSymbol,
-      );
-      logger.info('Initialized Binance adapter');
     } else if (config.exchange === 'coinbase') {
       adapter = new CoinbaseAdapter(
         config.coinbase || {},
@@ -140,7 +131,7 @@ async function main(): Promise<void> {
       );
       logger.info('Initialized Coinbase adapter');
     } else {
-      throw new Error(`Unsupported exchange: ${config.exchange}. Supported: mercadobitcoin, binance, coinbase`);
+      throw new Error(`Unsupported exchange: ${config.exchange}. Supported: mercadobitcoin, coinbase`);
     }
   } catch (err) {
     logger.error('Failed to initialize adapter', { error: (err as Error).message });

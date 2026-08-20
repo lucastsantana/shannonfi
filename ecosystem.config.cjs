@@ -40,24 +40,14 @@ module.exports = {
     // picking a single authoritative runner) — see CLAUDE.md's Deployment Modes.
     // History preserved in: bot/data/hype-mb/ (now stale as of the PM2 stop)
 
-    // ─── Coinbase: USDC-quoted, autonomous weekly asset rotation ───────────────
-    // Data stored in: bot/data/coinbase-shannon-1/
-    {
-      name: 'coinbase-shannon-1',
-      script: './start-instance.sh',
-      cwd: './bot',
-      args: 'coinbase-shannon-1',
-      watch: false,
-      autorestart: true,
-      max_memory_restart: '500M',
-      out_file: 'logs/coinbase-shannon-1.log',
-      error_file: 'logs/coinbase-shannon-1-error.log',
-      log_date_format: 'YYYY-MM-DD HH:mm:ss Z',
-      merge_logs: true,
-      env: {
-        NODE_ENV: 'production',
-      },
-    },
+    // ─── coinbase-shannon-1 is intentionally NOT run here ──────────────────────
+    // Deprecated/stopped — the instance's local PM2 process was taken down and is not
+    // being restarted. Its config, data (bot/data/coinbase-shannon-1/), and the
+    // Coinbase adapter itself are all kept intact (the adapter remains a supported
+    // exchange for any future instance); only this PM2 entry and the instance's active
+    // trading are deprecated. It was never mirrored to GitHub Actions either (commented
+    // out of all four workflow matrices), so no other runner needs disabling first.
+    // See CLAUDE.md's Instances table and Deployment Modes.
   ],
 
   // ─── Global settings ──────────────────────────────────────────────────────

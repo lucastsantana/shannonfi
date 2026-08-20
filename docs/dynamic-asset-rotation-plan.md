@@ -4,6 +4,9 @@
 **Status:** Implemented (decisions below were confirmed; see "Implementation Notes" at
 the end for what was built, one real bug the test suite caught, and what's still
 manual/out of scope).
+**Historical note:** this plan predates Binance's full removal from the codebase — `btc-binance`
+and other Binance references below reflect the architecture as it stood when this was written,
+not the current state (see `CLAUDE.md`'s "Exchanges"). Kept as-is for the reasoning trail.
 
 ## Context
 
