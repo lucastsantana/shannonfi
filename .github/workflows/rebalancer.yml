@@ -1,7 +1,7 @@
 name: Rebalancer
 
-# Runs the Shannon's Demon rebalancing bot on a 15-minute schedule, for every
-# instance listed in the matrix below.
+# Runs the Shannon's Demon rebalancing bot hourly, for every instance listed in the
+# matrix below.
 #
 # ⚠️  If you also run an instance locally via PM2, stop it before enabling this
 #     workflow for that instance to avoid two processes trading the same account
@@ -16,6 +16,17 @@ name: Rebalancer
 on:
   schedule:
     - cron: '0 * * * *'
+    # Extra tick at 03:30 UTC (00:30 BRT), on top of the plain hourly one above.
+    # DailyDigestService.sendDailyDigestIfScheduled() (called every cycle, including
+    # --once) only actually sends when the wall clock is within 00:30–00:35 BRT — the
+    # hourly :00 cron alone never lands there, so the digest was never firing. This
+    # tick exists purely to land inside that window; it runs the same rebalance cycle
+    # as any other tick (safe to double up with the 03:00 UTC hourly run — cooldown
+    # state is restored from trade history, not process memory, so it won't double-
+    # trade). If more instances are ever added to the matrix below, this tick fires
+    # for all of them, not just hype-mb — each instance's own digest gate still
+    # applies independently.
+    - cron: '30 3 * * *'
   workflow_dispatch:
 
 permissions:

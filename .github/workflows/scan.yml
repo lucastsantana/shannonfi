@@ -4,15 +4,23 @@ name: Asset Scanner
 # Results post to Telegram (with interactive approve/reject buttons for an asset
 # rotation — see docs/dynamic-asset-rotation-plan.md).
 #
+# Scheduled trigger is disabled — hype-mb is deliberately kept single-asset on
+# HYPE-BRL with no rotation wanted, and it's the only instance in the matrix below
+# (coinbase-shannon-1 is deprecated/stopped — see CLAUDE.md's Instances table), so
+# there is currently no instance that should run this on a schedule. Kept as
+# workflow_dispatch-only rather than deleted, in case ad-hoc/manual scanning is
+# useful later. Do not re-enable the schedule for hype-mb without also re-adding a
+# way to decline a candidate silently — right now every scan posts Telegram
+# approve/reject buttons regardless of whether rotation is actually wanted.
+#
 # Required secrets (only the ones relevant to the instances actually enabled below):
 #   Mercado Bitcoin: MB_CLIENT_ID, MB_CLIENT_SECRET
 #   Coinbase:        COINBASE_API_KEY_NAME, COINBASE_API_KEY_SECRET
 # Optional: TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
 
 on:
-  schedule:
-    # Run at 20:00 UTC (17:00 BRT)
-    - cron: '0 20 * * *'
+  # schedule:
+  #   - cron: '0 20 * * *'   # was 20:00 UTC (17:00 BRT) daily — disabled, see note above
   workflow_dispatch:
 
 permissions:

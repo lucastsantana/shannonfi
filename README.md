@@ -11,7 +11,7 @@ Volatility-harvesting rebalancer holding HYPE/BRL at 50/50. Sells the outperform
 | Component | Role |
 |---|---|
 | **GitHub Actions — `rebalancer.yml`** | Hourly single-cycle rebalance (`--once`), executes trades, sends Telegram trade notifications |
-| **GitHub Actions — `scan.yml`** | Daily asset scanner (20:00 UTC), posts results to Telegram |
+| **GitHub Actions — `scan.yml`** | Disabled for `hype-mb` (`workflow_dispatch`-only) — the strategy is kept fixed on HYPE-BRL, so no scanning or rotation-candidate Telegram pushes |
 | **GitHub Actions — `dashboard.yml`** | Regenerates and deploys the GitHub Pages dashboard |
 | **GitHub Actions — `monthly-db-backup.yml`** | Monthly DB snapshot as a GitHub Release |
 
@@ -85,7 +85,7 @@ Four workflows run in the cloud, all against the `hype-mb` instance only. `coinb
 | Workflow | Schedule | Purpose |
 |---|---|---|
 | `rebalancer.yml` | Hourly | Runs a single rebalance cycle (`--once`) |
-| `scan.yml` | Daily 20:00 UTC | Scans all MB pairs, ranks by volatility score, sends results to Telegram |
+| `scan.yml` | Disabled (manual only) | Volatility scanner — turned off since the strategy stays fixed on HYPE-BRL |
 | `dashboard.yml` | After each rebalancer run + every 6h | Regenerates and deploys the GitHub Pages dashboard |
 | `monthly-db-backup.yml` | 1st of month 00:00 UTC | Creates a GitHub Release with a DB snapshot |
 
@@ -120,8 +120,8 @@ gh secret set TELEGRAM_CHAT_ID   --body "YOUR_CHAT_ID"
 | Event | Sender |
 |---|---|
 | Trade executed | GitHub Actions `rebalancer.yml` (within the hourly cycle that executed it) |
-| Daily digest at 00:30 BRT | Not currently sent for `hype-mb` — the digest only fires when a poll cycle happens to land in the 00:30–00:35 BRT window, which `rebalancer.yml`'s on-the-hour cron never does. Local PM2 (when running an instance) would send it. |
-| Asset scanner results | GitHub Actions (daily 20:00 UTC) |
+| Daily digest at 00:30 BRT | GitHub Actions `rebalancer.yml` — its extra `30 3 * * *` (03:30 UTC) cron tick, on top of the plain hourly one, exists specifically to land inside the digest's 00:30–00:35 BRT send window |
+| Asset scanner results | Not sent — `scan.yml`'s schedule is disabled for `hype-mb` (strategy stays fixed on HYPE-BRL) |
 | Monthly backup confirmation | GitHub Actions (1st of month) |
 
 ---
